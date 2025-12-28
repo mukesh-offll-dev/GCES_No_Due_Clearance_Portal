@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}{{ office_name }}{% endblock %}
+
+{% block content %}
+<main class="max-w-6xl mx-auto px-6 py-6">
+
+<!-- PAGE TITLE -->
+<div class="flex justify-center mb-6">
+  <div class="bg-[#d52b1e] text-white px-14 py-3 rounded-full text-xl font-bold">
+    {{ office_name }}
+  </div>
+</div>
+
+<!-- FILTER -->
+<form method="GET"
+ class="border-2 border-[#d52b1e] rounded-[40px] p-6 mb-6
+        grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+
+  {% if office_name != "Department" %}
+  <div>
+    <label class="font-semibold">Branch</label>
+    <select name="branch" onchange="this.form.submit()"
+      class="w-full border rounded-full px-4 py-2">
+      <option value="">Select</option>
+      {% for b in branches %}
+      <option value="{{ b }}" {% if branch == b %}selected{% endif %}>{{ b }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+
+  <div>
+    <label class="font-semibold">Year</label>
+    <select name="year" onchange="this.form.submit()"
+      class="w-full border rounded-full px-4 py-2">
+      <option value="">Select</option>
+      {% for y in "1234" %}
+      <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="flex flex-wrap justify-center gap-2">
+
+      {% if not branch and not year %}
+      <div class="flex flex-wrap justify-end gap-3 mb-6">
+        {% for b, c in branch_summary.items %}
+          <span class="bg-[#d52b1e] text-white px-5 py-2 rounded-full font-semibold">
+            {{ b }} - {{ c }}
+          </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if branch and not year %}
+      <div class="flex flex-wrap justify-end gap-3 mb-6">
+        {% for y, c in year_summary.items %}
+          <a href="?branch={{ branch }}&year={{ y }}"
+            class="bg-[#d52b1e] text-white px-5 py-2 rounded-full font-semibold">
+            {{ y }} Year - {{ c }}
+          </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if branch and year %}
+      <div class="flex justify-end mb-6">
+        <span class="bg-[#d52b1e] text-white px-6 py-2 rounded-full font-semibold">
+          Students Count - {{ count }}
+        </span>
+      </div>
+      {% endif %}
+
+
+    </div>
+
+</form>
+
+<!-- ACTION BAR -->
+<form method="POST" action="{% url 'bulk_approve' %}">
+{% csrf_token %}
+<div class="border-2 border-[#d52b1e] rounded-[40px] p-6 mb-6
+            flex justify-between items-center">
+
+  <div class="flex gap-4">
+    <button type="button" onclick="selectAll()"
+      class="bg-gray-300 px-6 py-2 rounded-full font-semibold">
+      Select All
+    </button>
+    <button type="button" onclick="deselectAll()"
+      class="bg-gray-300 px-6 py-2 rounded-full font-semibold">
+      Deselect All
+    </button>
+  </div>
+
+  <div class="flex gap-4 items-end">
+    <button 
+      onclick="verifyCheck()"
+      class="bg-green-600 text-white px-6 py-2 rounded-full font-semibold">
+      Verify & Approve
+    </button>
+
+    <button type="button" onclick="openRejectModal()"
+      class="bg-[#d52b1e] text-white px-6 py-2 rounded-full font-semibold">
+      Reject
+    </button>
+  </div>
+</div>
+<!-- LIST -->
+{% if branch and year %}
+
+    {% if requests %}
+        {% for r in requests %}
+        <div class="border rounded-[20px] p-5 mb-4
+                    flex justify-between items-center">
+
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-6 font-medium">
+            <div>
+              <b>Roll no</b><br>{{ r.student.roll_no }}
+            </div>
+            <div>
+              <b>Name</b><br>{{ r.student.name }}
+            </div>
+            <div>
+              <b>Year</b><br>{{ r.student.year }}
+            </div>
+            <div>
+              <b>Branch</b><br>{{ r.student.branch }}
+            </div>
+          </div>
+
+          <input type="checkbox" name="request_ids"
+                 value="{{ r.id }}" class="w-6 h-6">
+        </div>
+        {% endfor %}
+
+    {% else %}
+        <p class="text-center font-semibold text-gray-600">
+          No students found
+        </p>
+    {% endif %}
+
+{% else %}
+    <p class="text-center font-semibold text-gray-600">
+      Please select Branch & Year
+    </p>
+{% endif %}
+
+</form>
+</main>
+
+<!-- ================= REJECT MODAL ================= -->
+<div id="rejectModal"
+ class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+
+<form method="POST" action="{% url 'reject_request' %}"
+ class="bg-white border-4 border-[#d52b1e] rounded-[30px] p-6 w-[400px]">
+ {% csrf_token %}
+
+ <h2 class="text-xl font-bold text-center mb-4">Reject Reason</h2>
+
+ <textarea name="reason" required
+  class="w-full border rounded-xl p-3 mb-4"
+  placeholder="Enter reason..."></textarea>
+
+ <input type="hidden" name="req_id" id="rejectReqId">
+
+ <button class="bg-[#d52b1e] text-white w-full py-2 rounded-full">
+   Submit
+ </button>
+
+ <button type="button" onclick="closeRejectModal()"
+  class="w-full mt-2">Cancel</button>
+</form>
+</div>
+
+<!-- ================= JS ================= -->
+<script>
+function selectAll(){
+  document.querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true)
+}
+function deselectAll(){
+  document.querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false)
+}
+function verifyCheck(){
+  const checked = document.querySelector('input[type=checkbox]:checked');
+  if(!checked){
+    alert("Select a student first");
+    return;
+  }
+}
+function openRejectModal(){
+  const checked = document.querySelector('input[type=checkbox]:checked');
+  if(!checked){
+    alert("Select a student first");
+    return;
+  }
+  document.getElementById("rejectReqId").value = checked.value;
+  document.getElementById("rejectModal").classList.remove("hidden");
+}
+
+function closeRejectModal(){
+  document.getElementById("rejectModal").classList.add("hidden");
+}
+</script>
+{% endblock %}

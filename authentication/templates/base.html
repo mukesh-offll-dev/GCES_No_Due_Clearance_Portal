@@ -1,0 +1,48 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>{% block title %}No Due Clearance{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-white min-h-screen flex flex-col">
+
+  <!-- ===== HEADER ===== -->
+  <header class="bg-[#d52b1e]">
+    <div class="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
+      
+      <!-- Logo -->
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center overflow-hidden p-1.5">
+          <img src="{% static 'gces_logo_0.png' %}" alt="Logo" class="w-full h-full object-contain">
+        </div>
+
+        <span class="text-white font-extrabold text-3xl tracking-wide">
+          GCES
+        </span>
+      </div>
+
+     <!-- Logout (show only if logged in) -->
+      {% if request.session.role or request.session.student_id %}
+      <a href="{% url 'logout' %}"
+        class="border-2 border-white text-white px-4 py-2 rounded-full font-semibold hover:bg-white hover:text-[#d52b1e] transition">
+        Log out
+      </a>
+      {% endif %}
+
+    </div>
+  </header>
+
+  <!-- ===== PAGE CONTENT ===== -->
+ 
+    {% block content %}
+    {% endblock %}
+ 
+<div class="space mb-20">
+
+</div>
+</body>
+</html>

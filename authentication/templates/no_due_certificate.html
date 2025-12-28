@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>No Due Certificate</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<style>
+  .a4-sheet {
+    width: 190mm;        /* 🔥 A4 vida chinna */
+    min-height: 270mm;
+    padding: 15mm;
+    background: white;
+    box-sizing: border-box;
+    margin: 0 auto;
+  }
+
+  @media print {
+    body {
+      margin: 0;
+    }
+    .a4-sheet {
+      page-break-after: always;
+    }
+  }
+  @media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="flex justify-center mt-6">
+  <div class="a4-sheet"   data-roll="{{ student.roll_no }}"
+     data-sem="{{ student.semester }}">
+
+    <!-- HEADER -->
+    <div class="text-center">
+      <h1 class="font-bold text-[15px]">
+        Government College of Engineering – Srirangam, Trichy-12
+      </h1>
+      <p class="underline font-bold mt-1 text-[14px]">
+        No Dues Certificate
+      </p>
+    </div>
+
+    <!-- STUDENT INFO -->
+    <div class="mt-8 grid grid-cols-2 gap-y-4 text-[13px]">
+      <p><b>Name :</b> {{ student.name }}</p>
+      <p><b>Roll No :</b> {{ student.roll_no }}</p>
+
+      <p><b>Year :</b> {{ student.year }}</p>
+      <p><b>Branch :</b> {{ student.branch }}</p>
+
+      <p><b>Register No :</b> {{ student.reg_no }}</p>
+      <p><b>Semester :</b> {{ student.semester }}</p>
+    </div>
+
+    <!-- NO DUES TABLE -->
+    <div class="mt-8 border border-black text-[13px]">
+
+      <div class="border-b border-black text-center font-bold py-2">
+        No Dues Status
+      </div>
+
+      <div class="grid grid-cols-2 border-b border-black">
+        <div class="border-r border-black py-3 text-center">Department</div>
+        <div class="py-3 text-center">{{ no_dues.DEPARTMENT }}</div>
+      </div>
+
+      <div class="grid grid-cols-2 border-b border-black">
+        <div class="border-r border-black py-3 text-center">Library</div>
+        <div class="py-3 text-center">{{ no_dues.LIBRARY }}</div>
+      </div>
+
+      <div class="grid grid-cols-2 border-b border-black">
+        <div class="border-r border-black py-3 text-center">Hostel Office</div>
+        <div class="py-3 text-center">{{ no_dues.HOSTEL }}</div>
+      </div>
+
+      <div class="grid grid-cols-2">
+        <div class="border-r border-black py-3 text-center">College Office</div>
+        <div class="py-3 text-center">{{ no_dues.COLLEGE }}</div>
+      </div>
+
+    </div>
+
+    <!-- SIGNATURE -->
+    <div class="mt-20 flex justify-between text-[13px] font-semibold">
+      <span>Student’s Signature</span>
+      <span>Faculty Advisor</span>
+       
+    </div>
+
+    <!-- DOWNLOAD BUTTON (SCREEN ONLY) -->
+    <div id="downloadBtn" class="no-print mt-8 flex justify-center">
+      <button onclick="downloadPDF()"
+        class="bg-blue-600 text-white px-6 py-2 rounded-full font-semibold shadow-lg">
+        Download PDF
+      </button>
+    </div>
+
+
+  </div>
+</div>
+
+
+
+
+
+<script>
+function downloadPDF() {
+  const element = document.querySelector(".a4-sheet");
+  const btn = document.getElementById("downloadBtn");
+
+  const roll = element.dataset.roll;
+  const sem = element.dataset.sem;
+
+  // 👉 Hide button before PDF
+  btn.style.display = "none";
+
+  const opt = {
+    margin: 0,
+    filename: `No_Dues_Sem_${sem}_Roll_${roll}.pdf`,
+    image: { type: 'jpeg', quality: 1 },
+    html2canvas: {
+      scale: 2,
+      scrollY: 0
+    },
+    jsPDF: {
+      unit: 'mm',
+      format: 'a4',
+      orientation: 'portrait'
+    }
+  };
+
+  html2pdf().set(opt).from(element).save().then(() => {
+    // 👉 Show button again after PDF download
+    btn.style.display = "flex";
+  });
+}
+</script>
+
+
+</body>
+</html>
