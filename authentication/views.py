@@ -9,7 +9,7 @@ from bson import ObjectId
 from django.conf import settings
 from .utils import save_receipt , reset_expired_no_dues
 import re
-
+import cloudinary.uploader
 
 # ================= INDEX = INSTITUTION LOGIN =================
 def index(request):
@@ -860,4 +860,5 @@ def edit_student(request):
 def logout_view(request):
     request.session.flush()
     return redirect("index")
+
 
