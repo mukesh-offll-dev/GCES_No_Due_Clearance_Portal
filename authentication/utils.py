@@ -3,15 +3,15 @@ import os
 from django.conf import settings
 from django.core.files.storage import default_storage
 from datetime import datetime, timedelta
-
+import cloudinary.uploader
 
 def save_receipt(file):
-    folder = "receipts"
-    filename = default_storage.save(
-        os.path.join(folder, file.name),
-        file
+    result = cloudinary.uploader.upload(
+        file,
+        folder="no_due_receipts",
+        resource_type="auto"   # 🔥 PDF + image both
     )
-    return filename   # 🔥 only relative path
+    return result["secure_url"]   # 🔥 URL save
 
 
 
@@ -45,4 +45,5 @@ def reset_expired_no_dues(no_due_col):
             }
         }
     )
+
 
