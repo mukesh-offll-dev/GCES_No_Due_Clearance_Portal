@@ -842,6 +842,7 @@ def edit_student(request):
                     "reg_no": request.POST["reg_no"],
                     "name": request.POST["name"],
                     "dob": request.POST["dob"],
+                    "year": int(request.POST["year"]),
                     "phone": request.POST["phone"],
                     "semester": int(request.POST["semester"])
                 }}
@@ -860,5 +861,6 @@ def edit_student(request):
 def logout_view(request):
     request.session.flush()
     return redirect("index")
+
 
 
