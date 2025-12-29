@@ -223,15 +223,25 @@ def send_hostel_request(request):
             receipt_url = upload["secure_url"]
             cloudinary_public_id = upload["public_id"]
 
-        no_due_col.insert_one({
-            "student_id": ObjectId(request.session["student_id"]),
-            "office": "HOSTEL",
-            "last_payment_id": request.POST.get("payment_id"),
-            "receipt_url": receipt_url,              # ✅ cloud URL
-            "cloudinary_public_id": cloudinary_public_id,  # ✅ for delete
-            "status": "PENDING",
-            "created_at": datetime.now()
-        })
+        no_due_col.update_one(
+            {
+                "student_id": ObjectId(request.session["student_id"]),
+                "office": "HOSTEL"
+            },
+            {
+                "$set": {
+                    "last_payment_id": request.POST.get("payment_id"),
+                    "receipt_url": receipt_url,
+                    "cloudinary_public_id": cloudinary_public_id,
+                    "status": "PENDING",
+                    "updated_at": datetime.now()
+                },
+                "$setOnInsert": {
+                    "created_at": datetime.now()
+                }
+            },
+            upsert=True   # 🔥 KEY POINT
+        )
 
     return redirect("student_dashboard")
 
@@ -861,6 +871,7 @@ def edit_student(request):
 def logout_view(request):
     request.session.flush()
     return redirect("index")
+
 
 
 
