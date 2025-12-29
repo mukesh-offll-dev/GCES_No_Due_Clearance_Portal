@@ -117,11 +117,11 @@
     <span class="text-sm font-semibold ">
       View Receipt
     </span>
-    <a href="{{ MEDIA_URL }}{{ r.receipt }}"
-       target="_blank"
-       class="text-blue-600 underline font-semibold hover:text-blue-800">
-      View Receipt
+    <a href="{{ r.receipt }}" target="_blank"
+       class="text-blue-600 underline font-semibold">
+       View Receipt
     </a>
+
   </div>
 {% else %}
   <span class="text-gray-400 text-sm">No Receipt</span>
@@ -212,3 +212,4 @@ function closeReject(){
 </script>
 
 {% endblock %}
+
