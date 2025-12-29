@@ -211,21 +211,29 @@ def no_due_certificate(request):
 def send_hostel_request(request):
     if request.method == "POST":
 
-        receipt_path = None
+        receipt_url = None
+        cloudinary_public_id = None
+
         if "receipt" in request.FILES:
-            receipt_path = save_receipt(request.FILES["receipt"])
+            upload = cloudinary.uploader.upload(
+                request.FILES["receipt"],
+                folder="no_dues/hostel",
+                resource_type="raw"
+            )
+            receipt_url = upload["secure_url"]
+            cloudinary_public_id = upload["public_id"]
 
         no_due_col.insert_one({
             "student_id": ObjectId(request.session["student_id"]),
             "office": "HOSTEL",
             "last_payment_id": request.POST.get("payment_id"),
-            "receipt": receipt_path,
+            "receipt_url": receipt_url,              # ✅ cloud URL
+            "cloudinary_public_id": cloudinary_public_id,  # ✅ for delete
             "status": "PENDING",
             "created_at": datetime.now()
         })
 
     return redirect("student_dashboard")
-
 
 
 @institution_login_required
@@ -408,15 +416,35 @@ def bulk_approve(request):
 
 @institution_login_required
 def reject_request(request):
+    req_id = request.POST.get("req_id")
+    reason = request.POST.get("reason")
+
+    # 🔹 Get existing request
+    req = no_due_col.find_one({"_id": ObjectId(req_id)})
+
+    # 🔥 If hostel + file exists → delete from Cloudinary
+    if req and req.get("office") == "HOSTEL":
+        public_id = req.get("cloudinary_public_id")
+        if public_id:
+            cloudinary.uploader.destroy(
+                public_id,
+                resource_type="raw"
+            )
+
+    # 🔁 Update DB
     no_due_col.update_one(
-        {"_id": ObjectId(request.POST["req_id"])},
+        {"_id": ObjectId(req_id)},
         {"$set": {
             "status": "REJECTED",
-            "reject_reason": request.POST["reason"],
+            "reject_reason": reason,
+            "receipt_url": None,
+            "cloudinary_public_id": None,
             "updated_at": datetime.now()
         }}
     )
+
     return redirect(request.META.get("HTTP_REFERER"))
+
 
 
 
@@ -832,3 +860,4 @@ def edit_student(request):
 def logout_view(request):
     request.session.flush()
     return redirect("index")
+
