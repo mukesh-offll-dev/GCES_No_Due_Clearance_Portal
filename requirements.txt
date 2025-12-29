@@ -5,4 +5,6 @@ dnspython
 whitenoise
 python-dotenv
 cloudinary
-cloudinary-storage
+django-cloudinary-storage
+
+
