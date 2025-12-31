@@ -237,10 +237,10 @@
           enctype="multipart/form-data">
       {% csrf_token %}
 
-      <label class="block font-semibold mb-1">Last Payment ID</label>
+      <label class="block font-semibold mb-1">Last Payment SBCollect Reference Number</label>
       <input name="payment_id"
              required
-             class="w-full border rounded-full px-4 py-2 mb-4" >
+             class="w-full border rounded-full px-4 py-2 mb-4" placeholder="DUO0000000" >
 
       <label class="block font-semibold mb-1">Attach Payment Screenshot</label>
       <input type="file"
@@ -305,5 +305,6 @@ function closeEditProfileModal() {
 
 
 {% endblock %}
+
 
 
