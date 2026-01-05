@@ -226,21 +226,23 @@
 
     <!-- Close -->
     <button onclick="closeHostelModal()"
-            class="absolute top-3 right-4 text-xl font-bold">✖</button>
+            class="absolute top-3 right-4 text-xl font-bold" id="clbtn">✖</button>
 
     <h2 class="text-center text-[#d52b1e] font-bold text-xl mb-4">
       Hostel Verification
     </h2>
 
     <form method="POST"
-          action="{% url 'send_hostel' %}"
-          enctype="multipart/form-data">
+      action="{% url 'send_hostel' %}"
+      enctype="multipart/form-data"
+      onsubmit="handleHostelSubmit()">
+
       {% csrf_token %}
 
-      <label class="block font-semibold mb-1">Last Payment SBCollect Reference Number</label>
+      <label class="block font-semibold mb-1">Last Payment ID</label>
       <input name="payment_id"
              required
-             class="w-full border rounded-full px-4 py-2 mb-4" placeholder="DUO0000000" >
+             class="w-full border rounded-full px-4 py-2 mb-4" >
 
       <label class="block font-semibold mb-1">Attach Payment Screenshot</label>
       <input type="file"
@@ -250,9 +252,11 @@
              class="mb-5">
 
       <button
-        class="w-full bg-[#d52b1e] text-white py-2 rounded-full font-semibold">
-        Send for Verification
+        id="hostelSubmitBtn"
+        class="w-full bg-[#d52b1e] text-white py-2 rounded-full font-semibold flex justify-center items-center gap-2">
+        <span id="hostelBtnText">Send for Verification</span>
       </button>
+
     </form>
   </div>
 </div>
@@ -273,13 +277,17 @@ function closeHostelModal() {
   document.getElementById("hostelModal").classList.add("hidden");
 }
 
+let sending = false;
+
 function confirmRequest() {
+  if (sending) return; 
+  sending = true;
+
   closeConfirmModal();
 
   if (selectedOffice === "HOSTEL") {
     document.getElementById("hostelModal").classList.remove("hidden");
   } else {
-    // auto submit for other offices
     fetch("{% url 'send_no_due' %}", {
       method: "POST",
       headers: {
@@ -293,6 +301,7 @@ function confirmRequest() {
 
 
 
+
  
 function openEditProfileModal() {
   document.getElementById("editProfileModal").classList.remove("hidden");
@@ -301,10 +310,41 @@ function openEditProfileModal() {
 function closeEditProfileModal() {
   document.getElementById("editProfileModal").classList.add("hidden");
 }
+
+ 
+let hostelSubmitting = false;
+
+function handleHostelSubmit() {
+  if (hostelSubmitting) {
+    return false; // ❌ block double submit
+  }
+
+  hostelSubmitting = true;
+
+  const btn = document.getElementById("hostelSubmitBtn");
+  const text = document.getElementById("hostelBtnText");
+  const clbtn = document.getElementById("clbtn");
+  clbtn.disabled = true;
+  btn.disabled = true;
+  btn.classList.add("opacity-70", "cursor-not-allowed");
+
+  text.innerHTML = `
+    <svg class="animate-spin h-5 w-5 text-white"
+         viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10"
+        stroke="white"
+        stroke-width="4"
+        fill="none"
+        stroke-dasharray="31.4"
+        stroke-linecap="round"/>
+    </svg>
+    <span>Sending...</span>
+  `;
+
+  return true; // ✅ allow submit once
+}
+ 
 </script>
 
 
 {% endblock %}
-
-
-
