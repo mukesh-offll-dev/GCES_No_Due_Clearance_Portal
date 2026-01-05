@@ -206,7 +206,6 @@ def no_due_certificate(request):
 
 
     
-    
 @institution_login_required
 def send_hostel_request(request):
     if request.method == "POST":
@@ -861,6 +860,7 @@ def edit_student(request):
 def logout_view(request):
     request.session.flush()
     return redirect("index")
+
 
 
 
