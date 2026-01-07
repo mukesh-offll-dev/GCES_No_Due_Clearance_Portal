@@ -38,7 +38,7 @@ def reset_expired_no_dues(no_due_col):
     # ========== PENDING → NOT_SENT ==========
     expired_pending = no_due_col.find({
         "status": "PENDING",
-        "created_at": {"$lte": now - timedelta(minutes=1)}
+        "created_at": {"$lte": now - timedelta(minutes=15)}
     })
 
     for req in expired_pending:
@@ -60,7 +60,7 @@ def reset_expired_no_dues(no_due_col):
     # ========== APPROVED → NOT_SENT ==========
     expired_approved = no_due_col.find({
         "status": "APPROVED",
-        "updated_at": {"$lte": now - timedelta(minutes=5)}
+        "updated_at": {"$lte": now - timedelta(minutes=30)}
     })
 
     for req in expired_approved:
@@ -129,5 +129,6 @@ def reset_expired_no_dues(no_due_col):
                 "updated_at": now
             }}
         )
+
 
 
