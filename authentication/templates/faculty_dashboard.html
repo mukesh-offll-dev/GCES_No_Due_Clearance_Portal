@@ -126,7 +126,6 @@
           '{{ s.phone }}',
           '{{ s.semester }}',
           '{{ s.year }}'
-          
         )"
         class="text-blue-600 font-semibold">
         Edit
@@ -156,18 +155,46 @@
  class="bg-white border-4 border-[#d52b1e] rounded-[30px] p-6 w-[350px]">
 {% csrf_token %}
 <h2 class="text-xl font-bold text-center mb-4">Create Student Profile</h2>
-<input name="roll_no" class="w-full border rounded-full px-4 py-2 mb-2" placeholder="Roll no">
-<input name="reg_no" class="w-full border rounded-full px-4 py-2 mb-2" placeholder="Register no">
-<input name="name" class="w-full border rounded-full px-4 py-2 mb-2" placeholder="Name">
+
+<label class="block text-sm font-medium mb-1">Roll No</label>
+<input name="roll_no"
+       class="w-full border rounded-full px-4 py-2 mb-2"
+       placeholder="Roll No"
+       required>
+
+<label class="block text-sm font-medium mb-1">Register No</label>
+<input name="reg_no"
+       class="w-full border rounded-full px-4 py-2 mb-2"
+       placeholder="Register No"
+       required>
+
+<label class="block text-sm font-medium mb-1">Name</label>
+<input name="name"
+       class="w-full border rounded-full px-4 py-2 mb-2"
+       placeholder="Student Name"
+       required>
+
+<label class="block text-sm font-medium mb-1">Semester</label>
 <input name="semester"
        type="number"
        min="1"
        max="8"
-       required
        class="w-full border rounded-full px-4 py-2 mb-2"
-       placeholder="Semester (1 - 8)">
-<input name="dob" type="date" class="w-full border rounded-full px-4 py-2 mb-2">
-<input name="phone" class="w-full border rounded-full px-4 py-2 mb-3" placeholder="Phone">
+       placeholder="Semester (1 - 8)"
+       required>
+
+<label class="block text-sm font-medium mb-1">Date of Birth</label>
+<input name="dob"
+       type="date"
+       class="w-full border rounded-full px-4 py-2 mb-2"
+       required>
+
+<label class="block text-sm font-medium mb-1">Phone Number</label>
+<input name="phone"
+       class="w-full border rounded-full px-4 py-2 mb-3"
+       placeholder="Phone Number"
+       required>
+
 <input type="hidden" name="branch" value="{{ branch }}">
 <input type="hidden" name="year" value="{{ year }}">
 <button class="bg-[#d52b1e] text-white w-full py-2 rounded-full">Submit</button>
@@ -231,6 +258,7 @@
 </button>
 
 </form>
+
 </div>
 
 <!-- ================= DELETE CONFIRM ================= -->
@@ -408,4 +436,3 @@ function closeNoDueModal() {
 </script>
 
 {% endblock %}
-
