@@ -80,6 +80,19 @@
       </div>
       {% endif %}
 
+      <div>
+        {% if branch and year %}
+        <div class="max-w-6xl mx-auto mb-4">
+          <input 
+            type="text"
+            id="regSearch"
+            onkeyup="searchByRegNo()"
+            placeholder="Search by Register Number..."
+            class="w-full border-2 border-[#d52b1e] rounded-full px-6 py-2"
+          >
+        </div>
+        {% endif %}
+      </div>
       
     </div>
 
@@ -90,10 +103,14 @@
   <section class="border-2 border-[#d52b1e] rounded-[40px] px-6 py-6">
 
     {% if branch and year %}
+    <p id="noResult"
+      class="hidden text-center font-semibold text-red-600 mt-4">
+      No student found for this Register Number
+    </p>
 
       {% for r in requests %}
-      <div class="border rounded-[20px] p-5 mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-
+      <div class="request-card border rounded-[20px] p-5 mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+     data-reg="{{ r.student.reg_no }}">
         <!-- DETAILS -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm font-medium">
 
@@ -112,16 +129,16 @@
             <p class="text-gray-700">{{ r.last_payment_id }}</p>
           </div>
 
-       {% if r.receipt_url %}
+          {% if r.receipt_url %}
           <div class="flex flex-col gap-1 text-right">
             <span class="text-sm font-semibold ">
               View Receipt
-            </span>
-            <a href="{{ r.receipt_url }}" target="_blank"
-              class="text-blue-600 underline font-semibold">
-              View Receipt
-            </a>
-          </div>
+          </span>
+          <a href="{{ r.receipt_url }}" target="_blank"
+            class="text-blue-600 underline font-semibold">
+            View Receipt
+          </a>
+        </div>
 {% else %}
   <span class="text-gray-400 text-sm">No Receipt</span>
 {% endif %}
@@ -129,7 +146,7 @@
 
 
         </div>
-
+`
         <!-- ACTIONS -->
         <div class="flex gap-4">
 
@@ -208,8 +225,32 @@ function openReject(id){
 function closeReject(){
   document.getElementById("rejectModal").classList.add("hidden");
 }
+ 
+function searchByRegNo(){
+  let input = document.getElementById("regSearch").value.toLowerCase();
+  let cards = document.querySelectorAll(".request-card");
+  let noResult = document.getElementById("noResult");
+
+  let found = false;
+
+  cards.forEach(card => {
+    let regNo = card.getAttribute("data-reg").toLowerCase();
+
+    if (regNo.includes(input)) {
+      card.style.display = "flex";
+      found = true;
+    } else {
+      card.style.display = "none";
+    }
+  });
+
+  // Show message only when no match AND something is typed
+  if (input !== "" && !found) {
+    noResult.classList.remove("hidden");
+  } else {
+    noResult.classList.add("hidden");
+  }
+}
 </script>
 
 {% endblock %}
-
-
