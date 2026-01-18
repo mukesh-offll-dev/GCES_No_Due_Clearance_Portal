@@ -265,7 +265,50 @@
   </div>
 </div>
 
+<!-- LOGIN POPUP MESSAGE -->
+<div id="loginPopup"
+     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+
+  <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-[380px] text-center relative">
+
+    <button onclick="closeLoginPopup()"
+            class="absolute top-3 right-4 text-xl font-bold">✖</button>
+
+    <h3 class="text-[#d52b1e] font-bold text-lg mb-3">
+      Important Notice
+    </h3>
+
+    <p class="text-gray-900">
+      Student, please check your current Year and Semester correctly
+      before sending any No-Due request to the office.
+    </p>
+
+    
+
+  </div>
+</div>
+
 <script>
+
+  function openLoginPopup() {
+  document.getElementById("loginPopup").classList.remove("hidden");
+
+  // Auto close after 7 seconds
+  setTimeout(() => {
+    closeLoginPopup();
+  }, 7000);
+}
+
+function closeLoginPopup() {
+  document.getElementById("loginPopup").classList.add("hidden");
+}
+
+// 🔥 IMPORTANT — Show popup when page loads (student login)
+window.onload = function() {
+  openLoginPopup();
+};
+
+
 let selectedOffice = null;
 let selectedBtn = null;
 let sending = false;
