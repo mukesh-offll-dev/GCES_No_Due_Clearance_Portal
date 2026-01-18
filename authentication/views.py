@@ -400,17 +400,48 @@ def library_dashboard(request):
         "year_summary": year_summary
     })
 
+
+
+def mark_final_clearance(student_id):
+    approved_count = no_due_col.count_documents({
+        "student_id": student_id,
+        "status": "APPROVED"
+    })
+
+    student = students_col.find_one({"_id": student_id})
+
+    if (
+        approved_count == 4 and
+        student["year"] == 4 and
+        student["semester"] == 8 and
+        not student.get("final_no_due_approved_at")
+    ):
+        students_col.update_one(
+            {"_id": student_id},
+            {"$set": {
+                "final_no_due_approved_at": datetime.now()
+            }}
+        )
+        
+        
+        
+        
 @institution_login_required
 def bulk_approve(request):
     ids = request.POST.getlist("request_ids")
+    object_ids = [ObjectId(i) for i in ids]
 
-    if ids:
+    if object_ids:
         no_due_col.update_many(
-            {"_id": {"$in": [ObjectId(i) for i in ids]}},
+            {"_id": {"$in": object_ids}},
             {"$set": {"status": "APPROVED", "updated_at": datetime.now()}}
         )
 
+        for req in no_due_col.find({"_id": {"$in": object_ids}}):
+            mark_final_clearance(req["student_id"])
+
     return redirect(request.META.get("HTTP_REFERER"))
+
 
 
 @institution_login_required
@@ -860,6 +891,7 @@ def edit_student(request):
 def logout_view(request):
     request.session.flush()
     return redirect("index")
+
 
 
 
