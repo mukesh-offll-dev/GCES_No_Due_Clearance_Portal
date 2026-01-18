@@ -111,27 +111,37 @@
 
     {% if requests %}
         {% for r in requests %}
-        <div class="border rounded-[20px] p-5 mb-4
-                    flex justify-between items-center">
+        <div class="border-2 border-[#d52b1e] rounded-[24px] p-6 mb-4 
+            flex justify-between items-center shadow-sm">
 
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-6 font-medium">
-            <div>
-              <b>Roll no</b><br>{{ r.student.roll_no }}
-            </div>
-            <div>
-              <b>Name</b><br>{{ r.student.name }}
-            </div>
-            <div>
-              <b>Year</b><br>{{ r.student.year }}
-            </div>
-            <div>
-              <b>Branch</b><br>{{ r.student.branch }}
-            </div>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 font-medium text-left w-full">
+
+          <div class="border-r pr-4">
+            <b class="block mb-1">Roll no</b>
+            <span class="text-gray-700">{{ r.student.roll_no }}</span>
           </div>
 
-          <input type="checkbox" name="request_ids"
-                 value="{{ r.id }}" class="w-6 h-6">
+          <div class="border-r pr-4">
+            <b class="block mb-1">Name</b>
+            <span class="text-gray-700">{{ r.student.name }}</span>
+          </div>
+
+          <div class="border-r pr-4">
+            <b class="block mb-1">Year</b>
+            <span class="text-gray-700">{{ r.student.year }}</span>
+          </div>
+
+          <div>
+            <b class="block mb-1">Branch</b>
+            <span class="text-gray-700">{{ r.student.branch }}</span>
+          </div>
+
         </div>
+
+        <input type="checkbox" name="request_ids"
+              value="{{ r.id }}" class="w-6 h-6 ml-4">
+      </div>
+
         {% endfor %}
 
     {% else %}
