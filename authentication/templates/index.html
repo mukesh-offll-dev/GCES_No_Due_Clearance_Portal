@@ -104,7 +104,8 @@
 
     </div>
 
-</div>
+</div>  
+
 <footer class="bg-gray-800 text-gray-200 mt-16">
   <div class="max-w-6xl mx-auto px-6 py-10">
 
@@ -164,10 +165,11 @@
 
   </div>
 </footer>
+
 <!-- SCRIPT -->
 <script>
 function toggleDepartment() {
-    const office = document.getElementById("office").value;
+    const office = document.getElementById("office").value; 
     const deptDiv = document.getElementById("departmentDiv");
     deptDiv.classList.toggle("hidden", office !== "department");
 }
@@ -180,6 +182,5 @@ window.onload = () => {
 }
 </script>
 {% endblock %}
-
 
  
