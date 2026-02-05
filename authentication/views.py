@@ -1,6 +1,4 @@
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from datetime import datetime , timedelta
+from datetime import datetime , date
 from .decorators import institution_login_required 
 from .institution_users import INSTITUTION_USERS
 from .mongo import institution_logs , students_col , no_due_col
@@ -10,6 +8,9 @@ from django.conf import settings
 from .utils import save_receipt , reset_expired_no_dues
 import re
 import cloudinary.uploader
+from django.http import HttpResponse
+from openpyxl import Workbook ,load_workbook 
+
 
 # ================= INDEX = INSTITUTION LOGIN =================
 def index(request):
@@ -1034,6 +1035,7 @@ def import_students_excel(request):
 def logout_view(request):
     request.session.flush()
     return redirect("index")
+
 
 
 
