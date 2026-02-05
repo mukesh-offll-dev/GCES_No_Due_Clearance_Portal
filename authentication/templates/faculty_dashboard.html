@@ -48,6 +48,86 @@
 </p>
 {% endif %}
 
+  
+{% for message in messages %}
+<div class="relative px-6 py-3 rounded-xl font-semibold
+  {% if message.tags == 'success' %}
+    bg-green-100 text-green-800
+  {% elif message.tags == 'warning' %}
+    bg-yellow-100 text-yellow-800
+  {% elif message.tags == 'error' %}
+    bg-red-100 text-red-800
+  {% endif %}
+">
+  <button onclick="this.parentElement.remove()"
+    class="absolute top-2 right-3 font-bold">✖</button>
+
+  <pre class="whitespace-pre-wrap">{{ message }}</pre>
+</div>
+{% endfor %}
+
+  
+{% if branch and year %}
+<!-- Bottom Row : Download + Upload -->
+<div class="border-2 border-[#d52b1e] rounded-3xl p-5 flex flex-col md:flex-row
+            items-center justify-between gap-4 mt-6 bg-white shadow-sm mb-6">
+
+  <!-- LEFT : Download -->
+  <div class="flex items-center gap-3">
+    <span class="font-semibold text-gray-700">Excel Template</span>
+
+    <a href="{% url 'download_student_template' %}"
+       onclick="return confirm('Do you want to download the Excel template?')"
+       class="bg-green-600 hover:bg-green-700 text-white
+              px-6 py-2 rounded-full font-semibold transition">
+      Download
+    </a>
+  </div>
+
+  <!-- RIGHT : Upload -->
+  <form method="POST"
+        action="{% url 'import_students_excel' %}"
+        enctype="multipart/form-data"
+        class="flex flex-wrap items-center gap-3">
+    {% csrf_token %}
+    <input type="hidden" name="branch" value="{{ branch }}">
+    <input type="hidden" name="year" value="{{ year }}">
+
+    <input type="file"
+           name="excel"
+           accept=".xlsx, .xls"
+           required
+           class="border-2 border-gray-300 rounded-lg px-3 py-1.5
+                  text-sm file:mr-3 file:px-4 file:py-1
+                  file:border-0 file:rounded-full
+                  file:bg-gray-200 file:font-semibold">
+
+   <button id="importBtn"
+        type="submit"
+        class="bg-blue-600 text-white px-6 py-2 rounded-full font-semibold
+               flex items-center gap-2 transition">
+  <span id="importText">Import</span>
+
+  <!-- spinner -->
+  <svg id="importSpinner"
+       class="hidden animate-spin h-5 w-5 text-white"
+       xmlns="http://www.w3.org/2000/svg" fill="none"
+       viewBox="0 0 24 24">
+    <circle class="opacity-25" cx="12" cy="12" r="10"
+            stroke="currentColor" stroke-width="4"></circle>
+    <path class="opacity-75" fill="currentColor"
+          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z">
+    </path>
+  </svg>
+</button>
+
+    
+    </form>
+
+</div>
+{% endif %}
+
+  
 <!-- DELETE FORM (wraps students) -->
 <form id="deleteForm" method="POST" action="{% url 'delete_students' %}">
 {% csrf_token %}
@@ -436,3 +516,4 @@ function closeNoDueModal() {
 </script>
 
 {% endblock %}
+
