@@ -1,3 +1,5 @@
+from django.shortcuts import render, redirect
+from django.contrib import messages
 from datetime import datetime , date
 from .decorators import institution_login_required 
 from .institution_users import INSTITUTION_USERS
@@ -236,6 +238,7 @@ def send_hostel_request(request):
     return redirect("student_dashboard")
 
 
+
 @institution_login_required
 def hostel_dashboard(request):
     if request.session.get("role") != "HOSTEL":
@@ -317,7 +320,7 @@ def hostel_dashboard(request):
     })
 
 
-
+ 
 
 # ================= LIBRARY PAGE =================
 @institution_login_required
@@ -403,6 +406,7 @@ def library_dashboard(request):
 
 
 
+
 def mark_final_clearance(student_id):
     approved_count = no_due_col.count_documents({
         "student_id": student_id,
@@ -475,8 +479,6 @@ def reject_request(request):
     )
 
     return redirect(request.META.get("HTTP_REFERER"))
-
-
 
 
 @institution_login_required
@@ -1030,17 +1032,7 @@ def import_students_excel(request):
 
     return redirect(f"/faculty/?branch={branch}&year={year}")
 
-
 # ================= LOGOUT =================
 def logout_view(request):
     request.session.flush()
     return redirect("index")
-
-
-
-
-
-
-
-
-
