@@ -1,6 +1,6 @@
 from django.urls import path
-from .views import index, library_dashboard, logout_view, faculty_dashboard, add_student , delete_students , edit_student, student_login, student_dashboard, send_hostel_request, college_dashboard, department_dashboard, hostel_dashboard, bulk_approve, reject_request, send_no_due_request, retry_request, update_student_profile , no_due_certificate
-from django.conf import settings
+from .views import index, library_dashboard, logout_view, faculty_dashboard, add_student , delete_students , edit_student, student_login, student_dashboard, send_hostel_request, college_dashboard, department_dashboard, hostel_dashboard, bulk_approve, reject_request, send_no_due_request, retry_request, update_student_profile , no_due_certificate , download_student_template, import_students_excel
+ 
 from django.conf.urls.static import static
 
 urlpatterns = [
@@ -11,7 +11,6 @@ urlpatterns = [
     path("college/",college_dashboard, name="college_dashboard"),
     path("department/",department_dashboard, name="department_dashboard"),
     path("hostel/",hostel_dashboard, name="hostel_dashboard"),
-
     # Actions
     path("approve/",bulk_approve, name="bulk_approve"),
     path("reject/",reject_request, name="reject_request"),
@@ -32,10 +31,10 @@ urlpatterns = [
     path("faculty/add-student/", add_student, name="add_student"),
     path("faculty/delete/", delete_students, name="delete_students"),
     path("faculty/edit/", edit_student, name="edit_student"),
-    
+    path("faculty/template/", download_student_template, name="download_student_template"),
+    path("faculty/import/", import_students_excel, name="import_students_excel")
+
     
 ]
 
-
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+ 
