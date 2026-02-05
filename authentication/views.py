@@ -886,11 +886,155 @@ def edit_student(request):
 
 
 
+@institution_login_required
+def download_student_template(request):
+    if request.session.get("role") != "FACULTY":
+        return redirect("index")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Student Template"
+
+    # 🧾 Headers
+    headers = ["roll_no", "reg_no", "name", "dob", "phone", "semester"]
+    ws.append(headers)
+
+    # 🔥 Set column width (optional – better UX)
+    ws.column_dimensions["A"].width = 15
+    ws.column_dimensions["B"].width = 18
+    ws.column_dimensions["C"].width = 22
+    ws.column_dimensions["D"].width = 15
+    ws.column_dimensions["E"].width = 15
+    ws.column_dimensions["F"].width = 12
+
+    # 🔥 Force DOB column to yyyy-mm-dd
+    for row in range(2, 500):   # allow 500 students
+        cell = ws[f"D{row}"]
+        cell.number_format = "yyyy-mm-dd"
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="student_template.xlsx"'
+
+    wb.save(response)
+    return response
+
+
+@institution_login_required
+def import_students_excel(request):
+    print("Import Students Excel called")
+
+    # 🔐 ROLE CHECK
+    if request.session.get("role") != "FACULTY":
+        return redirect("index")
+
+    if request.method != "POST":
+        return redirect("faculty_dashboard")
+
+    excel = request.FILES.get("excel")
+    branch = request.POST.get("branch")
+    year = request.POST.get("year")
+
+    if not excel:
+        messages.error(request, "No Excel file uploaded ❌")
+        return redirect(f"/faculty/?branch={branch}&year={year}")
+
+    inserted = 0
+    skipped = 0
+    skipped_students = []   # name + reason
+
+    try:
+        wb = load_workbook(excel)
+        ws = wb.active
+
+        for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+
+            # Expected columns
+            if len(row) < 6:
+                skipped += 1
+                skipped_students.append(f"Row {idx} (Invalid column format)")
+                continue
+
+            roll_no, reg_no, name, dob, phone, semester = row
+
+            # 🛑 Completely empty row → IGNORE
+            if not any([roll_no, reg_no, name, dob, phone, semester]):
+                continue
+
+            # 🛑 Mandatory field missing
+            if not roll_no or not reg_no or not name:
+                skipped += 1
+                skipped_students.append(
+                    f"{name or 'Unknown'} (Row {idx} – Missing RegNo / RollNo)"
+                )
+                continue
+
+            # 🔧 CLEAN VALUES
+            roll_no = str(roll_no).strip().upper()
+            reg_no = str(reg_no).strip()
+            name = str(name).strip().upper()
+            phone = str(phone).strip()
+
+            # 🔥 DOB FIX → remove 00:00:00
+            if isinstance(dob, (datetime, date)):
+                dob = dob.strftime("%Y-%m-%d")
+            else:
+                dob = str(dob).strip()
+
+            # 🛑 Duplicate check
+            exists = students_col.find_one({
+                "$or": [
+                    {"roll_no": roll_no},
+                    {"reg_no": reg_no}
+                ]
+            })
+
+            if exists:
+                skipped += 1
+                skipped_students.append(
+                    f"{name} (Duplicate RegNo / RollNo)"
+                )
+                continue
+
+            # ✅ INSERT STUDENT
+            students_col.insert_one({
+                "roll_no": roll_no,
+                "reg_no": reg_no,
+                "name": name,
+                "dob": dob,                 # ✅ yyyy-mm-dd only
+                "phone": phone,
+                "branch": branch,
+                "year": int(year),
+                "semester": int(semester)
+            })
+
+            inserted += 1
+
+        # ✅ SUCCESS MESSAGE
+        messages.success(
+            request,
+            f"Excel Import Completed ✅ Added: {inserted}, Skipped: {skipped}"
+        )
+
+        # ⚠️ SKIPPED DETAILS
+        if skipped_students:
+            messages.warning(
+                request,
+                "Skipped Students:\n" + "\n".join(skipped_students)
+            )
+
+    except Exception as e:
+        messages.error(request, f"Excel import failed ❌ {str(e)}")
+
+    return redirect(f"/faculty/?branch={branch}&year={year}")
+
 
 # ================= LOGOUT =================
 def logout_view(request):
     request.session.flush()
     return redirect("index")
+
 
 
 
