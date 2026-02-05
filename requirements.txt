@@ -6,5 +6,6 @@ whitenoise
 python-dotenv
 cloudinary
 django-cloudinary-storage
+openpyxl
 
 
