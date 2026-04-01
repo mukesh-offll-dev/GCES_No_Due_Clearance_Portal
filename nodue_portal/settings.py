@@ -29,8 +29,16 @@ CSRF_TRUSTED_ORIGINS = [
     "https://gces-no-due-clearance-portal.onrender.com",
 ]
 
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+# ================= COOKIE SECURITY =================
+# Secure cookies only over HTTPS (production). Disabled on localhost (HTTP).
+SESSION_COOKIE_SECURE = not DEBUG   # True in prod, False in local dev
+CSRF_COOKIE_SECURE    = not DEBUG   # True in prod, False in local dev
+
+# ================= SESSION SETTINGS =================
+SESSION_COOKIE_AGE         = 60 * 60 * 2  # 2 hours in seconds
+SESSION_SAVE_EVERY_REQUEST = True          # Slide expiry window on every request
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False    # Survive tab close within cookie age
+SESSION_COOKIE_HTTPONLY    = True          # JS cannot read the session cookie
 
 # ================= APPS =================
 INSTALLED_APPS = [

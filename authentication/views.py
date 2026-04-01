@@ -14,8 +14,26 @@ from django.http import HttpResponse
 from openpyxl import Workbook ,load_workbook 
 
 
+# =================== HELPER: ROLE → REDIRECT NAME ====================
+_ROLE_REDIRECT = {
+    "LIBRARY":    "library_dashboard",
+    "HOSTEL":     "hostel_dashboard",
+    "COLLEGE":    "college_dashboard",
+    "FACULTY":    "faculty_dashboard",
+    "DEPARTMENT": "department_dashboard",
+    "STUDENT":    "student_dashboard",
+}
+
+
 # ================= INDEX = INSTITUTION LOGIN =================
 def index(request):
+    # ── If a valid session already exists, skip the login page ──
+    role = request.session.get("role")
+    if role:
+        dest = _ROLE_REDIRECT.get(role)
+        if dest:
+            return redirect(dest)
+
     if request.method == "POST":
         office = request.POST.get("office")
         username = request.POST.get("username")
@@ -73,6 +91,10 @@ def index(request):
 
 
 def student_login(request):
+    # ── Already logged in as STUDENT? Skip login ──
+    if request.session.get("role") == "STUDENT" and request.session.get("student_id"):
+        return redirect("student_dashboard")
+
     if request.method == "POST":
         reg_no = request.POST.get("reg_no", "").strip()
         dob = request.POST.get("dob", "").strip()
@@ -88,7 +110,7 @@ def student_login(request):
             request.session["student_error"] = "Invalid Date of Birth"
             return redirect("index")
 
-        # 🔎 CHECK STUDENT
+        # 🔎 CHECK STUDENT IN DB
         student = students_col.find_one({
             "reg_no": reg_no,
             "dob": dob
@@ -99,7 +121,14 @@ def student_login(request):
             return redirect("index")
 
         # ================= LOGIN SUCCESS =================
-        request.session["role"] = "STUDENT"          # ✅ REQUIRED
+        # 🔒 Cycle session ID (prevent session-fixation attacks).
+        # Falls back silently if the session was never persisted yet.
+        try:
+            request.session.cycle_key()
+        except Exception:
+            request.session.flush()
+
+        request.session["role"]       = "STUDENT"
         request.session["student_id"] = str(student["_id"])
 
         return redirect("student_dashboard")
