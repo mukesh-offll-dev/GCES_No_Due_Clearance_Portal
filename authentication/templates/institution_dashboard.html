@@ -2,19 +2,19 @@
 {% block title %}{{ office_name }}{% endblock %}
 
 {% block content %}
-<main class="max-w-6xl mx-auto px-6 py-6">
+<main class="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
 
 <!-- PAGE TITLE -->
-<div class="flex justify-center mb-6">
-  <div class="bg-[#d52b1e] text-white px-14 py-3 rounded-full text-xl font-bold">
+  <div class="flex justify-center mb-6 px-2">
+  <div class="bg-[#d52b1e] text-white px-6 sm:px-14 py-3 rounded-full text-lg sm:text-xl font-bold text-center">
     {{ office_name }}
   </div>
 </div>
 
 <!-- FILTER -->
 <form method="GET"
- class="border-2 border-[#d52b1e] rounded-[40px] p-6 mb-6
-        grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+ class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] p-4 sm:p-6 mb-6
+        grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 items-center bg-white shadow-sm">
 
   {% if office_name != "Department" %}
   <div>
@@ -79,29 +79,29 @@
 <!-- ACTION BAR -->
 <form method="POST" action="{% url 'bulk_approve' %}">
 {% csrf_token %}
-<div class="border-2 border-[#d52b1e] rounded-[40px] p-6 mb-6
-            flex justify-between items-center">
+<div class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] p-4 sm:p-6 mb-6
+            flex flex-wrap justify-between items-center gap-3 bg-white shadow-sm">
 
-  <div class="flex gap-4">
+  <div class="flex flex-wrap gap-2">
     <button type="button" onclick="selectAll()"
-      class="bg-gray-300 px-6 py-2 rounded-full font-semibold">
+      class="bg-gray-200 hover:bg-gray-300 px-5 py-2 rounded-full font-semibold text-sm transition">
       Select All
     </button>
     <button type="button" onclick="deselectAll()"
-      class="bg-gray-300 px-6 py-2 rounded-full font-semibold">
+      class="bg-gray-200 hover:bg-gray-300 px-5 py-2 rounded-full font-semibold text-sm transition">
       Deselect All
     </button>
   </div>
 
-  <div class="flex gap-4 items-end">
+  <div class="flex flex-wrap gap-2 items-center">
     <button 
       onclick="verifyCheck()"
-      class="bg-green-600 text-white px-6 py-2 rounded-full font-semibold">
-      Verify & Approve
+      class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-full font-semibold text-sm transition">
+      Verify &amp; Approve
     </button>
 
     <button type="button" onclick="openRejectModal()"
-      class="bg-[#d52b1e] text-white px-6 py-2 rounded-full font-semibold">
+      class="bg-[#d52b1e] hover:bg-red-800 text-white px-5 py-2 rounded-full font-semibold text-sm transition">
       Reject
     </button>
   </div>
@@ -114,7 +114,7 @@
         <div class="border-2 border-[#d52b1e] rounded-[24px] p-6 mb-4 
             flex justify-between items-center shadow-sm">
 
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 font-medium text-left w-full">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 font-medium text-left w-full">
 
           <div class="border-r pr-4">
             <b class="block mb-1">Roll no</b>
@@ -161,10 +161,10 @@
 
 <!-- ================= REJECT MODAL ================= -->
 <div id="rejectModal"
- class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+ class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
 
 <form method="POST" action="{% url 'reject_request' %}"
- class="bg-white border-4 border-[#d52b1e] rounded-[30px] p-6 w-[400px]">
+ class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm">
  {% csrf_token %}
 
  <h2 class="text-xl font-bold text-center mb-4">Reject Reason</h2>

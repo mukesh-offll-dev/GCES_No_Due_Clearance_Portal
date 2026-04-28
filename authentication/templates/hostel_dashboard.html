@@ -3,18 +3,18 @@
 
 {% block content %}
 
-<main class="max-w-6xl mx-auto px-6 py-6">
+<main class="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
 
   <!-- PAGE TITLE -->
   <div class="flex justify-center mt-4 mb-6">
-    <div class="bg-[#d52b1e] text-white font-semibold text-xl px-16 py-3 rounded-full">
+    <div class="bg-[#d52b1e] text-white font-semibold text-lg sm:text-xl px-6 sm:px-16 py-3 rounded-full text-center">
       Hostel Office
     </div>
   </div>
 
   <!-- FILTER CARD -->
   <form method="GET"
-        class="border-2 border-[#d52b1e] rounded-[40px] px-8 py-6 mb-6">
+        class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] px-4 sm:px-8 py-4 sm:py-6 mb-6 bg-white shadow-sm">
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
 
@@ -100,7 +100,7 @@
   </form>
 
   <!-- REQUEST LIST -->
-  <section class="border-2 border-[#d52b1e] rounded-[40px] px-6 py-6">
+  <section class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] px-4 sm:px-6 py-4 sm:py-6 bg-white shadow-sm">
 
     {% if branch and year %}
     <p id="noResult"
@@ -148,7 +148,7 @@
         </div>
 `
         <!-- ACTIONS -->
-        <div class="flex gap-4">
+        <div class="flex flex-wrap gap-3">
 
           <!-- APPROVE -->
           <form method="POST" action="{% url 'bulk_approve' %}">
@@ -187,10 +187,10 @@
 
 <!-- ================= REJECT MODAL ================= -->
 <div id="rejectModal"
-     class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+     class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
 
   <form method="POST" action="{% url 'reject_request' %}"
-        class="bg-white border-4 border-[#d52b1e] rounded-[30px] p-6 w-[380px]">
+        class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm">
 
     {% csrf_token %}
     <input type="hidden" name="req_id" id="rejectReqId">

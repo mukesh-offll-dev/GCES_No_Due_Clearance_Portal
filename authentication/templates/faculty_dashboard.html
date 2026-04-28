@@ -3,14 +3,14 @@
 
 {% block content %}
 
-<main class="max-w-6xl mx-auto p-6">
+<main class="max-w-6xl mx-auto px-4 sm:p-6">
 
 <!-- FILTER -->
 <form method="GET"
-  class="flex gap-6 border-2 border-[#d52b1e] p-6 rounded-3xl mb-6 items-center">
+  class="flex flex-wrap gap-3 sm:gap-6 border-2 border-[#d52b1e] p-4 sm:p-6 rounded-2xl sm:rounded-3xl mb-6 items-center bg-white shadow-sm">
 
   <select name="branch" onchange="this.form.submit()"
-    class="border rounded-full px-4 py-2 w-40">
+    class="border rounded-full px-4 py-2 w-full sm:w-44">
     <option value="">Select Branch</option>
     <option value="CSE" {% if branch == "CSE" %}selected{% endif %}>CSE</option>
     <option value="ECE" {% if branch == "ECE" %}selected{% endif %}>ECE</option>
@@ -21,7 +21,7 @@
   </select>
 
   <select name="year" onchange="this.form.submit()"
-    class="border rounded-full px-4 py-2 w-32">
+    class="border rounded-full px-4 py-2 w-full sm:w-36">
     <option value="">Select Year</option>
     <option value="1" {% if year == "1" %}selected{% endif %}>1</option>
     <option value="2" {% if year == "2" %}selected{% endif %}>2</option>
@@ -29,8 +29,8 @@
     <option value="4" {% if year == "4" %}selected{% endif %}>4</option>
   </select>
 
-  <span class="ml-auto bg-[#d52b1e] text-white px-6 py-2 rounded-full font-semibold">
-    Students Count - {{ count }}
+  <span class="sm:ml-auto bg-[#d52b1e] text-white px-4 sm:px-6 py-2 rounded-full font-semibold text-sm">
+    Students Count – {{ count }}
   </span>
 </form>
 
@@ -69,65 +69,69 @@
   
 {% if branch and year %}
 <!-- Bottom Row : Download + Upload -->
-<div class="border-2 border-[#d52b1e] rounded-3xl p-5 flex flex-col md:flex-row
-            items-center justify-between gap-4 mt-6 bg-white shadow-sm mb-6">
+<div class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-3xl p-4 sm:p-5 flex flex-col gap-4 mt-6 bg-white shadow-sm mb-6">
 
-  <!-- LEFT : Download -->
-  <div class="flex items-center gap-3">
-    <span class="font-semibold text-gray-700">Excel Template</span>
+  <p class="font-bold text-gray-800 text-base">Bulk Students Add</p>
 
-    <a href="{% url 'download_student_template' %}"
-       onclick="return confirm('Do you want to download the Excel template?')"
-       class="bg-green-600 hover:bg-green-700 text-white
-              px-6 py-2 rounded-full font-semibold transition">
-      Download
-    </a>
+  <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+    <!-- LEFT : Download -->
+    <div class="flex items-center gap-3">
+      <span class="font-semibold text-gray-700">Excel Template</span>
+      <a href="{% url 'download_student_template' %}"
+         onclick="return confirm('Do you want to download the Excel template?')"
+         class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full font-semibold transition">
+        Download
+      </a>
+    </div>
+
+    <!-- RIGHT : Upload -->
+    <form id="excelUploadForm"
+          method="POST"
+          action="{% url 'import_students_excel' %}"
+          enctype="multipart/form-data"
+          class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+      {% csrf_token %}
+      <input type="hidden" name="branch" value="{{ branch }}">
+      <input type="hidden" id="excelYearHidden" name="year" value="{{ year }}">
+
+      <input type="file"
+             name="excel"
+             accept=".xlsx, .xls"
+             required
+             id="excelFileInput"
+             class="border-2 border-gray-300 rounded-lg px-3 py-1.5
+                    text-sm file:mr-3 file:px-4 file:py-1
+                    file:border-0 file:rounded-full
+                    file:bg-gray-200 file:font-semibold">
+
+      <button id="importBtn" type="submit"
+              class="bg-blue-600 text-white px-6 py-2 rounded-full font-semibold flex items-center gap-2 transition">
+        <span id="importText">Import</span>
+        <svg id="importSpinner" class="hidden animate-spin h-5 w-5 text-white"
+             xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </button>
+    </form>
   </div>
 
-  <!-- RIGHT : Upload -->
-  <form method="POST"
-        action="{% url 'import_students_excel' %}"
-        enctype="multipart/form-data"
-        class="flex flex-wrap items-center gap-3">
-    {% csrf_token %}
-    <input type="hidden" name="branch" value="{{ branch }}">
-    <input type="hidden" name="year" value="{{ year }}">
+ 
 
-    <input type="file"
-           name="excel"
-           accept=".xlsx, .xls"
-           required
-           class="border-2 border-gray-300 rounded-lg px-3 py-1.5
-                  text-sm file:mr-3 file:px-4 file:py-1
-                  file:border-0 file:rounded-full
-                  file:bg-gray-200 file:font-semibold">
-
-   <button id="importBtn"
-        type="submit"
-        class="bg-blue-600 text-white px-6 py-2 rounded-full font-semibold
-               flex items-center gap-2 transition">
-  <span id="importText">Import</span>
-
-  <!-- spinner -->
-  <svg id="importSpinner"
-       class="hidden animate-spin h-5 w-5 text-white"
-       xmlns="http://www.w3.org/2000/svg" fill="none"
-       viewBox="0 0 24 24">
-    <circle class="opacity-25" cx="12" cy="12" r="10"
-            stroke="currentColor" stroke-width="4"></circle>
-    <path class="opacity-75" fill="currentColor"
-          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z">
-    </path>
-  </svg>
-</button>
-
-    
-    </form>
+  <!-- Excel row-level validation errors appear here -->
+  <div id="excelErrors" class="hidden">
+    <div class="bg-red-50 border border-red-300 rounded-xl px-4 py-3 text-sm text-red-800">
+      <p class="font-semibold mb-1">⚠️ Excel Validation Errors — Please fix and re-upload:</p>
+      <ul id="excelErrorList" class="list-disc list-inside space-y-1"></ul>
+    </div>
+  </div>
 
 </div>
 {% endif %}
 
-  
+
+
+
 <!-- DELETE FORM (wraps students) -->
 <form id="deleteForm" method="POST" action="{% url 'delete_students' %}">
 {% csrf_token %}
@@ -135,7 +139,7 @@
 <input type="hidden" name="year" value="{{ year }}">
 
 <!-- TOP BAR -->
-<div class="border-2 border-[#d52b1e] rounded-[40px] p-6 mb-6 flex justify-between items-center">
+<div class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] p-4 sm:p-6 mb-6 flex flex-wrap justify-between items-center gap-3 bg-white shadow-sm">
 
   <button type="button"
     {% if not branch or not year %}disabled{% endif %}
@@ -188,10 +192,10 @@
     </div>
 
     
-    <div class="flex gap-4 items-center">
+    <div class="flex flex-wrap gap-3 items-center">
           <button type="button"
             onclick="openNoDueModal('{{ s.id }}')"
-            class="bg-blue-600 text-white px-4 py-1.5 rounded-full text-sm font-semibold">
+            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-full text-sm font-semibold transition">
             No Due
           </button>
           
@@ -230,11 +234,13 @@
 </main>
 
 <!-- ================= ADD MODAL ================= -->
-<div id="addModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+<div id="addModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
 <form method="POST" action="{% url 'add_student' %}"
- class="bg-white border-4 border-[#d52b1e] rounded-[30px] p-6 w-[350px]">
+ class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm overflow-y-auto max-h-[90vh]">
 {% csrf_token %}
 <h2 class="text-xl font-bold text-center mb-4">Create Student Profile</h2>
+
+
 
 <label class="block text-sm font-medium mb-1">Roll No</label>
 <input name="roll_no"
@@ -255,15 +261,16 @@
        required>
 
 <label class="block text-sm font-medium mb-1">Semester</label>
-<input name="semester"
-       type="number"
-       min="1"
-       max="8"
-       class="w-full border rounded-full px-4 py-2 mb-2"
-       placeholder="Semester (1 - 8)"
-       required>
+<select id="add_sem" name="semester"
+        class="w-full border rounded-full px-4 py-2.5 mb-1"
+        required>
+  <option value="">Select semester</option>
+</select>
+<p id="addSemError" class="hidden text-red-600 text-xs mb-2 px-2">
+  ⚠️ Selected semester is not valid for the chosen year.
+</p>
 
-<label class="block text-sm font-medium mb-1">Date of Birth</label>
+<label class="block text-sm font-medium mb-1 mt-2">Date of Birth</label>
 <input name="dob"
        type="date"
        class="w-full border rounded-full px-4 py-2 mb-2"
@@ -276,16 +283,19 @@
        required>
 
 <input type="hidden" name="branch" value="{{ branch }}">
-<input type="hidden" name="year" value="{{ year }}">
-<button class="bg-[#d52b1e] text-white w-full py-2 rounded-full">Submit</button>
-<button type="button" onclick="closeAddModal()" class="w-full mt-2">Cancel</button>
+<input type="hidden" id="add_year_hidden" name="year" value="{{ year }}">
+<button type="button" onclick="submitAddForm()"
+        class="bg-[#d52b1e] hover:bg-red-800 text-white w-full py-2 rounded-full font-semibold transition">
+  Submit
+</button>
+<button type="button" onclick="closeAddModal()" class="w-full mt-2 text-gray-600">Cancel</button>
 </form>
 </div>
 
 <!-- ================= EDIT MODAL ================= -->
-<div id="editModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+<div id="editModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
 <form method="POST" action="{% url 'edit_student' %}"
- class="bg-white border-4 border-[#d52b1e] rounded-[24px] p-4 w-[300px]">
+ class="bg-white border-4 border-[#d52b1e] rounded-2xl p-4 w-full max-w-sm overflow-y-auto max-h-[90vh]">
 {% csrf_token %}
 
 <h2 class="text-lg font-bold text-center mb-3">Edit Student</h2>
@@ -305,21 +315,28 @@
 <input id="edit_name" name="name"
        class="w-full border rounded-full px-3 py-1.5 mb-2 text-sm">
 
+<label class="block text-sm font-semibold mb-1">Year</label>
+<select id="edit_year" name="year"
+        required
+        onchange="updateSemesterOptions('edit_year','edit_sem')"
+        class="w-full border rounded-full px-3 py-1.5 mb-3 text-sm">
+  <option value="1">1</option>
+  <option value="2">2</option>
+  <option value="3">3</option>
+  <option value="4">4</option>
+</select>
+
 <label class="block text-sm font-semibold mb-1">Semester</label>
-<input id="edit_sem" name="semester" type="number" min="1" max="8"
-       class="w-full border rounded-full px-3 py-1.5 mb-2 text-sm">
+<select id="edit_sem" name="semester"
+        required
+        class="w-full border rounded-full px-3 py-1.5 mb-1 text-sm">
+  <option value="">Select semester</option>
+</select>
+<p id="editSemError" class="hidden text-red-600 text-xs mb-2 px-2">
+  ⚠️ Selected semester is not valid for the chosen year.
+</p>
 
-<label class="block font-semibold mb-1">Year</label>
-      <select id="edit_year" name="year"
-              required
-              class="w-full border rounded-full px-4 py-2 mb-4">
-        <option value="1" {% if student.year == 1 %}selected{% endif %}>1</option>
-        <option value="2" {% if student.year == 2 %}selected{% endif %}>2</option>
-        <option value="3" {% if student.year == 3 %}selected{% endif %}>3</option>
-        <option value="4" {% if student.year == 4 %}selected{% endif %}>4</option>
-      </select>
-
-<label class="block text-sm font-semibold mb-1">DOB</label>
+<label class="block text-sm font-semibold mb-1 mt-2">DOB</label>
 <input id="edit_dob" name="dob" type="date"
        class="w-full border rounded-full px-3 py-1.5 mb-2 text-sm">
 
@@ -327,7 +344,8 @@
 <input id="edit_phone" name="phone"
        class="w-full border rounded-full px-3 py-1.5 mb-3 text-sm">
 
-<button class="bg-[#d52b1e] text-white w-full py-1.5 rounded-full text-sm">
+<button type="button" onclick="submitEditForm()"
+        class="bg-[#d52b1e] hover:bg-red-800 text-white w-full py-1.5 rounded-full text-sm font-semibold transition">
   Update
 </button>
 
@@ -412,16 +430,109 @@
 });
 
 
-function openAddModal(){addModal.classList.remove("hidden")}
-function closeAddModal(){addModal.classList.add("hidden")}
-function openEditModal(id,r,rg,n,d,p,sem,y){
-  edit_sem.value=sem; edit_year.value=y;
-  edit_id.value=id;edit_roll.value=r;edit_reg.value=rg;
-  edit_name.value=n;edit_dob.value=d;edit_phone.value=p;
+// ═══════════════════════════════════════════
+//  YEAR ↔ SEMESTER VALIDATION
+// ═══════════════════════════════════════════
+const YEAR_SEM_MAP = { '1':[1,2], '2':[3,4], '3':[5,6], '4':[7,8] };
 
-  editModal.classList.remove("hidden");
+/**
+ * Repopulate a semester <select> based on the chosen year.
+ * @param {string} yearSelectId  - id of the year <select>
+ * @param {string} semSelectId   - id of the semester <select>
+ * @param {number|string} [currentSem] - pre-select this value if valid
+ */
+function updateSemesterOptions(yearSelectId, semSelectId, currentSem) {
+  const year = document.getElementById(yearSelectId).value;
+  const semSel = document.getElementById(semSelectId);
+  const validSems = YEAR_SEM_MAP[year] || [];
+
+  semSel.innerHTML = '<option value="">Select semester</option>';
+  validSems.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s;
+    if (Number(currentSem) === s) opt.selected = true;
+    semSel.appendChild(opt);
+  });
 }
-function closeEditModal(){editModal.classList.add("hidden")}
+
+/** Returns true if sem is valid for year */
+function isSemValidForYear(year, sem) {
+  const valid = YEAR_SEM_MAP[String(year)] || [];
+  return valid.includes(Number(sem));
+}
+
+// ── Add Modal ────────────────────────────────
+function openAddModal() {
+  // populate semester options for the current (filter) year
+  const year = document.getElementById('add_year_hidden').value;
+  const semSel = document.getElementById('add_sem');
+  const validSems = YEAR_SEM_MAP[year] || [];
+
+  semSel.innerHTML = '<option value="">Select semester</option>';
+  validSems.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s; opt.textContent = s;
+    semSel.appendChild(opt);
+  });
+
+  // Update info banner
+  const banner = document.getElementById('addModalValidSems');
+  if (banner) banner.textContent = validSems.join(' & ');
+
+  document.getElementById('addSemError').classList.add('hidden');
+  addModal.classList.remove('hidden');
+}
+
+function closeAddModal() { addModal.classList.add('hidden'); }
+
+function submitAddForm() {
+  const year = document.getElementById('add_year_hidden').value;
+  const sem  = document.getElementById('add_sem').value;
+  const errEl = document.getElementById('addSemError');
+
+  if (!sem || !isSemValidForYear(year, sem)) {
+    errEl.classList.remove('hidden');
+    document.getElementById('add_sem').focus();
+    return;
+  }
+  errEl.classList.add('hidden');
+  // submit the parent form
+  document.getElementById('add_sem').closest('form').submit();
+}
+
+// ── Edit Modal ───────────────────────────────
+function openEditModal(id, r, rg, n, d, p, sem, y) {
+  edit_id.value    = id;
+  edit_roll.value  = r;
+  edit_reg.value   = rg;
+  edit_name.value  = n;
+  edit_dob.value   = d;
+  edit_phone.value = p;
+
+  // Set year first, then populate semesters with current sem pre-selected
+  document.getElementById('edit_year').value = y;
+  updateSemesterOptions('edit_year', 'edit_sem', sem);
+  document.getElementById('editSemError').classList.add('hidden');
+
+  editModal.classList.remove('hidden');
+}
+
+function closeEditModal() { editModal.classList.add('hidden'); }
+
+function submitEditForm() {
+  const year = document.getElementById('edit_year').value;
+  const sem  = document.getElementById('edit_sem').value;
+  const errEl = document.getElementById('editSemError');
+
+  if (!sem || !isSemValidForYear(year, sem)) {
+    errEl.classList.remove('hidden');
+    document.getElementById('edit_sem').focus();
+    return;
+  }
+  errEl.classList.add('hidden');
+  document.getElementById('edit_sem').closest('form').submit();
+}
 function handleDeleteClick() {
   const checkboxes = document.querySelectorAll(
     "input[name='student_ids']:checked"
@@ -513,6 +624,71 @@ function openNoDueModal(studentId) {
 function closeNoDueModal() {
   document.getElementById("noDueModal").classList.add("hidden");
 }
+
+// ═══════════════════════════════════════════
+//  EXCEL UPLOAD — CLIENT-SIDE VALIDATION
+// ═══════════════════════════════════════════
+(function () {
+  // Load SheetJS dynamically
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  document.head.appendChild(script);
+
+  script.onload = function () {
+    const form    = document.getElementById('excelUploadForm');
+    const fileInp = document.getElementById('excelFileInput');
+    const errBox  = document.getElementById('excelErrors');
+    const errList = document.getElementById('excelErrorList');
+    if (!form || !fileInp) return;
+
+    form.addEventListener('submit', function (e) {
+      const file = fileInp.files[0];
+      if (!file) return; // let browser handle 'required'
+
+      e.preventDefault(); // hold submission until validation
+
+      const year = parseInt(document.getElementById('excelYearHidden').value);
+      const validSems = YEAR_SEM_MAP[String(year)] || [];
+
+      const reader = new FileReader();
+      reader.onload = function (ev) {
+        const wb   = XLSX.read(ev.target.result, { type: 'binary' });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        const errors = [];
+        rows.forEach((row, idx) => {
+          // Column header may be 'semester', 'Semester', 'SEMESTER' etc.
+          const semKey = Object.keys(row).find(k => k.toLowerCase() === 'semester');
+          if (!semKey) return; // no semester column — skip row-level check
+          const sem = parseInt(row[semKey]);
+          if (!isNaN(sem) && !validSems.includes(sem)) {
+            errors.push(`Row ${idx + 2}: Semester ${sem} is not valid for Year ${year}. (Expected ${validSems.join(' or ')})`);
+          }
+        });
+
+        if (errors.length > 0) {
+          errList.innerHTML = '';
+          errors.forEach(msg => {
+            const li = document.createElement('li');
+            li.textContent = msg;
+            errList.appendChild(li);
+          });
+          errBox.classList.remove('hidden');
+          errBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+          errBox.classList.add('hidden');
+          // Show spinner and submit
+          document.getElementById('importText').textContent = 'Importing...';
+          document.getElementById('importSpinner').classList.remove('hidden');
+          document.getElementById('importBtn').disabled = true;
+          form.submit();
+        }
+      };
+      reader.readAsBinaryString(file);
+    });
+  };
+})();
 </script>
 
 {% endblock %}
