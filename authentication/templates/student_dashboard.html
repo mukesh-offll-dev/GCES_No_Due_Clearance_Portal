@@ -6,7 +6,8 @@
 <main class="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
 
   <!-- STUDENT DETAILS -->
-  <section class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] px-4 sm:px-10 py-6 sm:py-8 mb-8 bg-white shadow-sm">
+  <section
+    class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] px-4 sm:px-10 py-6 sm:py-8 mb-8 bg-white shadow-sm">
     <h1 class="text-[#d52b1e] font-extrabold text-2xl mb-6">
       Student Details
     </h1>
@@ -55,7 +56,7 @@
     </div>
     <div class="flex justify-end mt-4">
       <button onclick="openEditProfileModal()"
-              class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-1.5 rounded-full text-sm font-semibold transition active:scale-95">
+        class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-1.5 rounded-full text-sm font-semibold transition active:scale-95">
         Edit Profile
       </button>
     </div>
@@ -63,107 +64,99 @@
   </section>
 
 
-<!-- NO DUES CARD -->
-<div class="border-2 border-[#d52b1e] rounded-2xl overflow-hidden max-w-xl mx-auto bg-white shadow-sm">
+  <!-- NO DUES CARD -->
+  <div class="border-2 border-[#d52b1e] rounded-2xl overflow-hidden max-w-xl mx-auto bg-white shadow-sm">
 
-  <!-- HEADER -->
-  <div class="text-center text-xl font-bold text-[#d52b1e] py-4 border-b-2 border-[#d52b1e]">
-    No Dues
-  </div>
+    <!-- HEADER -->
+    <div class="text-center text-xl font-bold text-[#d52b1e] py-4 border-b-2 border-[#d52b1e]">
+      No Dues
+    </div>
 
-  <!-- ROWS -->
-  <div class="divide-y-2 divide-[#d52b1e]">
+    <!-- ROWS -->
+    <div class="divide-y-2 divide-[#d52b1e]">
 
-  {% for d in dues %}
-    <div class="grid grid-cols-2 items-center px-4 sm:px-8 py-4 sm:py-6">
+      {% for d in dues %}
+      <div class="grid grid-cols-2 items-center px-4 sm:px-8 py-4 sm:py-6">
 
-      <!-- LEFT : OFFICE -->
-      <div class="text-lg font-semibold">
-        {{ d.office|title }} Office
-      </div>
-
-      <!-- RIGHT : STATUS / BUTTON -->
-      <div class="flex justify-end">
-
-      {% if d.status == "PENDING" %}
-        <span class="text-yellow-600 font-semibold">
-          Pending
-        </span>
-
-      {% elif d.status == "APPROVED" %}
-        <span class="text-green-600 font-semibold">
-          Completed
-        </span>
-
-      {% elif d.status == "REJECTED" %}
-        <div class="text-right">
-          <p class="text-red-600 font-semibold">
-            Rejected
-          </p>
-          <p class="text-sm text-gray-600">
-            Reason: {{ d.reject_reason }}
-          </p>
-
-          <form method="POST" action="{% url 'retry_request' %}" class="mt-2">
-            {% csrf_token %}
-            <input type="hidden" name="office" value="{{ d.office }}">
-            <button
-              class="bg-yellow-500 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-yellow-600">
-              Try Again
-            </button>
-          </form>
+        <!-- LEFT : OFFICE -->
+        <div class="text-lg font-semibold">
+          {{ d.office|title }} Office
         </div>
 
-      {% elif d.status == "NOT_SENT" %}
-        <button type="button"
-        data-office="{{ d.office }}"
-        onclick="openConfirmModal(this)"
-        class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold
+        <!-- RIGHT : STATUS / BUTTON -->
+        <div class="flex justify-end">
+
+          {% if d.status == "PENDING" %}
+          <span class="text-yellow-600 font-semibold">
+            Pending
+          </span>
+
+          {% elif d.status == "APPROVED" %}
+          <span class="text-green-600 font-semibold">
+            Completed
+          </span>
+
+          {% elif d.status == "REJECTED" %}
+          <div class="text-right">
+            <p class="text-red-600 font-semibold">
+              Rejected
+            </p>
+            <p class="text-sm text-gray-600">
+              Reason: {{ d.reject_reason }}
+            </p>
+
+            <form method="POST" action="{% url 'retry_request' %}" class="mt-2">
+              {% csrf_token %}
+              <input type="hidden" name="office" value="{{ d.office }}">
+              <button
+                class="bg-yellow-500 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-yellow-600">
+                Try Again
+              </button>
+            </form>
+          </div>
+
+          {% elif d.status == "NOT_SENT" %}
+          <button type="button" data-office="{{ d.office }}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold
                flex items-center justify-center gap-2">
-  <span class="btn-text">Send for Verification</span>
-</button>
+            <span class="btn-text">Send for Verification</span>
+          </button>
 
 
 
-      {% endif %}
+          {% endif %}
 
+        </div>
       </div>
+      {% endfor %}
+
     </div>
-  {% endfor %}
-
   </div>
-</div>
 
 
-{% if all_approved %}
-<div class="text-center mt-8">
-  <a href="{% url 'no_due_certificate' %}"
-     class="bg-blue-600 text-white px-6 py-2 rounded-full font-semibold">
-    Download No Due Certificate
-  </a>
-</div>
-{% endif %}
+  {% if all_approved %}
+  <div class="text-center mt-8">
+    <a href="{% url 'no_due_certificate' %}" class="bg-blue-600 text-white px-6 py-2 rounded-full font-semibold">
+      Download No Due Certificate
+    </a>
+  </div>
+  {% endif %}
 
-<!-- AD SECTION -->
-<div class="mt-12 w-full max-w-4xl mx-auto px-4 text-center block" style="min-height: 90px; overflow: hidden;">
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8306649565394780" crossorigin="anonymous"></script>
+  <!-- AD SECTION -->
+  <div class="mt-12 w-full max-w-4xl mx-auto px-4 text-center block" style="min-height: 90px; overflow: hidden;">
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8306649565394780"
+      crossorigin="anonymous"></script>
     <!-- Side_Ad -->
-    <ins class="adsbygoogle"
-         style="display:block; width:100%;"
-         data-ad-client="ca-pub-8306649565394780"
-         data-ad-slot="7134597634"
-         data-ad-format="auto"
-         data-full-width-responsive="true"></ins>
+    <ins class="adsbygoogle" style="display:block; width:100%;" data-ad-client="ca-pub-8306649565394780"
+      data-ad-slot="7134597634" data-ad-format="auto" data-full-width-responsive="true"></ins>
     <script>
-         (adsbygoogle = window.adsbygoogle || []).push({});
+      (adsbygoogle = window.adsbygoogle || []).push({});
     </script>
-</div>
+  </div>
 
 </main>
 
 
-<div id="confirmModal"
-     class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+<div id="confirmModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
   <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm text-center">
 
     <h3 class="text-lg font-bold mb-4">
@@ -171,13 +164,11 @@
     </h3>
 
     <div class="flex justify-center gap-4">
-      <button onclick="closeConfirmModal()"
-              class="px-6 py-2 rounded-full bg-gray-300">
+      <button onclick="closeConfirmModal()" class="px-6 py-2 rounded-full bg-gray-300">
         Cancel
       </button>
 
-      <button onclick="confirmRequest()"
-              class="px-6 py-2 rounded-full bg-[#d52b1e] text-white">
+      <button onclick="confirmRequest()" class="px-6 py-2 rounded-full bg-[#d52b1e] text-white">
         Yes
       </button>
     </div>
@@ -191,13 +182,11 @@
 
 
 <!-- ================= EDIT PROFILE MODAL ================= -->
-<div id="editProfileModal"
-     class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+<div id="editProfileModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
 
   <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm relative">
 
-    <button onclick="closeEditProfileModal()"
-            class="absolute top-3 right-4 text-xl font-bold">✖</button>
+    <button onclick="closeEditProfileModal()" class="absolute top-3 right-4 text-xl font-bold">✖</button>
 
     <h2 class="text-center text-[#d52b1e] font-bold text-xl mb-4">
       Edit Profile
@@ -207,31 +196,24 @@
       {% csrf_token %}
 
       <label class="block font-semibold mb-1">Year</label>
-      <select id="profile_year"
-              name="year"
-              required
-              onchange="updateSemesterOptions('profile_year','profile_sem')"
-              class="w-full border rounded-full px-4 py-2 mb-4">
-        <option value="1" {% if student.year == 1 %}selected{% endif %}>Year 1</option>
-        <option value="2" {% if student.year == 2 %}selected{% endif %}>Year 2</option>
-        <option value="3" {% if student.year == 3 %}selected{% endif %}>Year 3</option>
-        <option value="4" {% if student.year == 4 %}selected{% endif %}>Year 4</option>
+      <select id="profile_year" name="year" required onchange="updateSemesterOptions('profile_year','profile_sem')"
+        class="w-full border rounded-full px-4 py-2 mb-4">
+        <option value="1" {% if student.year==1 %}selected{% endif %}>Year 1</option>
+        <option value="2" {% if student.year==2 %}selected{% endif %}>Year 2</option>
+        <option value="3" {% if student.year==3 %}selected{% endif %}>Year 3</option>
+        <option value="4" {% if student.year==4 %}selected{% endif %}>Year 4</option>
       </select>
 
       <label class="block font-semibold mb-1">Semester</label>
-      <select id="profile_sem"
-              name="semester"
-              required
-              class="w-full border rounded-full px-4 py-2 mb-1">
+      <select id="profile_sem" name="semester" required class="w-full border rounded-full px-4 py-2 mb-1">
         <option value="">Select semester</option>
       </select>
       <p id="profileSemError" class="hidden text-red-600 text-xs mb-4 px-2">
         ⚠️ Selected semester is not valid for the chosen year.
       </p>
 
-      <button type="button"
-              onclick="validateAndSubmitProfile()"
-              class="w-full bg-[#d52b1e] hover:bg-red-800 text-white py-2 rounded-full font-semibold mt-3 transition">
+      <button type="button" onclick="validateAndSubmitProfile()"
+        class="w-full bg-[#d52b1e] hover:bg-red-800 text-white py-2 rounded-full font-semibold mt-3 transition">
         Update
       </button>
     </form>
@@ -244,40 +226,28 @@
 
 
 <!-- HOSTEL MODAL -->
-<div id="hostelModal"
-     class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+<div id="hostelModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
 
   <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm relative overflow-y-auto max-h-[90vh]">
 
     <!-- Close -->
-    <button onclick="closeHostelModal()"
-            class="absolute top-3 right-4 text-xl font-bold" id="clbtn">✖</button>
+    <button onclick="closeHostelModal()" class="absolute top-3 right-4 text-xl font-bold" id="clbtn">✖</button>
 
     <h2 class="text-center text-[#d52b1e] font-bold text-xl mb-4">
       Hostel Verification
     </h2>
 
-    <form method="POST"
-      action="{% url 'send_hostel' %}"
-      enctype="multipart/form-data"
-      onsubmit="handleHostelSubmit()">
+    <form method="POST" action="{% url 'send_hostel' %}" enctype="multipart/form-data" onsubmit="handleHostelSubmit()">
 
       {% csrf_token %}
 
       <label class="block font-semibold mb-1">Last Payment ID</label>
-      <input name="payment_id"
-             required
-             class="w-full border rounded-full px-4 py-2 mb-4" >
+      <input name="payment_id" required class="w-full border rounded-full px-4 py-2 mb-4">
 
       <label class="block font-semibold mb-1">Attach Payment Screenshot</label>
-      <input type="file"
-             name="receipt"
-             accept="image/*"
-             required
-             class="mb-5">
+      <input type="file" name="receipt" accept="image/*" required class="mb-5">
 
-      <button
-        id="hostelSubmitBtn"
+      <button id="hostelSubmitBtn"
         class="w-full bg-[#d52b1e] text-white py-2 rounded-full font-semibold flex justify-center items-center gap-2">
         <span id="hostelBtnText">Send for Verification</span>
       </button>
@@ -287,13 +257,11 @@
 </div>
 
 <!-- LOGIN POPUP MESSAGE -->
-<div id="loginPopup"
-     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden px-4">
+<div id="loginPopup" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden px-4">
 
   <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm text-center relative">
 
-    <button onclick="closeLoginPopup()"
-            class="absolute top-3 right-4 text-xl font-bold">✖</button>
+    <button onclick="closeLoginPopup()" class="absolute top-3 right-4 text-xl font-bold">✖</button>
 
     <h3 class="text-[#d52b1e] font-bold text-lg mb-3">
       Important Notice
@@ -304,172 +272,113 @@
       before sending any No-Due request to the office.
     </p>
 
-    
+
 
   </div>
 </div>
 
 <script>
 
-// ═══════════════════════════════════════════
-//  YEAR ↔ SEMESTER VALIDATION
-// ═══════════════════════════════════════════
-const YEAR_SEM_MAP = { '1':[1,2], '2':[3,4], '3':[5,6], '4':[7,8] };
+  // ═══════════════════════════════════════════
+  //  YEAR ↔ SEMESTER VALIDATION
+  // ═══════════════════════════════════════════
+  const YEAR_SEM_MAP = { '1': [1, 2], '2': [3, 4], '3': [5, 6], '4': [7, 8] };
 
-function updateSemesterOptions(yearSelectId, semSelectId, currentSem) {
-  const year = document.getElementById(yearSelectId).value;
-  const semSel = document.getElementById(semSelectId);
-  const validSems = YEAR_SEM_MAP[year] || [];
-  semSel.innerHTML = '<option value="">Select semester</option>';
-  validSems.forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s;
-    opt.textContent = 'Semester ' + s;
-    if (Number(currentSem) === s) opt.selected = true;
-    semSel.appendChild(opt);
-  });
-}
+  function updateSemesterOptions(yearSelectId, semSelectId, currentSem) {
+    const year = document.getElementById(yearSelectId).value;
+    const semSel = document.getElementById(semSelectId);
+    const validSems = YEAR_SEM_MAP[year] || [];
+    semSel.innerHTML = '<option value="">Select semester</option>';
+    validSems.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = 'Semester ' + s;
+      if (Number(currentSem) === s) opt.selected = true;
+      semSel.appendChild(opt);
+    });
+  }
 
-function isSemValidForYear(year, sem) {
-  return (YEAR_SEM_MAP[String(year)] || []).includes(Number(sem));
-}
+  function isSemValidForYear(year, sem) {
+    return (YEAR_SEM_MAP[String(year)] || []).includes(Number(sem));
+  }
 
-function openEditProfileModal() {
-  updateSemesterOptions('profile_year', 'profile_sem', {{ student.semester }});
+  function openEditProfileModal() {
+    updateSemesterOptions('profile_year', 'profile_sem', {{ student.semester }});
   document.getElementById('profileSemError').classList.add('hidden');
   document.getElementById('editProfileModal').classList.remove('hidden');
 }
 
-function closeEditProfileModal() {
-  document.getElementById('editProfileModal').classList.add('hidden');
-}
-
-function validateAndSubmitProfile() {
-  const year  = document.getElementById('profile_year').value;
-  const sem   = document.getElementById('profile_sem').value;
-  const errEl = document.getElementById('profileSemError');
-  if (!sem || !isSemValidForYear(year, sem)) {
-    errEl.classList.remove('hidden');
-    document.getElementById('profile_sem').focus();
-    return;
+  function closeEditProfileModal() {
+    document.getElementById('editProfileModal').classList.add('hidden');
   }
-  errEl.classList.add('hidden');
-  document.getElementById('profile_sem').closest('form').submit();
-}
+
+  function validateAndSubmitProfile() {
+    const year = document.getElementById('profile_year').value;
+    const sem = document.getElementById('profile_sem').value;
+    const errEl = document.getElementById('profileSemError');
+    if (!sem || !isSemValidForYear(year, sem)) {
+      errEl.classList.remove('hidden');
+      document.getElementById('profile_sem').focus();
+      return;
+    }
+    errEl.classList.add('hidden');
+    document.getElementById('profile_sem').closest('form').submit();
+  }
 
   function openLoginPopup() {
-  document.getElementById("loginPopup").classList.remove("hidden");
+    document.getElementById("loginPopup").classList.remove("hidden");
 
-  // Auto close after 7 seconds
-  setTimeout(() => {
-    closeLoginPopup();
-  }, 7000);
-}
-
-function closeLoginPopup() {
-  document.getElementById("loginPopup").classList.add("hidden");
-}
-
-// 🔥 IMPORTANT — Show popup when page loads (student login)
-window.onload = function() {
-  openLoginPopup();
-};
-
-
-let selectedOffice = null;
-let selectedBtn = null;
-let sending = false;
-
-function openConfirmModal(btn) {
-  selectedBtn = btn;                       // 🔥 store button
-  selectedOffice = btn.dataset.office;
-
-  document.getElementById("officeName").innerText = selectedOffice;
-  document.getElementById("confirmModal").classList.remove("hidden");
-}
-
-function closeConfirmModal() {
-  document.getElementById("confirmModal").classList.add("hidden");
-}
-
-function confirmRequest() {
-  if (sending) return;
-  sending = true;
-
-  closeConfirmModal();
-
-  // ================= HOSTEL =================
-  if (selectedOffice === "HOSTEL") {
-    document.getElementById("hostelModal").classList.remove("hidden");
-    return;
+    // Auto close after 7 seconds
+    setTimeout(() => {
+      closeLoginPopup();
+    }, 7000);
   }
 
-  // ================= OTHER OFFICES =================
-  // 🔒 disable original button
-  selectedBtn.disabled = true;
-  selectedBtn.classList.add("opacity-70", "cursor-not-allowed");
-
-  // 🔄 spinner
-  selectedBtn.innerHTML = `
-    <svg class="animate-spin h-5 w-5 text-white"
-         viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="10"
-        stroke="white"
-        stroke-width="4"
-        fill="none"
-        stroke-dasharray="31.4"
-        stroke-linecap="round"/>
-    </svg>
-    <span>Sending...</span>
-  `;
-
-  // 🚀 send request
-  fetch("{% url 'send_no_due' %}", {
-    method: "POST",
-    headers: {
-      "X-CSRFToken": "{{ csrf_token }}",
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: `office=${selectedOffice}`
-  }).then(() => location.reload());
-}
-
-function closeConfirmModal() {
-  document.getElementById("confirmModal").classList.add("hidden");
-}
-function closeHostelModal() {
-  document.getElementById("hostelModal").classList.add("hidden");
-}
- 
-
-
- 
-function openEditProfileModal() {
-  document.getElementById("editProfileModal").classList.remove("hidden");
-}
-
-function closeEditProfileModal() {
-  document.getElementById("editProfileModal").classList.add("hidden");
-}
-
- 
-let hostelSubmitting = false;
-
-function handleHostelSubmit() {
-  if (hostelSubmitting) {
-    return false; // ❌ block double submit
+  function closeLoginPopup() {
+    document.getElementById("loginPopup").classList.add("hidden");
   }
 
-  hostelSubmitting = true;
+  // 🔥 IMPORTANT — Show popup when page loads (student login)
+  window.onload = function () {
+    openLoginPopup();
+  };
 
-  const btn = document.getElementById("hostelSubmitBtn");
-  const text = document.getElementById("hostelBtnText");
-  const clbtn = document.getElementById("clbtn");
-  clbtn.disabled = true;
-  btn.disabled = true;
-  btn.classList.add("opacity-70", "cursor-not-allowed");
 
-  text.innerHTML = `
+  let selectedOffice = null;
+  let selectedBtn = null;
+  let sending = false;
+
+  function openConfirmModal(btn) {
+    selectedBtn = btn;                       // 🔥 store button
+    selectedOffice = btn.dataset.office;
+
+    document.getElementById("officeName").innerText = selectedOffice;
+    document.getElementById("confirmModal").classList.remove("hidden");
+  }
+
+  function closeConfirmModal() {
+    document.getElementById("confirmModal").classList.add("hidden");
+  }
+
+  function confirmRequest() {
+    if (sending) return;
+    sending = true;
+
+    closeConfirmModal();
+
+    // ================= HOSTEL =================
+    if (selectedOffice === "HOSTEL") {
+      document.getElementById("hostelModal").classList.remove("hidden");
+      return;
+    }
+
+    // ================= OTHER OFFICES =================
+    // 🔒 disable original button
+    selectedBtn.disabled = true;
+    selectedBtn.classList.add("opacity-70", "cursor-not-allowed");
+
+    // 🔄 spinner
+    selectedBtn.innerHTML = `
     <svg class="animate-spin h-5 w-5 text-white"
          viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="10"
@@ -482,24 +391,53 @@ function handleHostelSubmit() {
     <span>Sending...</span>
   `;
 
-  return true; // ✅ allow submit once
-}
+    // 🚀 send request
+    fetch("{% url 'send_no_due' %}", {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": "{{ csrf_token }}",
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: `office=${selectedOffice}`
+    }).then(() => location.reload());
+  }
+
+  function closeConfirmModal() {
+    document.getElementById("confirmModal").classList.add("hidden");
+  }
+  function closeHostelModal() {
+    document.getElementById("hostelModal").classList.add("hidden");
+  }
 
 
-let otherOfficeSending = false;
 
-function handleOtherOfficeClick(btn) {
-  if (otherOfficeSending) return; // ❌ block multi click
-  otherOfficeSending = true;
 
-  const office = btn.dataset.office;
+  function openEditProfileModal() {
+    document.getElementById("editProfileModal").classList.remove("hidden");
+  }
 
-  // 🔒 disable button
-  btn.disabled = true;
-  btn.classList.add("opacity-70", "cursor-not-allowed");
+  function closeEditProfileModal() {
+    document.getElementById("editProfileModal").classList.add("hidden");
+  }
 
-  // 🔄 replace text with spinner
-  btn.innerHTML = `
+
+  let hostelSubmitting = false;
+
+  function handleHostelSubmit() {
+    if (hostelSubmitting) {
+      return false; // ❌ block double submit
+    }
+
+    hostelSubmitting = true;
+
+    const btn = document.getElementById("hostelSubmitBtn");
+    const text = document.getElementById("hostelBtnText");
+    const clbtn = document.getElementById("clbtn");
+    clbtn.disabled = true;
+    btn.disabled = true;
+    btn.classList.add("opacity-70", "cursor-not-allowed");
+
+    text.innerHTML = `
     <svg class="animate-spin h-5 w-5 text-white"
          viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="10"
@@ -512,17 +450,47 @@ function handleOtherOfficeClick(btn) {
     <span>Sending...</span>
   `;
 
-  // 🚀 send request
-  fetch("{% url 'send_no_due' %}", {
-    method: "POST",
-    headers: {
-      "X-CSRFToken": "{{ csrf_token }}",
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: `office=${office}`
-  }).then(() => location.reload());
-}
- 
+    return true; // ✅ allow submit once
+  }
+
+
+  let otherOfficeSending = false;
+
+  function handleOtherOfficeClick(btn) {
+    if (otherOfficeSending) return; // ❌ block multi click
+    otherOfficeSending = true;
+
+    const office = btn.dataset.office;
+
+    // 🔒 disable button
+    btn.disabled = true;
+    btn.classList.add("opacity-70", "cursor-not-allowed");
+
+    // 🔄 replace text with spinner
+    btn.innerHTML = `
+    <svg class="animate-spin h-5 w-5 text-white"
+         viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10"
+        stroke="white"
+        stroke-width="4"
+        fill="none"
+        stroke-dasharray="31.4"
+        stroke-linecap="round"/>
+    </svg>
+    <span>Sending...</span>
+  `;
+
+    // 🚀 send request
+    fetch("{% url 'send_no_due' %}", {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": "{{ csrf_token }}",
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: `office=${office}`
+    }).then(() => location.reload());
+  }
+
 </script>
 
 
