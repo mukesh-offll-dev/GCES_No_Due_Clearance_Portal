@@ -1,5 +1,10 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
@@ -120,5 +125,10 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # ================= DEFAULT PK =================
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ================= AUTOMATIC PROMOTION SETTINGS =================
+PROMOTION_COOLDOWN_MINUTES = 2  # Predefined period in minutes before promotion (for testing)
+GRADUATION_DELETE_COOLDOWN_MINUTES = 3  # Time in minutes before a graduated student is completely deleted
+
 
 

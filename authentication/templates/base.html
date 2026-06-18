@@ -62,6 +62,7 @@
 
   <!-- ===== SHARED FOOTER ===== -->
   {% block footer %}
+  {% if request.path == "/" %}
   <footer class="bg-gray-800 text-gray-200 mt-auto">
     <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
 
@@ -122,7 +123,22 @@
 
     </div>
   </footer>
+  {% endif %}
   {% endblock %}
 
+  <script>
+    function disableSubmitButtons(form) {
+      const buttons = form.querySelectorAll("button[type=submit], input[type=submit], button:not([type=button])");
+      buttons.forEach(btn => {
+        btn.disabled = true;
+        if (btn.tagName === 'BUTTON') {
+          btn.innerHTML = `
+            <span class="inline-block animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent mr-1.5 align-middle"></span>
+            Processing...
+          `;
+        }
+      });
+    }
+  </script>
 </body>
 </html>

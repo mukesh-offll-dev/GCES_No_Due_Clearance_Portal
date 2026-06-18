@@ -35,10 +35,10 @@ def reset_expired_no_dues(no_due_col):
             except Exception:
                 pass  # final ignore (already deleted / invalid)
 
-    # ========== PENDING → NOT_SENT ==========
+    # ================= PENDING → NOT_SENT (3 mins) =================
     expired_pending = no_due_col.find({
         "status": "PENDING",
-        "created_at": {"$lte": now - timedelta(minutes=15)}
+        "created_at": {"$lte": now - timedelta(minutes=3)}
     })
 
     for req in expired_pending:
@@ -46,54 +46,6 @@ def reset_expired_no_dues(no_due_col):
             public_id = req.get("cloudinary_public_id")
             if public_id:
                 delete_cloudinary_file(public_id)
-
-        no_due_col.update_one(
-            {"_id": req["_id"]},
-            {"$set": {
-                "status": "NOT_SENT",
-                "receipt_url": None,
-                "cloudinary_public_id": None,
-                "updated_at": now
-            }}
-        )
-
-    # ========== APPROVED → NOT_SENT ==========
-    expired_approved = no_due_col.find({
-        "status": "APPROVED",
-        "updated_at": {"$lte": now - timedelta(minutes=30)}
-    })
-
-    for req in expired_approved:
-        if req.get("office") == "HOSTEL":
-            public_id = req.get("cloudinary_public_id")
-            if public_id:
-                delete_cloudinary_file(public_id)
-
-        no_due_col.update_one(
-            {"_id": req["_id"]},
-            {"$set": {
-                "status": "NOT_SENT",
-                "receipt_url": None,
-                "cloudinary_public_id": None,
-                "updated_at": now
-            }}
-        )
-    now = datetime.now()
-
-    # ================= PENDING → NOT_SENT (1 min) =================
-    expired_pending = no_due_col.find({
-        "status": "PENDING",
-        "created_at": {"$lte": now - timedelta(minutes=1)}
-    })
-
-    for req in expired_pending:
-        if req.get("office") == "HOSTEL":
-            public_id = req.get("cloudinary_public_id")
-            if public_id:
-                cloudinary.uploader.destroy(
-                    public_id,
-                    resource_type="auto"
-                )
 
         no_due_col.update_one(
             {"_id": req["_id"]},
@@ -115,10 +67,7 @@ def reset_expired_no_dues(no_due_col):
         if req.get("office") == "HOSTEL":
             public_id = req.get("cloudinary_public_id")
             if public_id:
-                cloudinary.uploader.destroy(
-                    public_id,
-                    resource_type="auto"
-                )
+                delete_cloudinary_file(public_id)
 
         no_due_col.update_one(
             {"_id": req["_id"]},
@@ -129,6 +78,14 @@ def reset_expired_no_dues(no_due_col):
                 "updated_at": now
             }}
         )
+
+    # Run the promotion check synchronously to ensure real-time updates on reload
+    from .scheduler import check_and_promote_students
+    try:
+        check_and_promote_students()
+    except Exception as e:
+        print(f"[Synchronous Promotion Check Error]: {e}")
+
 
 
 

@@ -7,5 +7,6 @@ python-dotenv
 cloudinary
 django-cloudinary-storage
 openpyxl
+reportlab>=4.0.0
 
 

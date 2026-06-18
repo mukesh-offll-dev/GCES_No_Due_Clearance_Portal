@@ -13,6 +13,13 @@ import cloudinary.uploader
 from django.http import HttpResponse
 from openpyxl import Workbook ,load_workbook 
 
+# ReportLab Imports
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.pdfgen import canvas 
+
 
 # =================== HELPER: ROLE → REDIRECT NAME ====================
 _ROLE_REDIRECT = {
@@ -148,14 +155,21 @@ def student_dashboard(request):
     student_id = ObjectId(request.session["student_id"])
     student = students_col.find_one({"_id": student_id})
 
+    # ── Determine offices based on student type ──
+    student_type = student.get("student_type", "Hosteller")
+    if student_type == "Day Scholar":
+        offices = ["LIBRARY", "COLLEGE", "DEPARTMENT"]
+        required_count = 3
+    else:
+        offices = ["LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"]
+        required_count = 4
+
     existing = {
         d["office"]: d
         for d in no_due_col.find({"student_id": student_id})
     }
 
-    offices = ["LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"]
     dues = []
-
     all_approved = True   # 🔥 FLAG
 
     for office in offices:
@@ -163,17 +177,22 @@ def student_dashboard(request):
             "office": office,
             "status": "NOT_SENT"
         })
-
         dues.append(d)
 
-        # 🔴 if ANY office not approved → false
+        # 🔴 if ANY required office not approved → false
         if d.get("status") != "APPROVED":
             all_approved = False
+
+    # Query promotion logs for this student
+    from .mongo import promotion_logs
+    logs = list(promotion_logs.find({"student_id": student_id}).sort("promotion_time", -1))
 
     return render(request, "student_dashboard.html", {
         "student": student,
         "dues": dues,
-        "all_approved": all_approved   # ✅ PASS TO TEMPLATE
+        "all_approved": all_approved,
+        "promotion_logs": logs,
+        "student_type": student_type,
     })
 
     
@@ -218,17 +237,20 @@ def no_due_certificate(request):
         "status": "APPROVED"
     }))
 
-    # 🔐 Safety check
-    if len(dues) < 4:
+    # 🔐 Safety check (Bypass check if student is graduated)
+    student_type = student.get("student_type", "Hosteller")
+    required_count = 3 if student_type == "Day Scholar" else 4
+    if student.get("semester") != "Graduated" and len(dues) < required_count:
         return redirect("student_dashboard")
 
     # Convert to simple dict for template
     no_dues_status = {
         "LIBRARY": "Completed",
-        "HOSTEL": "Completed",
         "COLLEGE": "Completed",
         "DEPARTMENT": "Completed"
     }
+    if student_type == "Hosteller":
+        no_dues_status["HOSTEL"] = "Completed"
 
     return render(request, "no_due_certificate.html", {
         "student": student,
@@ -277,6 +299,7 @@ def hostel_dashboard(request):
 
     branch = request.GET.get("branch")
     year = request.GET.get("year")
+    semester = request.GET.get("semester")
 
     requests = []
     count = 0
@@ -343,6 +366,7 @@ def hostel_dashboard(request):
         "count": count,
         "branch": branch,
         "year": year,
+        "semester": semester,
         "branches": ["CSE","ECE","EEE","CIVIL","MECH","MCT"],
         "branch_summary": branch_summary,
         "year_summary": year_summary
@@ -361,6 +385,7 @@ def library_dashboard(request):
 
     branch = request.GET.get("branch")
     year = request.GET.get("year")
+    semester = request.GET.get("semester")
 
     requests = []
     count = 0
@@ -427,6 +452,7 @@ def library_dashboard(request):
         "requests": requests,
         "branch": branch,
         "year": year,
+        "semester": semester,
         "count": count,
         "branches": ["CSE","ECE","EEE","CIVIL","MECH","MCT"],
         "branch_summary": branch_summary,
@@ -437,15 +463,26 @@ def library_dashboard(request):
 
 
 def mark_final_clearance(student_id):
+    student = students_col.find_one({"_id": student_id})
+    if not student:
+        return
+
+    student_type = student.get("student_type", "Hosteller")
+    if student_type == "Day Scholar":
+        offices = ["LIBRARY", "COLLEGE", "DEPARTMENT"]
+        required_count = 3
+    else:
+        offices = ["LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"]
+        required_count = 4
+
     approved_count = no_due_col.count_documents({
         "student_id": student_id,
+        "office": {"$in": offices},
         "status": "APPROVED"
     })
 
-    student = students_col.find_one({"_id": student_id})
-
     if (
-        approved_count == 4 and
+        approved_count == required_count and
         student["year"] == 4 and
         student["semester"] == 8 and
         not student.get("final_no_due_approved_at")
@@ -519,6 +556,7 @@ def college_dashboard(request):
 
     branch = request.GET.get("branch")
     year = request.GET.get("year")
+    semester = request.GET.get("semester")
 
     requests = []
     count = 0
@@ -585,6 +623,7 @@ def college_dashboard(request):
         "requests": requests,
         "branch": branch,
         "year": year,
+        "semester": semester,
         "count": count,
         "branches": ["CSE","ECE","EEE","CIVIL","MECH","MCT"],
         "branch_summary": branch_summary,
@@ -601,6 +640,7 @@ def department_dashboard(request):
 
     dept = request.session.get("department")
     year = request.GET.get("year")
+    semester = request.GET.get("semester")
 
     requests = []
     count = 0
@@ -651,6 +691,7 @@ def department_dashboard(request):
         "requests": requests,
         "branch": dept,
         "year": year,
+        "semester": semester,
         "count": count,
         "year_summary": year_summary
     })
@@ -757,6 +798,8 @@ def faculty_dashboard(request):
             for d in dues_cursor:
                 no_dues[d["office"]] = d["status"]
 
+            s_type = s.get("student_type", "Hosteller")
+
             students.append({
                 "id": str(student_id),
                 "roll_no": s["roll_no"],
@@ -767,7 +810,8 @@ def faculty_dashboard(request):
                 "phone": s["phone"],
                 "branch": s["branch"],
                 "year": s["year"],
-                "no_dues": no_dues   # ✅ IMPORTANT
+                "student_type": s_type,
+                "no_dues": no_dues
             })
 
         count = len(students)
@@ -844,6 +888,10 @@ def add_student(request):
             return redirect(f"/faculty/?branch={branch}&year={year}")
 
         # ================= INSERT =================
+        student_type = request.POST.get("student_type", "Hosteller")
+        if student_type not in ("Hosteller", "Day Scholar"):
+            student_type = "Hosteller"
+
         students_col.insert_one({
             "roll_no": roll_no,
             "reg_no": reg_no,
@@ -852,7 +900,8 @@ def add_student(request):
             "phone": phone,
             "branch": branch,
             "year": int(year),
-            "semester": int(semester)
+            "semester": int(semester),
+            "student_type": student_type
         })
 
         request.session["add_success"] = "Student added successfully"
@@ -896,6 +945,10 @@ def edit_student(request):
     if request.method == "POST":
         student_id = request.POST.get("student_id")
 
+        student_type = request.POST.get("student_type", "Hosteller")
+        if student_type not in ("Hosteller", "Day Scholar"):
+            student_type = "Hosteller"
+
         try:
             students_col.update_one(
                 {"_id": ObjectId(student_id)},
@@ -906,7 +959,8 @@ def edit_student(request):
                     "dob": request.POST["dob"],
                     "year": int(request.POST["year"]),
                     "phone": request.POST["phone"],
-                    "semester": int(request.POST["semester"])
+                    "semester": int(request.POST["semester"]),
+                    "student_type": student_type
                 }}
             )
         except InvalidId:
@@ -923,26 +977,47 @@ def download_student_template(request):
     if request.session.get("role") != "FACULTY":
         return redirect("index")
 
+    from openpyxl.styles import numbers as xl_numbers
+    from openpyxl.cell.cell import TYPE_STRING
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Student Template"
 
-    # 🧾 Headers
-    headers = ["roll_no", "reg_no", "name", "dob", "phone", "semester"]
-    ws.append(headers)
+    # ── Column widths ─────────────────────────────────────
+    ws.column_dimensions["A"].width = 15   # roll_no
+    ws.column_dimensions["B"].width = 20   # reg_no
+    ws.column_dimensions["C"].width = 25   # name
+    ws.column_dimensions["D"].width = 15   # dob
+    ws.column_dimensions["E"].width = 15   # phone
+    ws.column_dimensions["F"].width = 12   # semester
 
-    # 🔥 Set column width (optional – better UX)
-    ws.column_dimensions["A"].width = 15
-    ws.column_dimensions["B"].width = 18
-    ws.column_dimensions["C"].width = 22
-    ws.column_dimensions["D"].width = 15
-    ws.column_dimensions["E"].width = 15
-    ws.column_dimensions["F"].width = 12
+    # ── Apply cell formats for rows 1-500 BEFORE writing any data ────────────
+    # "@" = Text  →  prevents 830123104032 becoming 8.31E+11
+    #              →  prevents 9876543210  becoming a float
+    for row in range(1, 501):
+        ws[f"A{row}"].number_format = "@"           # roll_no  → Text
+        ws[f"B{row}"].number_format = "@"           # reg_no   → Text
+        ws[f"E{row}"].number_format = "@"           # phone    → Text
+        ws[f"D{row}"].number_format = "yyyy-mm-dd"  # dob      → Date
 
-    # 🔥 Force DOB column to yyyy-mm-dd
-    for row in range(2, 500):   # allow 500 students
-        cell = ws[f"D{row}"]
-        cell.number_format = "yyyy-mm-dd"
+    # ── Header row (row 1) ────────────────────────────────
+    for col, header in enumerate(["roll_no", "reg_no", "name", "dob", "phone", "semester"], start=1):
+        ws.cell(row=1, column=col).value = header
+
+    # ── Sample row (row 2) — all text columns stored as strings ──────────────
+    def write_text(row, col, value):
+        """Write value as explicit Text string so Excel stores it as-is."""
+        cell = ws.cell(row=row, column=col)
+        cell.value = str(value)
+        cell.data_type = TYPE_STRING   # force Excel to treat as Text
+
+    write_text(2, 1, "21CS001")        # roll_no
+    write_text(2, 2, "202110000001")   # reg_no  (12 digits, no scientific notation)
+    write_text(2, 3, "SAMPLE NAME")    # name
+    ws.cell(row=2, column=4).value = "2003-01-01"   # dob  (date string)
+    write_text(2, 5, "9876543210")     # phone   (10 digits, no conversion)
+    ws.cell(row=2, column=6).value = 5              # semester (number is fine)
 
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1038,7 +1113,8 @@ def import_students_excel(request):
                 "phone": phone,
                 "branch": branch,
                 "year": int(year),
-                "semester": int(semester)
+                "semester": int(semester),
+                "student_type": "Hosteller"  # ✅ default for bulk imports
             })
 
             inserted += 1
@@ -1065,3 +1141,618 @@ def import_students_excel(request):
 def logout_view(request):
     request.session.flush()
     return redirect("index")
+
+
+# ================= OFFICE STUDENT STATUS API =================
+from django.http import JsonResponse
+import math
+
+@institution_login_required
+def office_student_status_api(request):
+    role = request.session.get("role")
+    if role not in ("LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"):
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    try:
+        year = int(request.GET.get("year", 0))
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "Invalid Year"}, status=400)
+
+    if not year:
+        return JsonResponse({"error": "Year is required"}, status=400)
+
+    search = request.GET.get("search", "").strip()
+    status_filter = request.GET.get("status", "All").strip()
+    branch_filter = request.GET.get("branch", "").strip()
+    
+    try:
+        page = int(request.GET.get("page", 1))
+        if page < 1:
+            page = 1
+    except (ValueError, TypeError):
+        page = 1
+
+    limit = 10  # number of students per page
+
+    # Build match query for students
+    match_query = {
+        "year": year
+    }
+
+    if role == "DEPARTMENT":
+        match_query["branch"] = request.session.get("department")
+    elif branch_filter:
+        match_query["branch"] = branch_filter
+
+    if search:
+        match_query["$or"] = [
+            {"reg_no": {"$regex": search, "$options": "i"}},
+            {"name": {"$regex": search, "$options": "i"}}
+        ]
+
+    # Build aggregation pipeline
+    pipeline = [
+        {"$match": match_query},
+        {
+            "$lookup": {
+                "from": "no_due_requests",
+                "let": {"student_id": "$_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$student_id", "$$student_id"]},
+                                    {"$eq": ["$office", role]}
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "as": "no_due_record"
+            }
+        },
+        {
+            "$addFields": {
+                "no_due": {"$arrayElemAt": ["$no_due_record", 0]}
+            }
+        },
+        {
+            "$addFields": {
+                "office_status": {
+                    "$cond": {
+                        "if": {"$and": [{"$eq": [role, "HOSTEL"]}, {"$eq": ["$student_type", "Day Scholar"]}]},
+                        "then": "Completed",
+                        "else": {
+                            "$cond": {
+                                "if": {"$eq": ["$no_due.status", "APPROVED"]},
+                                "then": "Completed",
+                                "else": {
+                                    "$cond": {
+                                        "if": {"$eq": ["$no_due.status", "PENDING"]},
+                                        "then": "Pending",
+                                        "else": "Incomplete"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "completed_time": {
+                    "$cond": {
+                        "if": {"$and": [{"$eq": [role, "HOSTEL"]}, {"$eq": ["$student_type", "Day Scholar"]}]},
+                        "then": "-",
+                        "else": {
+                            "$cond": {
+                                "if": {"$eq": ["$no_due.status", "APPROVED"]},
+                                "then": {"$ifNull": ["$no_due.updated_at", "$no_due.created_at"]},
+                                "else": "-"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+
+    # Apply status filter
+    if status_filter and status_filter != "All":
+        pipeline.append({"$match": {"office_status": status_filter}})
+
+    # Pagination facet
+    pipeline.append({
+        "$facet": {
+            "metadata": [{"$count": "total"}],
+            "data": [
+                {"$skip": (page - 1) * limit},
+                {"$limit": limit}
+            ]
+        }
+    })
+
+    try:
+        results = list(students_col.aggregate(pipeline))
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+    total_count = 0
+    students_list = []
+
+    if results:
+        metadata = results[0].get("metadata", [])
+        if metadata:
+            total_count = metadata[0]["total"]
+        data = results[0].get("data", [])
+        
+        for s in data:
+            ct = s.get("completed_time")
+            # Format time if it is a datetime object
+            if isinstance(ct, datetime):
+                completed_time_str = ct.strftime("%d-%m-%Y %I:%M %p")
+            else:
+                completed_time_str = "-"
+                
+            students_list.append({
+                "reg_no": s.get("reg_no"),
+                "name": s.get("name"),
+                "branch": s.get("branch"),
+                "semester": s.get("semester"),
+                "status": s.get("office_status"),
+                "completed_time": completed_time_str
+            })
+
+    total_pages = math.ceil(total_count / limit)
+
+    return JsonResponse({
+        "students": students_list,
+        "current_page": page,
+        "total_pages": total_pages,
+        "total_count": total_count
+    })
+
+
+# ═══════════════════════════════════════════
+#  REPORT GENERATION & EXPORT VIEWS
+# ═══════════════════════════════════════════
+
+def _get_report_students_pipeline(role, report_type, year_str, branch_val, dept):
+    match_query = {}
+
+    if role == "DEPARTMENT":
+        match_query["branch"] = dept
+        branch_val = dept
+
+    if report_type == "year":
+        if not year_str:
+            return None, "Year is required for Year Wise Report"
+        try:
+            match_query["year"] = int(year_str)
+        except (ValueError, TypeError):
+            return None, "Invalid Year"
+
+    elif report_type == "branch":
+        if role != "DEPARTMENT":
+            if not branch_val:
+                return None, "Branch is required for Branch Wise Report"
+            match_query["branch"] = branch_val
+
+    elif report_type == "year_branch":
+        if not year_str:
+            return None, "Year is required for Year + Branch Wise Report"
+        try:
+            match_query["year"] = int(year_str)
+        except (ValueError, TypeError):
+            return None, "Invalid Year"
+        if role != "DEPARTMENT":
+            if not branch_val:
+                return None, "Branch is required for Year + Branch Wise Report"
+            match_query["branch"] = branch_val
+
+    pipeline = [
+        {"$match": match_query},
+        {
+            "$lookup": {
+                "from": "no_due_requests",
+                "let": {"student_id": "$_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$student_id", "$$student_id"]},
+                                    {"$eq": ["$office", role]}
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "as": "no_due_record"
+            }
+        },
+        {
+            "$addFields": {
+                "no_due": {"$arrayElemAt": ["$no_due_record", 0]}
+            }
+        },
+        {
+            "$addFields": {
+                "office_status": {
+                    "$cond": {
+                        "if": {"$and": [{"$eq": [role, "HOSTEL"]}, {"$eq": ["$student_type", "Day Scholar"]}]},
+                        "then": "Completed",
+                        "else": {
+                            "$cond": {
+                                "if": {"$eq": ["$no_due.status", "APPROVED"]},
+                                "then": "Completed",
+                                "else": {
+                                    "$cond": {
+                                        "if": {"$eq": ["$no_due.status", "PENDING"]},
+                                        "then": "Pending",
+                                        "else": "Incomplete"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "completed_time": {
+                    "$cond": {
+                        "if": {"$and": [{"$eq": [role, "HOSTEL"]}, {"$eq": ["$student_type", "Day Scholar"]}]},
+                        "then": "-",
+                        "else": {
+                            "$cond": {
+                                "if": {"$eq": ["$no_due.status", "APPROVED"]},
+                                "then": {"$ifNull": ["$no_due.updated_at", "$no_due.created_at"]},
+                                "else": "-"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        {"$sort": {"reg_no": 1}}
+    ]
+    return pipeline, None
+
+
+@institution_login_required
+def office_report_preview_api(request):
+    role = request.session.get("role")
+    if role not in ("LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"):
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    report_type = request.GET.get("report_type", "").strip()
+    if report_type not in ("year", "branch", "year_branch"):
+        return JsonResponse({"error": "Invalid Report Type"}, status=400)
+
+    year_str = request.GET.get("year", "").strip()
+    branch_val = request.GET.get("branch", "").strip()
+    dept = request.session.get("department")
+
+    pipeline, err = _get_report_students_pipeline(role, report_type, year_str, branch_val, dept)
+    if err:
+        return JsonResponse({"error": err}, status=400)
+
+    try:
+        page = int(request.GET.get("page", 1))
+        if page < 1:
+            page = 1
+    except (ValueError, TypeError):
+        page = 1
+
+    limit = 10
+    pagination_pipeline = list(pipeline)
+    pagination_pipeline.append({
+        "$facet": {
+            "metadata": [{"$count": "total"}],
+            "data": [
+                {"$skip": (page - 1) * limit},
+                {"$limit": limit}
+            ]
+        }
+    })
+
+    try:
+        results = list(students_col.aggregate(pagination_pipeline))
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+    total_count = 0
+    students_list = []
+
+    if results:
+        metadata = results[0].get("metadata", [])
+        if metadata:
+            total_count = metadata[0]["total"]
+        data = results[0].get("data", [])
+
+        for s in data:
+            ct = s.get("completed_time")
+            if isinstance(ct, datetime):
+                completed_time_str = ct.strftime("%d-%m-%Y %I:%M %p")
+            else:
+                completed_time_str = "-"
+
+            students_list.append({
+                "reg_no": s.get("reg_no"),
+                "roll_no": s.get("roll_no", ""),
+                "name": s.get("name"),
+                "branch": s.get("branch"),
+                "year": s.get("year"),
+                "semester": s.get("semester"),
+                "student_type": s.get("student_type", "Hosteller"),
+                "status": s.get("office_status"),
+                "completed_time": completed_time_str
+            })
+
+    total_pages = math.ceil(total_count / limit)
+
+    return JsonResponse({
+        "students": students_list,
+        "current_page": page,
+        "total_pages": total_pages,
+        "total_count": total_count
+    })
+
+
+class NumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number(num_pages)
+            super().showPage()
+        super().save()
+
+    def draw_page_number(self, page_count):
+        self.saveState()
+        self.setFont("Helvetica", 8)
+        self.setFillColor(colors.HexColor("#4B5563"))
+        
+        # Line above footer
+        width, height = A4
+        self.setStrokeColor(colors.HexColor("#D1D5DB"))
+        self.setLineWidth(0.5)
+        self.line(36, 45, width - 36, 45)
+        
+        # Footer content
+        self.drawString(36, 32, "Generated by GCES No Due Clearance Portal")
+        page_text = f"Page {self._pageNumber} of {page_count}"
+        self.drawRightString(width - 36, 32, page_text)
+        self.restoreState()
+
+
+@institution_login_required
+def office_report_pdf_view(request):
+    role = request.session.get("role")
+    if role not in ("LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"):
+        return HttpResponse("Unauthorized", status=403)
+
+    report_type = request.GET.get("report_type", "").strip()
+    if report_type not in ("year", "branch", "year_branch"):
+        return HttpResponse("Invalid Report Type", status=400)
+
+    year_str = request.GET.get("year", "").strip()
+    branch_val = request.GET.get("branch", "").strip()
+    dept = request.session.get("department")
+
+    pipeline, err = _get_report_students_pipeline(role, report_type, year_str, branch_val, dept)
+    if err:
+        return HttpResponse(err, status=400)
+
+    try:
+        students = list(students_col.aggregate(pipeline))
+    except Exception as e:
+        return HttpResponse(f"Database error: {str(e)}", status=500)
+
+    # Prepare response as PDF attachment
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="Clearance_Report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf"'
+
+    # Set download token cookie if provided
+    download_token = request.GET.get("download_token")
+    if download_token:
+        response.set_cookie("fileDownloadToken", download_token, max_age=60)
+
+    # Document template setup (A4 standard: 595.27 x 841.89 points)
+    doc = SimpleDocTemplate(
+        response,
+        pagesize=A4,
+        leftMargin=36,
+        rightMargin=36,
+        topMargin=36,
+        bottomMargin=55
+    )
+
+    story = []
+    styles = getSampleStyleSheet()
+
+    primary_color = colors.HexColor("#d52b1e")
+    dark_gray = colors.HexColor("#1F2937")
+
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=20,
+        leading=24,
+        textColor=primary_color,
+        alignment=1
+    )
+
+    subtitle_style = ParagraphStyle(
+        'DocSubTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=13,
+        leading=16,
+        textColor=dark_gray,
+        alignment=1
+    )
+
+    info_label_style = ParagraphStyle(
+        'InfoLabel',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9,
+        leading=11,
+        textColor=colors.HexColor("#374151")
+    )
+
+    info_val_style = ParagraphStyle(
+        'InfoVal',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        leading=11,
+        textColor=colors.HexColor("#4B5563")
+    )
+
+    # Title Block
+    story.append(Paragraph("GOVERNMENT COLLEGE OF ENGINEERING – SRIRANGAM", title_style))
+    story.append(Spacer(1, 4))
+
+    office_display = role.title() + " Office" if role != "DEPARTMENT" else f"{dept} Department Office"
+    story.append(Paragraph(f"{office_display} – Clearance Status Report", subtitle_style))
+    story.append(Spacer(1, 10))
+
+    # Red divider line
+    divider = Table([[""]], colWidths=[523], rowHeights=[2])
+    divider.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), primary_color),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+    ]))
+    story.append(divider)
+    story.append(Spacer(1, 12))
+
+    # Meta-info block
+    now_str = datetime.now().strftime("%d-%m-%Y %I:%M %p")
+
+    selected_year = f"Year {year_str}" if year_str else "All Years"
+    selected_branch = branch_val if branch_val else "All Branches"
+
+    report_title_display = "Clearance Report"
+    if report_type == "year":
+        report_title_display = "Year-Wise Clearance Report"
+    elif report_type == "branch":
+        report_title_display = "Branch-Wise Clearance Report"
+    elif report_type == "year_branch":
+        report_title_display = "Year & Branch Clearance Report"
+
+    info_data = [
+        [
+            Paragraph("Report Type:", info_label_style), Paragraph(report_title_display, info_val_style),
+            Paragraph("Generated on:", info_label_style), Paragraph(now_str, info_val_style)
+        ],
+        [
+            Paragraph("Selected Year:", info_label_style), Paragraph(selected_year, info_val_style),
+            Paragraph("Selected Branch:", info_label_style), Paragraph(selected_branch, info_val_style)
+        ],
+        [
+            Paragraph("Total Students:", info_label_style), Paragraph(str(len(students)), info_val_style),
+            "", ""
+        ]
+    ]
+
+    info_table = Table(info_data, colWidths=[100, 160, 100, 163])
+    info_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+    ]))
+    story.append(info_table)
+    story.append(Spacer(1, 15))
+
+    # Student Data Table
+    th_style = ParagraphStyle(
+        'TableHead',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=8,
+        leading=10,
+        textColor=colors.white
+    )
+
+    td_style = ParagraphStyle(
+        'TableBody',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8,
+        leading=10,
+        textColor=dark_gray
+    )
+
+    td_completed_style = ParagraphStyle('TableBodyCompleted', parent=td_style, textColor=colors.HexColor("#16A34A"))
+    td_pending_style = ParagraphStyle('TableBodyPending', parent=td_style, textColor=colors.HexColor("#D97706"))
+    td_incomplete_style = ParagraphStyle('TableBodyIncomplete', parent=td_style, textColor=colors.HexColor("#DC2626"))
+
+    table_data = [[
+        Paragraph("Register No", th_style),
+        Paragraph("Roll No", th_style),
+        Paragraph("Student Name", th_style),
+        Paragraph("Branch", th_style),
+        Paragraph("Year", th_style),
+        Paragraph("Sem", th_style),
+        Paragraph("Type", th_style),
+        Paragraph("Status", th_style),
+        Paragraph("Approval Date & Time", th_style)
+    ]]
+
+    for s in students:
+        ct = s.get("completed_time")
+        if isinstance(ct, datetime):
+            completed_time_str = ct.strftime("%d-%m-%Y %I:%M %p")
+        else:
+            completed_time_str = "-"
+
+        status = s.get("office_status")
+        if status == "Completed":
+            status_p = Paragraph("Completed", td_completed_style)
+        elif status == "Pending":
+            status_p = Paragraph("Pending", td_pending_style)
+        else:
+            status_p = Paragraph("Incomplete", td_incomplete_style)
+
+        table_data.append([
+            Paragraph(str(s.get("reg_no", "")), td_style),
+            Paragraph(str(s.get("roll_no", "")), td_style),
+            Paragraph(str(s.get("name", "")), td_style),
+            Paragraph(str(s.get("branch", "")), td_style),
+            Paragraph(str(s.get("year", "")), td_style),
+            Paragraph(str(s.get("semester", "")), td_style),
+            Paragraph(str(s.get("student_type", "Hosteller")), td_style),
+            status_p,
+            Paragraph(completed_time_str, td_style)
+        ])
+
+    student_table = Table(table_data, colWidths=[75, 55, 95, 50, 25, 25, 60, 60, 78], repeatRows=1)
+    
+    t_style = TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), primary_color),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E5E7EB")),
+    ])
+
+    for i in range(1, len(table_data)):
+        bg_color = colors.HexColor("#F9FAFB") if i % 2 == 0 else colors.white
+        t_style.add('BACKGROUND', (0, i), (-1, i), bg_color)
+
+    student_table.setStyle(t_style)
+    story.append(student_table)
+
+    doc.build(story, canvasmaker=NumberedCanvas)
+    return response
+

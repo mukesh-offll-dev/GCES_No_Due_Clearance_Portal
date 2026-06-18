@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import index, library_dashboard, logout_view, faculty_dashboard, add_student , delete_students , edit_student, student_login, student_dashboard, send_hostel_request, college_dashboard, department_dashboard, hostel_dashboard, bulk_approve, reject_request, send_no_due_request, retry_request, update_student_profile , no_due_certificate , download_student_template, import_students_excel
+from .views import index, library_dashboard, logout_view, faculty_dashboard, add_student , delete_students , edit_student, student_login, student_dashboard, send_hostel_request, college_dashboard, department_dashboard, hostel_dashboard, bulk_approve, reject_request, send_no_due_request, retry_request, update_student_profile , no_due_certificate , download_student_template, import_students_excel, office_student_status_api, office_report_preview_api, office_report_pdf_view
  
 from django.conf.urls.static import static
 
@@ -32,9 +32,10 @@ urlpatterns = [
     path("faculty/delete/", delete_students, name="delete_students"),
     path("faculty/edit/", edit_student, name="edit_student"),
     path("faculty/template/", download_student_template, name="download_student_template"),
-    path("faculty/import/", import_students_excel, name="import_students_excel")
-
-    
+    path("faculty/import/", import_students_excel, name="import_students_excel"),
+    path("office/student-status/", office_student_status_api, name="student_status_api"),
+    path("office/report/preview/", office_report_preview_api, name="report_preview_api"),
+    path("office/report/pdf/", office_report_pdf_view, name="report_pdf_view"),
 ]
 
  

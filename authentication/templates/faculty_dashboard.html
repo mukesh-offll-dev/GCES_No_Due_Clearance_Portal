@@ -30,7 +30,7 @@
   </select>
 
   <span class="sm:ml-auto bg-[#d52b1e] text-white px-4 sm:px-6 py-2 rounded-full font-semibold text-sm">
-    Students Count – {{ count }}
+    Students Count – <span id="studentCountSpan">{{ count }}</span>
   </span>
 </form>
 
@@ -149,6 +149,21 @@
     <span class="w-9 h-9 bg-gray-300 rounded-lg flex items-center justify-center text-xl">+</span>
     Add Student
   </button>
+
+  {% if branch and year %}
+  <!-- SEARCH BAR -->
+  <div class="relative w-full sm:w-72 md:w-96">
+    <input type="text"
+           id="studentSearchInput"
+           placeholder="Search by Reg No, Roll No, or Name..."
+           class="w-full border-2 border-gray-300 rounded-full px-5 py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-[#d52b1e] transition-colors duration-200">
+    <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+         fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+    </svg>
+  </div>
+  {% endif %}
+
 <div class="flex flex-col items-end">
   <button type="button"
     onclick="handleDeleteClick()"
@@ -171,7 +186,7 @@
   <div id="studentList">
 
   {% for s in students %}
- <div class="border-2 border-gray-600 bg-white rounded-[20px] p-6 mb-4 flex justify-between items-center shadow-sm student-card"  data-reg="{{ s.reg_no }}">
+ <div class="border-2 border-gray-600 bg-white rounded-[20px] p-6 mb-4 flex justify-between items-center shadow-sm student-card"  data-reg="{{ s.reg_no }}" data-roll="{{ s.roll_no }}" data-name="{{ s.name }}">
 
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm font-medium">
@@ -188,6 +203,13 @@
         <p class="mt-2"><b>Year :</b> {{ s.year }}</p>
         <p class="mt-2"><b>Branch :</b> {{ s.branch }}</p>
         <p class="mt-2"><b>Phone Number :</b> {{ s.phone }}</p>
+        <p class="mt-2">
+          {% if s.student_type == "Day Scholar" %}
+          <span class="inline-block bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">Day Scholar</span>
+          {% else %}
+          <span class="inline-block bg-orange-100 text-orange-800 text-xs font-bold px-3 py-1 rounded-full">Hosteller</span>
+          {% endif %}
+        </p>
       </div>
     </div>
 
@@ -209,7 +231,8 @@
           '{{ s.dob }}',
           '{{ s.phone }}',
           '{{ s.semester }}',
-          '{{ s.year }}'
+          '{{ s.year }}',
+          '{{ s.student_type|default:"Hosteller" }}'
         )"
         class="text-blue-600 font-semibold">
         Edit
@@ -282,6 +305,20 @@
        placeholder="Phone Number"
        required>
 
+<label class="block text-sm font-medium mb-1">Student Type</label>
+<div class="flex gap-4 mb-4">
+  <label class="flex items-center gap-2 cursor-pointer">
+    <input type="radio" name="student_type" value="Hosteller" id="add_type_hosteller" checked
+           class="w-4 h-4 accent-[#d52b1e]">
+    <span class="text-sm font-semibold">Hosteller</span>
+  </label>
+  <label class="flex items-center gap-2 cursor-pointer">
+    <input type="radio" name="student_type" value="Day Scholar" id="add_type_dayscholar"
+           class="w-4 h-4 accent-blue-600">
+    <span class="text-sm font-semibold">Day Scholar</span>
+  </label>
+</div>
+
 <input type="hidden" name="branch" value="{{ branch }}">
 <input type="hidden" id="add_year_hidden" name="year" value="{{ year }}">
 <button type="button" onclick="submitAddForm()"
@@ -343,6 +380,20 @@
 <label class="block text-sm font-semibold mb-1">Phone</label>
 <input id="edit_phone" name="phone"
        class="w-full border rounded-full px-3 py-1.5 mb-3 text-sm">
+
+<label class="block text-sm font-semibold mb-1">Student Type</label>
+<div class="flex gap-4 mb-4">
+  <label class="flex items-center gap-2 cursor-pointer">
+    <input type="radio" name="student_type" value="Hosteller" id="edit_type_hosteller"
+           class="w-4 h-4 accent-[#d52b1e]">
+    <span class="text-sm font-semibold">Hosteller</span>
+  </label>
+  <label class="flex items-center gap-2 cursor-pointer">
+    <input type="radio" name="student_type" value="Day Scholar" id="edit_type_dayscholar"
+           class="w-4 h-4 accent-blue-600">
+    <span class="text-sm font-semibold">Day Scholar</span>
+  </label>
+</div>
 
 <button type="button" onclick="submitEditForm()"
         class="bg-[#d52b1e] hover:bg-red-800 text-white w-full py-1.5 rounded-full text-sm font-semibold transition">
@@ -502,13 +553,18 @@ function submitAddForm() {
 }
 
 // ── Edit Modal ───────────────────────────────
-function openEditModal(id, r, rg, n, d, p, sem, y) {
+function openEditModal(id, r, rg, n, d, p, sem, y, stype) {
   edit_id.value    = id;
   edit_roll.value  = r;
   edit_reg.value   = rg;
   edit_name.value  = n;
   edit_dob.value   = d;
   edit_phone.value = p;
+
+  // Set student type radio
+  const studentType = stype || 'Hosteller';
+  document.getElementById('edit_type_hosteller').checked = (studentType !== 'Day Scholar');
+  document.getElementById('edit_type_dayscholar').checked = (studentType === 'Day Scholar');
 
   // Set year first, then populate semesters with current sem pre-selected
   document.getElementById('edit_year').value = y;
@@ -584,8 +640,14 @@ function openNoDueModal(studentId) {
 
   content.innerHTML = "";
 
-  const offices = ["LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"];
+  const studentData = STUDENTS.find(s => s.id === studentId) || {};
+  const studentType = studentData.student_type || 'Hosteller';
   const noDues = STUDENTS_NO_DUE[studentId] || {};
+
+  // Determine which offices to show
+  const offices = studentType === 'Day Scholar'
+    ? ["LIBRARY", "COLLEGE", "DEPARTMENT"]
+    : ["LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"];
 
   offices.forEach(office => {
     const status = noDues[office] || "NOT_SENT";
@@ -689,6 +751,38 @@ function closeNoDueModal() {
     });
   };
 })();
+
+// ═══════════════════════════════════════════
+//  STUDENT SEARCH FILTER
+// ═══════════════════════════════════════════
+window.addEventListener("load", () => {
+  const searchInput = document.getElementById("studentSearchInput");
+  if (!searchInput) return;
+
+  searchInput.addEventListener("input", function() {
+    const query = this.value.toLowerCase().trim();
+    const cards = document.querySelectorAll(".student-card");
+    let visibleCount = 0;
+
+    cards.forEach(card => {
+      const reg = (card.dataset.reg || "").toLowerCase();
+      const roll = (card.dataset.roll || "").toLowerCase();
+      const name = (card.dataset.name || "").toLowerCase();
+
+      if (reg.includes(query) || roll.includes(query) || name.includes(query)) {
+        card.style.display = "";
+        visibleCount++;
+      } else {
+        card.style.display = "none";
+      }
+    });
+
+    const countSpan = document.getElementById("studentCountSpan");
+    if (countSpan) {
+      countSpan.textContent = visibleCount;
+    }
+  });
+});
 </script>
 
 {% endblock %}

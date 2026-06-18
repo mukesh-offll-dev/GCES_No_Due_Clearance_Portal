@@ -5,10 +5,15 @@
 <main class="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
 
   <!-- PAGE TITLE -->
-  <div class="flex justify-center mb-6 px-2">
-    <div class="bg-[#d52b1e] text-white px-6 sm:px-14 py-3 rounded-full text-lg sm:text-xl font-bold text-center">
-      {{ branch }} {{ office_name }}
+  <div class="flex flex-col sm:flex-row justify-between items-center mb-6 px-2 gap-4">
+    <div class="bg-[#d52b1e] text-white px-6 sm:px-14 py-3 rounded-full text-lg sm:text-xl font-bold text-center shadow-sm">
+      {% if office_name == "Department" %} {{ branch }} {% endif %} {{ office_name }}
     </div>
+    
+    <button type="button" onclick="openReportModal()"
+      class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-full font-bold shadow-md transition transform hover:scale-105 text-sm">
+      Generate Report
+    </button>
   </div>
 
   <!-- FILTER -->
@@ -21,18 +26,18 @@
       <select name="branch" onchange="this.form.submit()" class="w-full border rounded-full px-4 py-2">
         <option value="">Select</option>
         {% for b in branches %}
-        <option value="{{ b }}" {% if branch==b %}selected{% endif %}>{{ b }}</option>
+        <option value="{{ b }}" {% if branch == b %}selected{% endif %}>{{ b }}</option>
         {% endfor %}
       </select>
     </div>
     {% endif %}
 
     <div>
-      <label class="font-semibold">Year</label>
+      <label class="font-semibold block mb-1">Year</label>
       <select name="year" onchange="this.form.submit()" class="w-full border rounded-full px-4 py-2">
         <option value="">Select</option>
         {% for y in "1234" %}
-        <option value="{{ y }}" {% if year==y %}selected{% endif %}>{{ y }}</option>
+        <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
         {% endfor %}
       </select>
     </div>
@@ -61,20 +66,23 @@
       {% endif %}
 
       {% if branch and year %}
-      <div class="flex justify-end mb-6">
-        <span class="bg-[#d52b1e] text-white px-6 py-2 rounded-full font-semibold">
+      <div class="flex flex-wrap items-center justify-end gap-3 mb-6">
+        <span class="bg-[#d52b1e] text-white px-6 py-2 rounded-full font-semibold text-sm">
           Students Count - {{ count }}
         </span>
+        <button type="button" onclick="loadStudentsStatus()"
+          class="bg-[#d52b1e] hover:bg-red-800 text-white px-6 py-2 rounded-full font-bold shadow-md transition transform hover:scale-105 text-sm">
+          Students Status
+        </button>
       </div>
       {% endif %}
-
 
     </div>
 
   </form>
 
   <!-- ACTION BAR -->
-  <form method="POST" action="{% url 'bulk_approve' %}">
+  <form method="POST" action="{% url 'bulk_approve' %}" onsubmit="disableSubmitButtons(this)">
     {% csrf_token %}
     <div class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] p-4 sm:p-6 mb-6
             flex flex-wrap justify-between items-center gap-3 bg-white shadow-sm">
@@ -106,11 +114,21 @@
     {% if branch and year %}
 
     {% if requests %}
-    {% for r in requests %}
-    <div class="border-2 border-[#d52b1e] rounded-[24px] p-6 mb-4 
-            flex justify-between items-center shadow-sm">
+    <div class="max-w-6xl mx-auto mb-4">
+      <input type="text" id="pendingSearch" onkeyup="searchPending()" placeholder="Search pending by Roll No, Name or Reg No..."
+        class="w-full border-2 border-[#d52b1e] rounded-full px-6 py-2">
+    </div>
+    
+    <p id="noResultPending" class="hidden text-center font-semibold text-red-600 mt-4 mb-4">
+      No student found matching query
+    </p>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 font-medium text-left w-full">
+    {% for r in requests %}
+    <div class="pending-card border-2 border-[#d52b1e] rounded-[24px] p-6 mb-4 
+            flex justify-between items-center shadow-sm"
+         data-search="{{ r.student.roll_no }} {{ r.student.name }} {{ r.student.reg_no }}">
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 sm:gap-6 font-medium text-left w-full">
 
         <div class="border-r pr-4">
           <b class="block mb-1">Roll no</b>
@@ -125,6 +143,11 @@
         <div class="border-r pr-4">
           <b class="block mb-1">Year</b>
           <span class="text-gray-700">{{ r.student.year }}</span>
+        </div>
+
+        <div class="border-r pr-4">
+          <b class="block mb-1">Semester</b>
+          <span class="text-gray-700">{{ r.student.semester }}</span>
         </div>
 
         <div>
@@ -152,12 +175,99 @@
     {% endif %}
 
   </form>
+
+  <!-- ================= STUDENTS STATUS SECTION ================= -->
+  <div id="studentsStatusSection" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
+    <div class="bg-white border-4 border-[#d52b1e] rounded-3xl p-6 w-full max-w-5xl overflow-y-auto max-h-[90vh] shadow-2xl relative animate-fadeIn">
+      <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b pb-4">
+        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+          <span class="w-3 h-6 bg-[#d52b1e] rounded-full inline-block"></span>
+          Students Status (Year {{ year }})
+        </h2>
+        <button type="button" onclick="hideStudentsStatus()" class="text-gray-500 hover:text-gray-700 font-semibold text-sm">
+          ✕ Close
+        </button>
+      </div>
+
+      <!-- Search and Filters Bar -->
+      <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+        <div class="flex flex-1 w-full md:w-auto gap-2">
+          <input type="text" id="statusSearchInput" oninput="debounceSearch()" placeholder="Search Reg No or Name..." 
+                 class="w-full md:w-64 border rounded-full px-4 py-2 focus:outline-none focus:border-[#d52b1e] text-sm">
+        </div>
+        <div class="flex flex-wrap gap-3 w-full md:w-auto justify-end">
+          {% if office_name != "Department" %}
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-gray-500 uppercase">Branch:</span>
+            <select id="statusBranchFilter" onchange="fetchStudentsStatus(1)" class="border rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#d52b1e]">
+              <option value="">All Departments</option>
+              {% for b in branches %}
+              <option value="{{ b }}" {% if branch == b %}selected{% endif %}>{{ b }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-gray-500 uppercase">Status:</span>
+            <select id="statusTypeFilter" onchange="fetchStudentsStatus(1)" class="border rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#d52b1e]">
+              <option value="All">All Status</option>
+              <option value="Completed">Completed</option>
+              <option value="Pending">Pending</option>
+              <option value="Incomplete">Incomplete</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Table Container -->
+      <div class="overflow-x-auto rounded-xl border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+          <thead class="bg-gray-50 font-semibold text-gray-700">
+            <tr>
+              <th class="px-6 py-3 text-left">Register Number</th>
+              <th class="px-6 py-3 text-left">Student Name</th>
+              <th class="px-6 py-3 text-left">Department</th>
+              <th class="px-6 py-3 text-left">Current Semester</th>
+              <th class="px-6 py-3 text-left">Office Status</th>
+              <th class="px-6 py-3 text-left">Completed Time</th>
+            </tr>
+          </thead>
+          <tbody id="studentsStatusTableBody" class="divide-y divide-gray-100 bg-white">
+            <!-- Populated via AJAX -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Loading State -->
+      <div id="statusLoading" class="hidden py-8 text-center">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[#d52b1e] border-t-transparent"></div>
+        <p class="text-sm text-gray-500 mt-2 font-medium">Fetching student list...</p>
+      </div>
+
+      <!-- Empty State -->
+      <div id="statusEmpty" class="hidden py-8 text-center text-gray-500 font-semibold">
+        No students found matching current filters.
+      </div>
+
+      <!-- Pagination -->
+      <div id="statusPagination" class="flex justify-between items-center mt-6 border-t pt-4">
+        <div class="text-xs text-gray-500 font-medium">
+          Showing <span id="showingCount" class="font-bold text-gray-800">-</span> of <span id="totalCount" class="font-bold text-gray-800">-</span> students
+        </div>
+        <div class="flex gap-2" id="paginationControls">
+          <!-- Buttons injected by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
 </main>
 
 <!-- ================= REJECT MODAL ================= -->
 <div id="rejectModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
 
-  <form method="POST" action="{% url 'reject_request' %}"
+  <form method="POST" action="{% url 'reject_request' %}" onsubmit="disableSubmitButtons(this)"
     class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm">
     {% csrf_token %}
 
@@ -203,5 +313,179 @@
   function closeRejectModal() {
     document.getElementById("rejectModal").classList.add("hidden");
   }
+
+  function searchPending() {
+    let input = document.getElementById("pendingSearch").value.toLowerCase();
+    let cards = document.querySelectorAll(".pending-card");
+    let noResult = document.getElementById("noResultPending");
+    let found = false;
+
+    cards.forEach(card => {
+      let searchText = card.getAttribute("data-search").toLowerCase();
+      if (searchText.includes(input)) {
+        card.style.display = "flex";
+        found = true;
+      } else {
+        card.style.display = "none";
+      }
+    });
+
+    if (input !== "" && !found) {
+      noResult.classList.remove("hidden");
+    } else {
+      noResult.classList.add("hidden");
+    }
+  }
+
+  let searchTimeout = null;
+  let currentStatusPage = 1;
+
+  function loadStudentsStatus() {
+    const section = document.getElementById("studentsStatusSection");
+    section.classList.remove("hidden");
+    fetchStudentsStatus(1);
+  }
+
+  function hideStudentsStatus() {
+    document.getElementById("studentsStatusSection").classList.add("hidden");
+  }
+
+  function debounceSearch() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      fetchStudentsStatus(1);
+    }, 300);
+  }
+
+  function fetchStudentsStatus(page) {
+    currentStatusPage = page;
+    
+    const year = "{{ year }}";
+    const search = document.getElementById("statusSearchInput").value.trim();
+    const status = document.getElementById("statusTypeFilter").value;
+    
+    let url = `/office/student-status/?year=${year}&page=${page}&search=${encodeURIComponent(search)}&status=${status}`;
+    
+    const branchFilterEl = document.getElementById("statusBranchFilter");
+    if (branchFilterEl) {
+      url += `&branch=${encodeURIComponent(branchFilterEl.value)}`;
+    }
+    
+    // Show Loading
+    document.getElementById("statusLoading").classList.remove("hidden");
+    document.getElementById("studentsStatusTableBody").classList.add("opacity-50");
+    document.getElementById("statusEmpty").classList.add("hidden");
+    
+    fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById("statusLoading").classList.add("hidden");
+        document.getElementById("studentsStatusTableBody").classList.remove("opacity-50");
+        
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+        
+        renderStatusTable(data.students);
+        renderPagination(data.current_page, data.total_pages, data.total_count);
+      })
+      .catch(err => {
+        console.error(err);
+        document.getElementById("statusLoading").classList.add("hidden");
+        document.getElementById("studentsStatusTableBody").classList.remove("opacity-50");
+      });
+  }
+
+  function renderStatusTable(students) {
+    const tbody = document.getElementById("studentsStatusTableBody");
+    tbody.innerHTML = "";
+    
+    if (students.length === 0) {
+      document.getElementById("statusEmpty").classList.remove("hidden");
+      return;
+    }
+    
+    students.forEach(s => {
+      let statusBadge = '';
+      if (s.status === 'Completed') {
+        statusBadge = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">Completed</span>';
+      } else if (s.status === 'Pending') {
+        statusBadge = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">Pending</span>';
+      } else {
+        statusBadge = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Incomplete</span>';
+      }
+      
+      const row = `
+        <tr class="hover:bg-gray-50 transition border-b">
+          <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${s.reg_no}</td>
+          <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-700">${s.name}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.branch}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.semester}</td>
+          <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.completed_time}</td>
+        </tr>
+      `;
+      tbody.insertAdjacentHTML('beforeend', row);
+    });
+  }
+
+  function renderPagination(current, total, totalCount) {
+    const controls = document.getElementById("paginationControls");
+    controls.innerHTML = "";
+    
+    document.getElementById("totalCount").innerText = totalCount;
+    
+    const limit = 10;
+    const startIdx = totalCount === 0 ? 0 : (current - 1) * limit + 1;
+    const endIdx = Math.min(current * limit, totalCount);
+    document.getElementById("showingCount").innerText = `${startIdx}-${endIdx}`;
+    
+    if (total <= 1) {
+      document.getElementById("statusPagination").classList.add("hidden");
+      return;
+    }
+    document.getElementById("statusPagination").classList.remove("hidden");
+    
+    // Prev Button
+    const prevBtn = document.createElement("button");
+    prevBtn.type = "button";
+    prevBtn.className = `px-3 py-1.5 rounded-full text-xs font-semibold border ${current === 1 ? 'text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed' : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'}`;
+    prevBtn.innerText = "Previous";
+    if (current > 1) {
+      prevBtn.onclick = () => fetchStudentsStatus(current - 1);
+    }
+    controls.appendChild(prevBtn);
+    
+    // Page Numbers
+    for (let i = 1; i <= total; i++) {
+      if (i === 1 || i === total || (i >= current - 1 && i <= current + 1)) {
+        const pageBtn = document.createElement("button");
+        pageBtn.type = "button";
+        pageBtn.className = `w-8 h-8 rounded-full text-xs font-semibold border ${i === current ? 'bg-[#d52b1e] border-[#d52b1e] text-white' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`;
+        pageBtn.innerText = i;
+        pageBtn.onclick = () => fetchStudentsStatus(i);
+        controls.appendChild(pageBtn);
+      } else if (i === 2 || i === total - 1) {
+        const dots = document.createElement("span");
+        dots.className = "px-1 text-gray-400 text-xs";
+        dots.innerText = "...";
+        controls.appendChild(dots);
+      }
+    }
+    
+    // Next Button
+    const nextBtn = document.createElement("button");
+    nextBtn.type = "button";
+    nextBtn.className = `px-3 py-1.5 rounded-full text-xs font-semibold border ${current === total ? 'text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed' : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'}`;
+    nextBtn.innerText = "Next";
+    if (current < total) {
+      nextBtn.onclick = () => fetchStudentsStatus(current + 1);
+    }
+    controls.appendChild(nextBtn);
+  }
 </script>
+
+  <!-- Include Reusable Report Modal -->
+  {% include "report_modal.html" %}
 {% endblock %}
