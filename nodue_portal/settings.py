@@ -24,11 +24,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get("SECRET_KEY", "fallback-secret-key")
 DEBUG = os.environ.get("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = [
-    "gces-no-due-clearance-portal.onrender.com",
-    "localhost",
-    "127.0.0.1",
-]
+ALLOWED_HOSTS = ["*"]
+
 
 CSRF_TRUSTED_ORIGINS = [
     "https://gces-no-due-clearance-portal.onrender.com",
@@ -125,10 +122,6 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # ================= DEFAULT PK =================
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# ================= AUTOMATIC PROMOTION SETTINGS =================
-PROMOTION_COOLDOWN_MINUTES = 2  # Predefined period in minutes before promotion (for testing)
-GRADUATION_DELETE_COOLDOWN_MINUTES = 3  # Time in minutes before a graduated student is completely deleted
 
 
 

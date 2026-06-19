@@ -57,34 +57,7 @@ def reset_expired_no_dues(no_due_col):
             }}
         )
 
-    # ================= APPROVED → NOT_SENT (5 mins) =================
-    expired_approved = no_due_col.find({
-        "status": "APPROVED",
-        "updated_at": {"$lte": now - timedelta(minutes=5)}
-    })
 
-    for req in expired_approved:
-        if req.get("office") == "HOSTEL":
-            public_id = req.get("cloudinary_public_id")
-            if public_id:
-                delete_cloudinary_file(public_id)
-
-        no_due_col.update_one(
-            {"_id": req["_id"]},
-            {"$set": {
-                "status": "NOT_SENT",
-                "receipt_url": None,
-                "cloudinary_public_id": None,
-                "updated_at": now
-            }}
-        )
-
-    # Run the promotion check synchronously to ensure real-time updates on reload
-    from .scheduler import check_and_promote_students
-    try:
-        check_and_promote_students()
-    except Exception as e:
-        print(f"[Synchronous Promotion Check Error]: {e}")
 
 
 

@@ -5,6 +5,36 @@
 
 <main class="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
 
+  <!-- Django Messages -->
+  {% for message in messages %}
+  <div class="relative px-6 py-4 rounded-2xl font-semibold mb-6 flex justify-between items-center shadow-sm border
+    {% if message.tags == 'success' %}
+      bg-green-50 text-green-800 border-green-200
+    {% elif message.tags == 'error' %}
+      bg-red-50 text-red-800 border-red-200
+    {% else %}
+      bg-yellow-50 text-yellow-800 border-yellow-200
+    {% endif %}
+  ">
+    <span class="text-sm">{{ message }}</span>
+    <button onclick="this.parentElement.remove()" class="text-gray-500 hover:text-black font-bold text-sm">✖</button>
+  </div>
+  {% endfor %}
+
+  <!-- Lock warning banner -->
+  {% if not no_due_access_enabled %}
+  <div class="max-w-xl mx-auto border-2 border-red-200 bg-red-50 rounded-2xl p-5 mb-6 flex flex-col items-center text-center shadow-sm">
+    <div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-3">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+      </svg>
+    </div>
+    <p class="text-sm font-bold text-red-800">
+      No Due process is currently locked. Please contact your Faculty.
+    </p>
+  </div>
+  {% endif %}
+
   <!-- STUDENT DETAILS -->
   <section
     class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] px-4 sm:px-10 py-6 sm:py-8 mb-8 bg-white shadow-sm">
@@ -70,26 +100,13 @@
     <div class="flex justify-end gap-3 mt-4">
       <button onclick="openHistoryModal()"
         class="bg-gray-600 hover:bg-gray-700 text-white px-5 py-1.5 rounded-full text-sm font-semibold transition active:scale-95">
-        Clearance History 🕒
+        Clearance History
       </button>
     </div>
 
   </section>
 
 
-  {% if student.semester == "Graduated" %}
-  <!-- CONGRATULATIONS CARD FOR GRADUATED STUDENTS -->
-  <div class="border-4 border-green-600 rounded-[30px] overflow-hidden max-w-xl mx-auto bg-white shadow-md p-8 text-center my-6">
-    <div class="text-green-600 font-extrabold text-4xl mb-4">🎓 Graduation!</div>
-    <h3 class="text-gray-900 font-bold text-xl mb-3">Congratulations, {{ student.name }}!</h3>
-    <p class="text-gray-700 text-md mb-6 leading-relaxed">
-      You have successfully cleared all department and office dues and completed your graduation status.
-    </p>
-    <a href="{% url 'no_due_certificate' %}" class="inline-block bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-full font-bold transition active:scale-95 shadow-md">
-      Download Graduation Certificate
-    </a>
-  </div>
-  {% else %}
   <!-- NO DUES CARD -->
   <div class="border-2 border-[#d52b1e] rounded-2xl overflow-hidden max-w-xl mx-auto bg-white shadow-sm">
 
@@ -131,6 +148,7 @@
               Reason: {{ d.reject_reason }}
             </p>
 
+            {% if no_due_access_enabled %}
             <form method="POST" action="{% url 'retry_request' %}" class="mt-2">
               {% csrf_token %}
               <input type="hidden" name="office" value="{{ d.office }}">
@@ -139,15 +157,30 @@
                 Try Again
               </button>
             </form>
+            {% else %}
+            <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-xs mt-2">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+              </svg>
+              Locked
+            </span>
+            {% endif %}
           </div>
 
           {% elif d.status == "NOT_SENT" %}
-          <button type="button" data-office="{{ d.office }}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold
-               flex items-center justify-center gap-2">
-            <span class="btn-text">Send for Verification</span>
-          </button>
-
-
+            {% if no_due_access_enabled %}
+            <button type="button" data-office="{{ d.office }}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold
+                 flex items-center justify-center gap-2">
+              <span class="btn-text">Send for Verification</span>
+            </button>
+            {% else %}
+            <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-sm">
+              <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+              </svg>
+              Locked
+            </span>
+            {% endif %}
 
           {% endif %}
 
@@ -166,7 +199,6 @@
     </a>
   </div>
   {% endif %}
-  {% endif %}
 
   <!-- CLEARANCE HISTORY MODAL -->
   <div id="historyModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
@@ -175,7 +207,7 @@
       <button onclick="closeHistoryModal()" class="absolute top-3 right-4 text-2xl font-bold text-gray-600 hover:text-black transition active:scale-90">✖</button>
 
       <h2 class="text-[#d52b1e] font-extrabold text-xl mb-6 flex items-center gap-2">
-        <span>🕒</span> Clearance & Promotion History
+        Clearance History
       </h2>
 
       {% if promotion_logs %}
@@ -184,22 +216,20 @@
           <thead>
             <tr class="border-b-2 border-gray-200 text-gray-600 font-semibold">
               <th class="py-2.5 px-4">Academic Term</th>
-              <th class="py-2.5 px-4">Completed On</th>
-              <th class="py-2.5 px-4">Promoted On</th>
-              <th class="py-2.5 px-4 text-right">Status</th>
+              <th class="py-2.5 px-4">Date</th>
+              <th class="py-2.5 px-4 text-right">No Due Status</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100 text-gray-700">
             {% for log in promotion_logs %}
             <tr>
               <td class="py-3 px-4 font-medium">Semester {{ log.previous_semester }} (Year {{ log.previous_year }})</td>
-              <td class="py-3 px-4">{{ log.completion_time|date:"Y-m-d H:i" }}</td>
               <td class="py-3 px-4">{{ log.promotion_time|date:"Y-m-d H:i" }}</td>
               <td class="py-3 px-4 text-right">
-                {% if log.new_semester == "Graduated" %}
-                <span class="bg-green-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-bold">🎓 Graduated</span>
+                {% if log.no_due_cleared or log.no_due_cleared is None %}
+                <span class="bg-green-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-bold">Cleared</span>
                 {% else %}
-                <span class="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-bold">Promoted to Sem {{ log.new_semester }}</span>
+                <span class="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-bold">Not Cleared</span>
                 {% endif %}
               </td>
             </tr>

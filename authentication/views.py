@@ -1,9 +1,9 @@
 from django.shortcuts import render, redirect
 from django.contrib import messages
-from datetime import datetime , date
+from datetime import datetime , date, timedelta
 from .decorators import institution_login_required 
 from .institution_users import INSTITUTION_USERS
-from .mongo import institution_logs , students_col , no_due_col
+from .mongo import institution_logs , students_col , no_due_col, portal_settings
 from bson.errors import InvalidId
 from bson import ObjectId
 from django.conf import settings
@@ -145,6 +145,29 @@ def student_login(request):
 
  
 
+def check_no_due_access_status():
+    settings_doc = portal_settings.find_one({"_id": "global_config"})
+    if not settings_doc:
+        return False
+    enabled = settings_doc.get("no_due_access_enabled", False)
+    if enabled:
+        auto_disable_at = settings_doc.get("auto_disable_at")
+        if auto_disable_at:
+            if datetime.now() >= auto_disable_at:
+                portal_settings.update_one(
+                    {"_id": "global_config"},
+                    {"$set": {"no_due_access_enabled": False}}
+                )
+                return False
+        else:
+            portal_settings.update_one(
+                {"_id": "global_config"},
+                {"$set": {"no_due_access_enabled": False}}
+            )
+            return False
+    return enabled
+
+
 @institution_login_required
 def student_dashboard(request):
     if request.session.get("role") != "STUDENT":
@@ -187,12 +210,15 @@ def student_dashboard(request):
     from .mongo import promotion_logs
     logs = list(promotion_logs.find({"student_id": student_id}).sort("promotion_time", -1))
 
+    no_due_access_enabled = check_no_due_access_status()
+
     return render(request, "student_dashboard.html", {
         "student": student,
         "dues": dues,
         "all_approved": all_approved,
         "promotion_logs": logs,
         "student_type": student_type,
+        "no_due_access_enabled": no_due_access_enabled,
     })
 
     
@@ -237,10 +263,10 @@ def no_due_certificate(request):
         "status": "APPROVED"
     }))
 
-    # 🔐 Safety check (Bypass check if student is graduated)
+    # 🔐 Safety check
     student_type = student.get("student_type", "Hosteller")
     required_count = 3 if student_type == "Day Scholar" else 4
-    if student.get("semester") != "Graduated" and len(dues) < required_count:
+    if len(dues) < required_count:
         return redirect("student_dashboard")
 
     # Convert to simple dict for template
@@ -262,6 +288,10 @@ def no_due_certificate(request):
     
 @institution_login_required
 def send_hostel_request(request):
+    if not check_no_due_access_status():
+        messages.error(request, "No Due process is currently locked. Please contact your Faculty.")
+        return redirect("student_dashboard")
+
     if request.method == "POST":
 
         receipt_url = None
@@ -280,8 +310,8 @@ def send_hostel_request(request):
             "student_id": ObjectId(request.session["student_id"]),
             "office": "HOSTEL",
             "last_payment_id": request.POST.get("payment_id"),
-            "receipt_url": receipt_url,              # ✅ cloud URL
-            "cloudinary_public_id": cloudinary_public_id,  # ✅ for delete
+            "receipt_url": receipt_url,
+            "cloudinary_public_id": cloudinary_public_id,
             "status": "PENDING",
             "created_at": datetime.now()
         })
@@ -462,41 +492,6 @@ def library_dashboard(request):
 
 
 
-def mark_final_clearance(student_id):
-    student = students_col.find_one({"_id": student_id})
-    if not student:
-        return
-
-    student_type = student.get("student_type", "Hosteller")
-    if student_type == "Day Scholar":
-        offices = ["LIBRARY", "COLLEGE", "DEPARTMENT"]
-        required_count = 3
-    else:
-        offices = ["LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"]
-        required_count = 4
-
-    approved_count = no_due_col.count_documents({
-        "student_id": student_id,
-        "office": {"$in": offices},
-        "status": "APPROVED"
-    })
-
-    if (
-        approved_count == required_count and
-        student["year"] == 4 and
-        student["semester"] == 8 and
-        not student.get("final_no_due_approved_at")
-    ):
-        students_col.update_one(
-            {"_id": student_id},
-            {"$set": {
-                "final_no_due_approved_at": datetime.now()
-            }}
-        )
-        
-        
-        
-        
 @institution_login_required
 def bulk_approve(request):
     ids = request.POST.getlist("request_ids")
@@ -507,9 +502,6 @@ def bulk_approve(request):
             {"_id": {"$in": object_ids}},
             {"$set": {"status": "APPROVED", "updated_at": datetime.now()}}
         )
-
-        for req in no_due_col.find({"_id": {"$in": object_ids}}):
-            mark_final_clearance(req["student_id"])
 
     return redirect(request.META.get("HTTP_REFERER"))
 
@@ -699,6 +691,10 @@ def department_dashboard(request):
 
 @institution_login_required
 def send_no_due_request(request):
+    if not check_no_due_access_status():
+        messages.error(request, "No Due process is currently locked. Please contact your Faculty.")
+        return redirect("student_dashboard")
+
     if request.method == "POST":
         office = request.POST.get("office")
 
@@ -730,6 +726,10 @@ def send_no_due_request(request):
 
 @institution_login_required
 def retry_request(request):
+    if not check_no_due_access_status():
+        messages.error(request, "No Due process is currently locked. Please contact your Faculty.")
+        return redirect("student_dashboard")
+
     if request.method == "POST" and request.session.get("role") == "STUDENT":
         office = request.POST.get("office")
         student_id = ObjectId(request.session["student_id"])
@@ -969,6 +969,335 @@ def edit_student(request):
     branch = request.POST.get("branch")
     year = request.POST.get("year")
     return redirect(f"/faculty/?branch={branch}&year={year}")
+
+
+@institution_login_required
+def faculty_promotion_page(request):
+    if request.session.get("role") != "FACULTY":
+        return redirect("index")
+
+    # Handle password verification
+    if request.method == "POST":
+        password = request.POST.get("promotion_password", "").strip()
+        if password == "gces8301":
+            request.session["promotion_unlocked"] = True
+            return redirect("faculty_promotion")
+        else:
+            return render(request, "faculty_promotion_login.html", {"error": True})
+
+    # Render login page if session is locked
+    if not request.session.get("promotion_unlocked"):
+        return render(request, "faculty_promotion_login.html")
+
+    # Sync toggle expiration on load
+    check_no_due_access_status()
+
+    sem8_count = students_col.count_documents({"semester": 8})
+
+    sem_counts = {}
+    for sem in range(1, 9):
+        sem_counts[sem] = students_col.count_documents({"semester": sem})
+
+    global_sem8_count = sem8_count
+
+    settings_doc = portal_settings.find_one({"_id": "global_config"})
+    no_due_access_enabled = False
+    enabled_at_str = ""
+    auto_disable_at_str = ""
+    auto_disable_at_iso = ""
+    duration_days = 75
+
+    if settings_doc:
+        no_due_access_enabled = settings_doc.get("no_due_access_enabled", False)
+        enabled_at = settings_doc.get("enabled_at")
+        auto_disable_at = settings_doc.get("auto_disable_at")
+        duration_days = settings_doc.get("duration_days", 75)
+        
+        if enabled_at:
+            enabled_at_str = enabled_at.strftime("%d-%m-%Y %I:%M %p")
+        if auto_disable_at:
+            auto_disable_at_str = auto_disable_at.strftime("%d-%m-%Y %I:%M %p")
+            auto_disable_at_iso = auto_disable_at.isoformat()
+
+    return render(request, "faculty_promotion.html", {
+        "sem8_count": sem8_count,
+        "global_sem8_count": global_sem8_count,
+        "sem_counts": sem_counts,
+        "no_due_access_enabled": no_due_access_enabled,
+        "enabled_at_str": enabled_at_str,
+        "auto_disable_at_str": auto_disable_at_str,
+        "auto_disable_at_iso": auto_disable_at_iso,
+        "duration_days": duration_days,
+    })
+
+
+@institution_login_required
+def toggle_no_due_access(request):
+    if request.session.get("role") != "FACULTY":
+        return redirect("index")
+
+    if not request.session.get("promotion_unlocked"):
+        messages.error(request, "Access denied. Please verify password first.")
+        return redirect("faculty_promotion")
+
+    if request.method == "POST":
+        current_status = request.POST.get("current_status", "true") == "true"
+        new_status = not current_status
+
+        if new_status:
+            duration_type = request.POST.get("duration_type", "").strip()
+            custom_datetime_str = request.POST.get("custom_datetime", "").strip()
+
+            now = datetime.now()
+            days = 0
+            if duration_type == "recommended":
+                auto_disable_at = now + timedelta(days=75)
+                days = 75
+            elif duration_type == "custom":
+                if not custom_datetime_str:
+                    messages.error(request, "Auto Disable Date and Time is required to enable No Due Access.")
+                    return redirect("faculty_promotion")
+                try:
+                    # Parse local datetime-local format: YYYY-MM-DDTHH:MM
+                    auto_disable_at = datetime.fromisoformat(custom_datetime_str)
+                except ValueError:
+                    messages.error(request, "Invalid Date and Time format.")
+                    return redirect("faculty_promotion")
+
+                if auto_disable_at <= now:
+                    messages.error(request, "Auto Disable Date and Time must be in the future.")
+                    return redirect("faculty_promotion")
+
+                delta = auto_disable_at - now
+                days = delta.days if delta.days > 0 else 1
+            else:
+                messages.error(request, "Auto Disable Duration is required to enable No Due Access.")
+                return redirect("faculty_promotion")
+
+            portal_settings.update_one(
+                {"_id": "global_config"},
+                {"$set": {
+                    "no_due_access_enabled": True,
+                    "enabled_at": now,
+                    "auto_disable_at": auto_disable_at,
+                    "duration_days": days
+                }},
+                upsert=True
+            )
+            
+            # Format display string for success message
+            exp_str = auto_disable_at.strftime("%d-%m-%Y %I:%M %p")
+            messages.success(request, f"No Due Access has been successfully Enabled globally until {exp_str}.")
+        else:
+            portal_settings.update_one(
+                {"_id": "global_config"},
+                {"$set": {"no_due_access_enabled": False}},
+                upsert=True
+            )
+            messages.success(request, "No Due Access has been successfully Disabled globally.")
+
+    return redirect("faculty_promotion")
+
+
+@institution_login_required
+def promote_students(request):
+    if request.session.get("role") != "FACULTY":
+        return redirect("index")
+
+    if not request.session.get("promotion_unlocked"):
+        messages.error(request, "Access denied. Please verify password first.")
+        return redirect("faculty_promotion")
+
+    if request.method == "POST":
+        # Ensure config document exists
+        portal_settings.update_one(
+            {"_id": "global_config"},
+            {"$setOnInsert": {"promotion_in_progress": False}},
+            upsert=True
+        )
+
+        # Acquire lock to prevent duplicate concurrent promotions
+        lock_acquired = portal_settings.find_one_and_update(
+            {"_id": "global_config", "promotion_in_progress": {"$ne": True}},
+            {"$set": {"promotion_in_progress": True}}
+        )
+        if not lock_acquired:
+            messages.error(request, "A promotion is already in progress. Please wait.")
+            return redirect("faculty_promotion")
+
+        try:
+            # Get counts of all semesters in the system
+            counts = {}
+            for sem in range(1, 9):
+                counts[sem] = students_col.count_documents({"semester": sem})
+
+            from_sem_raw = request.POST.get("from_sem")
+            from_sem = None
+            if from_sem_raw and from_sem_raw.strip():
+                try:
+                    from_sem = int(from_sem_raw)
+                except (ValueError, TypeError):
+                    from_sem = None
+
+            # Determine if Semester-Wise or Full Promotion
+            if from_sem is not None:
+                # ================= SEMESTER-WISE PROMOTION =================
+                if from_sem < 1 or from_sem > 7:
+                    messages.error(request, "Invalid semester selected.")
+                    return redirect("faculty_promotion")
+
+                # If even semester promoting to odd (Year transition), check Sem 8 students
+                if from_sem in (2, 4, 6):
+                    if counts[8] > 0:
+                        messages.error(request, "Please remove Semester 8 students before promoting students to the next academic year.")
+                        return redirect("faculty_promotion")
+
+                # Target semester validation
+                target_sem = from_sem + 1
+                if counts[target_sem] > 0:
+                    messages.error(request, f"Promotion blocked. Semester {target_sem} already contains students. Promoting Semester {from_sem} students would merge two different batches.")
+                    return redirect("faculty_promotion")
+
+                students = list(students_col.find({"semester": from_sem}))
+                if not students:
+                    messages.warning(request, f"No students in Semester {from_sem} found for promotion.")
+                    return redirect("faculty_promotion")
+            else:
+                # ================= FULL PROMOTION =================
+                # Check if Semester 8 students exist
+                if counts[8] > 0:
+                    messages.error(request, "Please remove Semester 8 students before promoting students to the next academic year.")
+                    return redirect("faculty_promotion")
+
+                # Target semester validation via descending order simulation
+                sim_counts = dict(counts)
+                for s in range(7, 0, -1):
+                    student_count = sim_counts[s]
+                    if student_count > 0:
+                        t_sem = s + 1
+                        t_count = sim_counts[t_sem]
+                        if t_count > 0:
+                            messages.error(request, f"Promotion blocked. Semester {t_sem} already contains students. Promoting Semester {s} students would merge two different batches.")
+                            return redirect("faculty_promotion")
+                        else:
+                            # Move in simulation
+                            sim_counts[t_sem] = student_count
+                            sim_counts[s] = 0
+
+                # Query all students in Semesters 1 to 7
+                students = list(students_col.find({"semester": {"$in": [1, 2, 3, 4, 5, 6, 7]}}))
+                if not students:
+                    messages.warning(request, "No students in Semesters 1 to 7 found for promotion.")
+                    return redirect("faculty_promotion")
+
+            progression = {
+                1: (2, 0),
+                2: (3, 1),
+                3: (4, 0),
+                4: (5, 1),
+                5: (6, 0),
+                6: (7, 1),
+                7: (8, 0),
+            }
+
+            promoted_count = 0
+            from .mongo import promotion_logs
+            now = datetime.now()
+
+            # Process updates student-by-student to maintain exact logs and individual status updates.
+            for student in students:
+                student_id = student["_id"]
+                current_sem = student.get("semester")
+                current_year = student.get("year", 1)
+
+                if current_sem not in progression:
+                    continue
+
+                next_sem, year_change = progression[current_sem]
+                new_year = current_year + year_change
+
+                # Update student document
+                students_col.update_one(
+                    {"_id": student_id},
+                    {"$set": {
+                        "semester": next_sem,
+                        "year": new_year
+                    }}
+                )
+
+                student_type = student.get("student_type", "Hosteller")
+                offices = ["LIBRARY", "COLLEGE", "DEPARTMENT"] if student_type == "Day Scholar" else ["LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"]
+                approved_count = no_due_col.count_documents({
+                    "student_id": student_id,
+                    "office": {"$in": offices},
+                    "status": "APPROVED"
+                })
+                no_due_cleared = (approved_count == len(offices))
+
+                # Reset dues
+                no_due_col.update_many(
+                    {"student_id": student_id},
+                    {"$set": {
+                        "status": "NOT_SENT",
+                        "receipt_url": None,
+                        "cloudinary_public_id": None,
+                        "reject_reason": None,
+                        "last_payment_id": None,
+                        "updated_at": now,
+                    }}
+                )
+
+                # Insert log
+                promotion_logs.insert_one({
+                    "student_id": student_id,
+                    "previous_semester": current_sem,
+                    "previous_year": current_year,
+                    "new_semester": next_sem,
+                    "new_year": new_year,
+                    "student_type": student_type,
+                    "completion_time": now,
+                    "promotion_time": now,
+                    "no_due_cleared": no_due_cleared,
+                })
+                promoted_count += 1
+
+            messages.success(request, f"Successfully promoted {promoted_count} students to the next semester!")
+        finally:
+            portal_settings.update_one(
+                {"_id": "global_config"},
+                {"$set": {"promotion_in_progress": False}}
+            )
+
+    return redirect("faculty_promotion")
+
+
+@institution_login_required
+def remove_sem8_students(request):
+    if request.session.get("role") != "FACULTY":
+        return redirect("index")
+
+    if not request.session.get("promotion_unlocked"):
+        messages.error(request, "Access denied. Please verify password first.")
+        return redirect("faculty_promotion")
+
+    if request.method == "POST":
+        query = {"semester": 8}
+        students = list(students_col.find(query))
+        if not students:
+            messages.warning(request, "No Semester 8 students found to remove.")
+            return redirect("faculty_promotion")
+
+        student_ids = [s["_id"] for s in students]
+
+        students_col.delete_many({"_id": {"$in": student_ids}})
+        no_due_col.delete_many({"student_id": {"$in": student_ids}})
+
+        from .mongo import promotion_logs
+        promotion_logs.delete_many({"student_id": {"$in": student_ids}})
+
+        messages.success(request, f"Successfully removed {len(students)} Semester 8 students from the system.")
+
+    return redirect("faculty_promotion")
 
 
 

@@ -1,0 +1,794 @@
+{% extends "base.html" %}
+{% block title %}Student Promotion & No Due{% endblock %}
+
+{% block content %}
+<main class="max-w-6xl mx-auto px-4 sm:p-6">
+
+  <!-- Navigation Tabs -->
+  <div class="flex gap-4 border-b-2 border-gray-200 mb-6 pb-px">
+    <a href="{% url 'faculty_dashboard' %}" class="py-2.5 px-4 font-semibold text-sm text-gray-500 hover:text-[#d52b1e] border-b-4 border-transparent hover:border-[#d52b1e]/50 transition flex items-center gap-2">
+      Student Directory
+    </a>
+    <a href="{% url 'faculty_promotion' %}" class="py-2.5 px-4 font-bold text-sm border-b-4 border-[#d52b1e] text-[#d52b1e] flex items-center gap-2">
+      Student Promotion & No Due
+    </a>
+  </div>
+
+  <!-- Messages Alert -->
+  {% for message in messages %}
+  <div class="relative px-6 py-4 rounded-2xl font-semibold mb-6 flex justify-between items-center shadow-sm border
+    {% if message.tags == 'success' %}
+      bg-green-50 text-green-800 border-green-200
+    {% elif message.tags == 'warning' %}
+      bg-yellow-50 text-yellow-800 border-yellow-200
+    {% elif message.tags == 'error' %}
+      bg-red-50 text-red-800 border-red-200
+    {% else %}
+      bg-blue-50 text-blue-800 border-blue-200
+    {% endif %}
+  ">
+    <div class="flex items-center gap-3">
+      {% if message.tags == 'success' %}
+        <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+      {% elif message.tags == 'error' %}
+        <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+      {% else %}
+        <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+        </svg>
+      {% endif %}
+      <span class="whitespace-pre-wrap text-sm">{{ message }}</span>
+    </div>
+    <button onclick="this.parentElement.remove()" class="text-gray-500 hover:text-black font-bold text-sm">✖</button>
+  </div>
+  {% endfor %}
+
+  <!-- STATS GRID -->
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+    
+    <!-- Student Distribution Summary Card -->
+    <div class="md:col-span-2 bg-white border-2 border-gray-200 rounded-3xl p-6 shadow-sm">
+      <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+        Student Distribution Summary
+      </h2>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {% for sem, count in sem_counts.items %}
+        <div class="border border-gray-100 bg-gray-50/50 rounded-2xl p-4 text-center">
+          <span class="block text-xs font-bold text-gray-500 uppercase">Semester {{ sem }}</span>
+          <span class="block text-2xl font-extrabold text-gray-800 mt-1">{{ count }}</span>
+          <span class="text-[10px] text-gray-400">students</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- No Due Access Control Card -->
+    <div class="bg-white border-2 border-gray-200 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
+      <div>
+        <h2 class="text-lg font-bold text-gray-800 mb-2">
+          No Due Access Control
+        </h2>
+        <p class="text-xs text-gray-500 leading-relaxed mb-4">
+          Toggle whether students can view and submit their No Due verification requests globally.
+        </p>
+        <div class="rounded-2xl p-4 text-center border mb-4 {% if no_due_access_enabled %}bg-green-50 border-green-200{% else %}bg-red-50 border-red-200{% endif %}">
+          <span class="block text-xs font-semibold text-gray-600 uppercase">Current Status</span>
+          <span class="block text-xl font-black mt-1 {% if no_due_access_enabled %}text-green-700{% else %}text-red-700{% endif %}">
+            {% if no_due_access_enabled %}Enabled{% else %}Disabled{% endif %}
+          </span>
+        </div>
+
+        {% if no_due_access_enabled %}
+        <div class="border border-gray-150 bg-gray-50 rounded-2xl p-3.5 mb-4 text-left space-y-1.5 text-xs text-gray-600">
+          <div><span class="font-bold text-gray-700">Enabled At:</span> <span class="float-right">{{ enabled_at_str }}</span></div>
+          <div><span class="font-bold text-gray-700">Auto Disable:</span> <span class="float-right text-red-700 font-semibold">{{ auto_disable_at_str }}</span></div>
+          <div class="border-t pt-1.5 mt-1.5 font-bold text-gray-800 flex justify-between items-center">
+            <span>Remaining Time:</span>
+            <span class="text-red-600 font-black" id="access_countdown_ticker">--:--:--</span>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if no_due_access_enabled %}
+      <form id="disableAccessForm" method="POST" action="{% url 'toggle_no_due_access' %}" class="w-full">
+        {% csrf_token %}
+        <input type="hidden" name="current_status" value="true">
+        <button type="submit" onclick="submitDisableAccess(this, event)"
+          class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-full text-xs transition-all duration-200 active:scale-95 shadow-sm uppercase tracking-wider flex items-center justify-center gap-2">
+          <span>Disable Access</span>
+          <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+          </svg>
+        </button>
+      </form>
+      {% else %}
+      <button type="button" onclick="openEnableAccessModal()"
+        class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-full text-xs transition-all duration-200 active:scale-95 shadow-sm uppercase tracking-wider">
+        Enable Access
+      </button>
+      {% endif %}
+    </div>
+
+    <!-- Semester 8 Panel Card -->
+    <div class="bg-white border-2 border-[#d52b1e]/30 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
+      <div>
+        <h2 class="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2">
+          Semester 8 / Final Year
+        </h2>
+        <p class="text-xs text-gray-500 leading-relaxed mb-4">
+          Semester 8 students must be removed from the system before promoting other students to the next academic year.
+        </p>
+        <div class="bg-[#d52b1e]/5 rounded-2xl p-4 text-center border border-[#d52b1e]/15 mb-4">
+          <span class="block text-sm font-semibold text-gray-600">Active Semester 8 Count</span>
+          <span class="block text-3xl font-black text-[#d52b1e] mt-1">{{ global_sem8_count }}</span>
+          <span class="text-[10px] text-gray-400">students globally</span>
+        </div>
+      </div>
+      
+      <button type="button" onclick="openRemoveSem8Modal()" 
+        class="w-full bg-[#d52b1e] hover:bg-red-800 text-white font-bold py-3 rounded-full text-sm transition-all duration-200 active:scale-95 shadow-sm">
+        Remove Semester 8 Students
+      </button>
+    </div>
+
+  </div>
+
+  <!-- PROMOTION PROCESSOR SECTION -->
+  <div class="bg-white border-2 border-gray-200 rounded-3xl p-6 sm:p-8 shadow-sm">
+    <h2 class="text-xl font-extrabold text-gray-800 mb-4 flex items-center gap-2 border-b pb-3">
+      Faculty-Controlled Student Promotion
+    </h2>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+      
+      <!-- Control Panel -->
+      <div class="space-y-6">
+        <p class="text-sm text-gray-500 leading-relaxed">
+          Click the button below to promote all students in the system (Semesters 1–7) to the next academic semester in a single action according to the promotion rules. No-due statuses will be reset for all promoted students to allow new submissions.
+        </p>
+
+        <!-- Dynamic Alert Banner for Full Promotion -->
+        <div id="full_promotion_alert" class="border-2 rounded-2xl p-5 space-y-2">
+          <h4 id="full_promo_alert_title" class="text-sm font-bold flex items-center gap-1.5">
+            <!-- Set dynamically by JS -->
+          </h4>
+          <p id="full_promo_alert_message" class="text-xs font-semibold leading-relaxed"></p>
+          <p id="full_promo_alert_subtext" class="text-[11px] leading-relaxed"></p>
+        </div>
+
+        <!-- Main Promotion Button Form -->
+        <form id="promotionForm" method="POST" action="{% url 'promote_students' %}">
+          {% csrf_token %}
+          <button id="promote_submit_btn" type="button" onclick="confirmPromotion()"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-full text-base transition-all duration-200 active:scale-[0.98] shadow-md cursor-pointer">
+            Promote Students
+          </button>
+        </form>
+
+        <!-- Expandable Semester-Wise Section -->
+        <div class="border-t pt-6">
+          <button type="button" onclick="toggleSemesterWiseSection()" id="toggle_semwise_btn"
+            class="text-xs font-bold text-gray-500 hover:text-gray-800 flex items-center gap-1.5 focus:outline-none uppercase tracking-wider">
+            <svg id="semwise_arrow_icon" class="w-4 h-4 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
+            </svg>
+            Need Semester-Wise Promotion?
+          </button>
+          
+          <div id="semwise_section" class="hidden mt-6 border border-gray-200 bg-gray-50/30 rounded-2xl p-6 space-y-6">
+            <h3 class="text-sm font-bold text-gray-800">Semester-Wise Promotion</h3>
+            <p class="text-xs text-gray-500">
+              Select a specific semester to promote. Only students in the selected semester will be promoted.
+            </p>
+
+            <form id="semwiseForm" method="POST" action="{% url 'promote_students' %}" class="space-y-4">
+              {% csrf_token %}
+              <div class="flex flex-col gap-2">
+                <label class="text-xs font-bold text-gray-750 uppercase tracking-wide">Select Semester to Promote From</label>
+                <select id="semwise_select" name="from_sem" required onchange="handleSemwiseSelectChange()"
+                  class="border-2 border-gray-200 rounded-full px-5 py-3 w-full bg-white hover:bg-gray-50 focus:bg-white transition-colors duration-200 text-xs font-semibold">
+                  <option value="">Select a Semester</option>
+                  <option value="1">Semester 1 (→ Semester 2)</option>
+                  <option value="2">Semester 2 (→ Semester 3, Year +1)</option>
+                  <option value="3">Semester 3 (→ Semester 4)</option>
+                  <option value="4">Semester 4 (→ Semester 5, Year +1)</option>
+                  <option value="5">Semester 5 (→ Semester 6)</option>
+                  <option value="6">Semester 6 (→ Semester 7, Year +1)</option>
+                  <option value="7">Semester 7 (→ Semester 8)</option>
+                </select>
+              </div>
+
+              <!-- Dynamic Sem-wise Warning / Preview -->
+              <div id="semwise_preview_box" class="hidden border border-blue-200 bg-blue-50/50 rounded-2xl p-4 space-y-1">
+                <h4 class="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                  <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  Semester-Wise Promotion Preview
+                </h4>
+                <ul class="text-[11px] text-blue-800 list-disc list-inside space-y-0.5">
+                  <li>Promoting from: <span class="font-bold" id="lbl_semwise_from"></span></li>
+                  <li>Promoting to: <span class="font-bold" id="lbl_semwise_to"></span></li>
+                  <li>Year change: <span class="font-bold" id="lbl_semwise_year"></span></li>
+                  <li>Affected count: <span class="font-bold text-[#d52b1e]" id="lbl_semwise_count"></span></li>
+                </ul>
+              </div>
+
+              <div id="semwise_block_box" class="hidden border-2 border-red-200 bg-red-50 rounded-2xl p-4 space-y-1.5">
+                <h4 class="text-xs font-bold text-red-900 flex items-center gap-1.5">
+                  <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                  </svg>
+                  Promotion Blocked
+                </h4>
+                <p id="semwise_block_message" class="text-xs text-red-800 leading-relaxed font-semibold"></p>
+              </div>
+
+              <button id="semwise_submit_btn" type="button" onclick="confirmSemwisePromotion()" disabled
+                class="w-full bg-gray-300 text-gray-500 font-bold py-3.5 rounded-full text-xs transition-all duration-200 shadow-sm cursor-not-allowed">
+                Promote Selected Semester
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rules / Reference Table -->
+      <div class="border border-gray-150 bg-gray-50/30 rounded-2xl p-6">
+        <h3 class="text-sm font-bold text-gray-700 mb-3">Academic Promotion Reference Rules</h3>
+        <div class="overflow-x-auto text-xs">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-gray-200 text-gray-500 font-bold">
+                <th class="pb-2">Current Semester</th>
+                <th class="pb-2">Target Semester</th>
+                <th class="pb-2">Year Adjustment</th>
+                <th class="pb-2">Pre-requisite / Check</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 text-gray-600">
+              <tr>
+                <td class="py-2.5">Sem 1</td>
+                <td class="py-2.5 font-semibold text-green-700">Sem 2</td>
+                <td class="py-2.5">No change</td>
+                <td class="py-2.5">Direct promotion</td>
+              </tr>
+              <tr>
+                <td class="py-2.5">Sem 2</td>
+                <td class="py-2.5 font-semibold text-orange-700">Sem 3</td>
+                <td class="py-2.5 font-semibold text-orange-700">Year +1</td>
+                <td class="py-2.5 text-red-600 font-semibold">Block if Semester 8 exists</td>
+              </tr>
+              <tr>
+                <td class="py-2.5">Sem 3</td>
+                <td class="py-2.5 font-semibold text-green-700">Sem 4</td>
+                <td class="py-2.5">No change</td>
+                <td class="py-2.5">Direct promotion</td>
+              </tr>
+              <tr>
+                <td class="py-2.5">Sem 4</td>
+                <td class="py-2.5 font-semibold text-orange-700">Sem 5</td>
+                <td class="py-2.5 font-semibold text-orange-700">Year +1</td>
+                <td class="py-2.5 text-red-600 font-semibold">Block if Semester 8 exists</td>
+              </tr>
+              <tr>
+                <td class="py-2.5">Sem 5</td>
+                <td class="py-2.5 font-semibold text-green-700">Sem 6</td>
+                <td class="py-2.5">No change</td>
+                <td class="py-2.5">Direct promotion</td>
+              </tr>
+              <tr>
+                <td class="py-2.5">Sem 6</td>
+                <td class="py-2.5 font-semibold text-orange-700">Sem 7</td>
+                <td class="py-2.5 font-semibold text-orange-700">Year +1</td>
+                <td class="py-2.5 text-red-600 font-semibold">Block if Semester 8 exists</td>
+              </tr>
+              <tr>
+                <td class="py-2.5">Sem 7</td>
+                <td class="py-2.5 font-semibold text-green-700">Sem 8</td>
+                <td class="py-2.5">No change</td>
+                <td class="py-2.5">Direct promotion</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<!-- ================= ENABLE ACCESS MODAL ================= -->
+<div id="enableAccessModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
+  <form id="enableAccessForm" method="POST" action="{% url 'toggle_no_due_access' %}" 
+    class="bg-white border-4 border-green-600 rounded-3xl p-6 w-full max-w-md shadow-2xl text-center">
+    {% csrf_token %}
+    <input type="hidden" name="current_status" value="false">
+
+    <div class="w-16 h-16 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+      <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path>
+      </svg>
+    </div>
+
+    <h3 class="text-xl font-extrabold text-gray-900 mb-2">Enable No Due Access</h3>
+    <p class="text-sm text-gray-500 mb-6 leading-relaxed">
+      Please specify the mandatory Auto Disable Duration. Access will automatically close after this time.
+    </p>
+
+    <!-- Duration Type Selection -->
+    <div class="space-y-4 mb-6 text-left">
+      <!-- Recommended Option -->
+      <label class="flex items-start gap-3 p-3.5 border-2 border-green-500 bg-green-50/50 rounded-2xl cursor-pointer hover:bg-green-50 transition-colors">
+        <input type="radio" name="duration_type" value="recommended" checked onchange="toggleCustomDurationInp()"
+          class="w-4 h-4 mt-0.5 accent-green-600">
+        <div class="text-xs">
+          <span class="block font-bold text-green-900 uppercase tracking-wider">Recommended Duration</span>
+          <span class="block text-green-800 font-medium mt-0.5">75 Days (2.5 Months)</span>
+        </div>
+      </label>
+
+      <!-- Custom Option -->
+      <label class="flex items-start gap-3 p-3.5 border border-gray-200 bg-gray-50/50 rounded-2xl cursor-pointer hover:bg-white transition-colors" id="custom_duration_lbl">
+        <input type="radio" name="duration_type" value="custom" onchange="toggleCustomDurationInp()"
+          class="w-4 h-4 mt-0.5 accent-green-600">
+        <div class="text-xs w-full">
+          <span class="block font-bold text-gray-800 uppercase tracking-wider">Custom Expiration Date & Time</span>
+          <span class="block text-gray-600 font-medium mt-0.5">Specify custom days and time for auto-disable</span>
+          
+          <!-- Custom Input -->
+          <div id="custom_days_wrapper" class="hidden mt-3 w-full">
+            <input type="datetime-local" id="custom_datetime_inp" name="custom_datetime"
+              class="border-2 border-gray-200 rounded-full px-4 py-2 w-full bg-white focus:border-green-600 text-xs font-semibold text-gray-800">
+            <p id="custom_error_msg" class="hidden text-red-600 font-bold mt-1 text-[11px]">
+              Please select a valid future date and time.
+            </p>
+          </div>
+        </div>
+      </label>
+    </div>
+
+    <!-- Alert / Validation message -->
+    <p id="global_duration_error" class="hidden text-red-600 font-bold mb-4 text-xs">
+      Auto Disable Duration is required to enable No Due Access.
+    </p>
+
+    <div class="flex gap-4 justify-center">
+      <button type="button" id="enableAccessSubmitBtn" onclick="submitEnableAccess(this)" class="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-full font-bold text-sm transition-all duration-150 flex items-center justify-center gap-2">
+        <span>Enable Access</span>
+        <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </button>
+      <button type="button" onclick="closeEnableAccessModal()" class="border-2 border-gray-200 hover:bg-gray-50 px-6 py-3 rounded-full font-semibold text-sm text-gray-600 transition-all duration-150">
+        Cancel
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- ================= PROMOTION CONFIRMATION MODAL ================= -->
+<div id="promoModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
+  <div class="bg-white border-4 border-[#d52b1e] rounded-3xl p-6 w-full max-w-md shadow-2xl text-center">
+    <div class="w-16 h-16 bg-[#d52b1e]/10 text-[#d52b1e] rounded-full flex items-center justify-center mx-auto mb-4">
+      <svg class="w-8 h-8 text-[#d52b1e]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+      </svg>
+    </div>
+    <h3 class="text-xl font-extrabold text-gray-900 mb-2">Confirm Semester Promotion</h3>
+    <p class="text-sm text-gray-600 mb-6 leading-relaxed" id="confirm_modal_text">
+      <!-- Loaded dynamically via JS -->
+    </p>
+    <div class="flex gap-4 justify-center">
+      <button onclick="submitPromotionForm(this)" class="bg-[#d52b1e] hover:bg-red-800 text-white px-8 py-3 rounded-full font-bold text-sm transition-all duration-150 flex items-center justify-center gap-2">
+        <span>Confirm & Promote</span>
+        <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </button>
+      <button onclick="closePromotionModal()" class="border-2 border-gray-200 hover:bg-gray-50 px-6 py-3 rounded-full font-semibold text-sm text-gray-600 transition-all duration-150">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= REMOVE SEM 8 CONFIRMATION MODAL ================= -->
+<div id="removeModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
+  <form method="POST" action="{% url 'remove_sem8_students' %}" class="bg-white border-4 border-red-600 rounded-3xl p-6 w-full max-w-md shadow-2xl text-center">
+    {% csrf_token %}
+    <div class="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+      <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+      </svg>
+    </div>
+    <h3 class="text-xl font-extrabold text-gray-900 mb-2">Permanently Remove Students</h3>
+    <p class="text-sm text-gray-600 mb-6 leading-relaxed">
+      Are you sure you want to permanently remove all <span class="font-bold text-red-600">{{ global_sem8_count }}</span> Semester 8 students from the system?
+      <br><br>
+      This will completely delete their profile, no-due records, and promotion history from the database.
+    </p>
+    <div class="flex gap-4 justify-center">
+      <button type="submit" onclick="submitRemoveSem8(this, event)" class="bg-red-600 hover:bg-red-800 text-white px-8 py-3 rounded-full font-bold text-sm transition-all duration-150 flex items-center justify-center gap-2">
+        <span>Yes, Remove All</span>
+        <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </button>
+      <button type="button" onclick="closeRemoveSem8Modal()" class="border-2 border-gray-200 hover:bg-gray-50 px-6 py-3 rounded-full font-semibold text-sm text-gray-600 transition-all duration-150">
+        Cancel
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  // Setup standard semester counts injected from Django context
+  const SEM_COUNTS = {
+    {% for sem, count in sem_counts.items %}
+      "{{ sem }}": {{ count }},
+    {% endfor %}
+  };
+
+  const GLOBAL_SEM8_COUNT = {{ global_sem8_count }};
+  let activePromotionFormId = "promotionForm";
+
+  // Simulate Full Promotion to check dynamic status
+  function checkFullPromotionStatus() {
+    const counts = { ...SEM_COUNTS };
+    
+    // 1. Check Semester 8 students
+    if (GLOBAL_SEM8_COUNT > 0) {
+      return {
+        blocked: true,
+        type: 'sem8',
+        message: 'Please remove Semester 8 students before promoting students to the next academic year.'
+      };
+    }
+
+    // 2. Simulate full promotion in descending order to detect batch merging
+    for (let s = 7; s >= 1; s--) {
+      const studentCount = counts[s] || 0;
+      if (studentCount > 0) {
+        const targetSem = s + 1;
+        const targetCount = counts[targetSem] || 0;
+        if (targetCount > 0) {
+          return {
+            blocked: true,
+            type: 'merge',
+            message: `Promotion blocked. Semester ${targetSem} already contains students. Promoting Semester ${s} students would merge two different batches.`
+          };
+        } else {
+          // Move students to target in simulation
+          counts[targetSem] = studentCount;
+          counts[s] = 0;
+        }
+      }
+    }
+
+    return {
+      blocked: false
+    };
+  }
+
+  // Update Main Promotion Panel UI based on status check
+  function updateFullPromotionUI() {
+    const status = checkFullPromotionStatus();
+    const alertBox = document.getElementById("full_promotion_alert");
+    const title = document.getElementById("full_promo_alert_title");
+    const msg = document.getElementById("full_promo_alert_message");
+    const sub = document.getElementById("full_promo_alert_subtext");
+    const btn = document.getElementById("promote_submit_btn");
+
+    if (status.blocked) {
+      alertBox.className = "border-2 border-red-200 bg-red-50 rounded-2xl p-5 space-y-2";
+      title.className = "text-sm font-bold text-red-900 flex items-center gap-1.5";
+      title.innerHTML = `
+        <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+        </svg>
+        Promotion Blocked
+      `;
+      msg.className = "text-xs text-red-800 leading-relaxed font-semibold";
+      msg.textContent = status.message;
+      
+      if (status.type === 'sem8') {
+        sub.innerHTML = `There are currently <span class="font-bold">${GLOBAL_SEM8_COUNT}</span> Semester 8 students existing globally in the database. Please remove them using the removal panel above before executing the promotion.`;
+      } else {
+        sub.textContent = "Please resolve this batch-merging conflict before continuing.";
+      }
+      sub.className = "text-[11px] text-red-700 leading-relaxed";
+
+      btn.disabled = true;
+      btn.className = "w-full bg-gray-200 text-gray-400 font-bold py-4 rounded-full text-base transition-all duration-200 shadow-sm cursor-not-allowed border border-gray-300";
+    } else {
+      alertBox.className = "border-2 border-green-200 bg-green-50 rounded-2xl p-5 space-y-1";
+      title.className = "text-sm font-bold text-green-900 flex items-center gap-1.5";
+      title.innerHTML = `
+        <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        Ready for Promotion
+      `;
+      msg.className = "text-xs text-green-800";
+      msg.textContent = "All semesters are clear. You can now promote eligible students.";
+      sub.textContent = "";
+
+      btn.disabled = false;
+      btn.className = "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-full text-base transition-all duration-200 active:scale-[0.98] shadow-md cursor-pointer";
+    }
+  }
+
+  // Handle Toggle for expandable section
+  function toggleSemesterWiseSection() {
+    const section = document.getElementById("semwise_section");
+    const arrow = document.getElementById("semwise_arrow_icon");
+    if (section.classList.contains("hidden")) {
+      section.classList.remove("hidden");
+      arrow.classList.add("rotate-180");
+    } else {
+      section.classList.add("hidden");
+      arrow.classList.remove("rotate-180");
+    }
+  }
+
+  // Handle dropdown select change for Semester-wise promotion
+  function handleSemwiseSelectChange() {
+    const select = document.getElementById("semwise_select");
+    const val = select.value;
+    
+    const previewBox = document.getElementById("semwise_preview_box");
+    const blockBox = document.getElementById("semwise_block_box");
+    const blockMsg = document.getElementById("semwise_block_message");
+    const submitBtn = document.getElementById("semwise_submit_btn");
+
+    if (!val) {
+      previewBox.classList.add("hidden");
+      blockBox.classList.add("hidden");
+      submitBtn.disabled = true;
+      submitBtn.className = "w-full bg-gray-300 text-gray-500 font-bold py-3.5 rounded-full text-xs transition-all duration-200 shadow-sm cursor-not-allowed";
+      return;
+    }
+
+    const fromSem = parseInt(val);
+    const targetSem = fromSem + 1;
+    const isEvenToOdd = [2, 4, 6].includes(fromSem);
+    const studentCount = SEM_COUNTS[fromSem] || 0;
+    const targetCount = SEM_COUNTS[targetSem] || 0;
+
+    // Update labels
+    document.getElementById("lbl_semwise_from").textContent = "Semester " + fromSem;
+    document.getElementById("lbl_semwise_to").textContent = "Semester " + targetSem;
+    document.getElementById("lbl_semwise_year").textContent = isEvenToOdd ? "Yes (+1 Academic Year)" : "No (Same Academic Year)";
+    document.getElementById("lbl_semwise_count").textContent = studentCount + " students";
+
+    previewBox.classList.remove("hidden");
+
+    let isBlocked = false;
+    let errorMsg = "";
+
+    // Check year transition (even to odd) and Semester 8 students
+    if (isEvenToOdd && GLOBAL_SEM8_COUNT > 0) {
+      isBlocked = true;
+      errorMsg = "Please remove Semester 8 students before promoting students to the next academic year.";
+    } 
+    // Check target semester validation
+    else if (targetCount > 0) {
+      isBlocked = true;
+      errorMsg = `Promotion blocked. Semester ${targetSem} already contains students. Promoting Semester ${fromSem} students would merge two different batches.`;
+    }
+
+    if (isBlocked) {
+      blockMsg.textContent = errorMsg;
+      blockBox.classList.remove("hidden");
+      submitBtn.disabled = true;
+      submitBtn.className = "w-full bg-gray-300 text-gray-500 font-bold py-3.5 rounded-full text-xs transition-all duration-200 shadow-sm cursor-not-allowed";
+    } else {
+      blockBox.classList.add("hidden");
+      submitBtn.disabled = false;
+      submitBtn.className = "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-full text-xs transition-all duration-200 active:scale-[0.98] shadow-md cursor-pointer";
+    }
+  }
+
+  function confirmPromotion() {
+    activePromotionFormId = "promotionForm";
+    document.getElementById("confirm_modal_text").innerHTML = `
+      You are about to promote all students in the system (Semesters 1-7) to the next academic semester.
+      <br><br>
+      <span class="text-[#d52b1e] font-bold">CRITICAL:</span> This action will reset ALL no-due requests to "Incomplete" (NOT_SENT) so they can verify dues for the new semester. This cannot be undone.
+    `;
+    document.getElementById("promoModal").classList.remove("hidden");
+  }
+
+  function confirmSemwisePromotion() {
+    activePromotionFormId = "semwiseForm";
+    const fromSem = document.getElementById("semwise_select").value;
+    const targetSem = parseInt(fromSem) + 1;
+    document.getElementById("confirm_modal_text").innerHTML = `
+      You are about to promote all students in <strong>Semester ${fromSem}</strong> to <strong>Semester ${targetSem}</strong>.
+      <br><br>
+      <span class="text-[#d52b1e] font-bold">CRITICAL:</span> This action will reset no-due requests to "Incomplete" (NOT_SENT) for the promoted students. This cannot be undone.
+    `;
+    document.getElementById("promoModal").classList.remove("hidden");
+  }
+
+  function closePromotionModal() {
+    document.getElementById("promoModal").classList.add("hidden");
+  }
+
+  function submitDisableAccess(btn, event) {
+    event.preventDefault();
+    btn.disabled = true;
+    btn.querySelector('span').textContent = 'Disabling...';
+    btn.querySelector('svg').classList.remove('hidden');
+    document.getElementById('disableAccessForm').submit();
+  }
+
+  function submitPromotionForm(btn) {
+    btn.disabled = true;
+    btn.querySelector('span').textContent = 'Promoting...';
+    btn.querySelector('svg').classList.remove('hidden');
+    const cancelBtn = btn.nextElementSibling;
+    if (cancelBtn) cancelBtn.disabled = true;
+
+    const mainBtn = document.getElementById("promote_submit_btn");
+    if (mainBtn) {
+      mainBtn.disabled = true;
+      if (activePromotionFormId === "promotionForm") {
+        mainBtn.innerHTML = `
+          <span class="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2 align-middle"></span>
+          Promoting...
+        `;
+      }
+    }
+    const semwiseBtn = document.getElementById("semwise_submit_btn");
+    if (semwiseBtn) {
+      semwiseBtn.disabled = true;
+      if (activePromotionFormId === "semwiseForm") {
+        semwiseBtn.innerHTML = `
+          <span class="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2 align-middle"></span>
+          Promoting...
+        `;
+      }
+    }
+    document.getElementById(activePromotionFormId).submit();
+  }
+
+  function submitRemoveSem8(btn, event) {
+    event.preventDefault();
+    btn.disabled = true;
+    btn.querySelector('span').textContent = 'Removing...';
+    btn.querySelector('svg').classList.remove('hidden');
+    const cancelBtn = btn.nextElementSibling;
+    if (cancelBtn) cancelBtn.disabled = true;
+
+    btn.closest('form').submit();
+  }
+
+  function openRemoveSem8Modal() {
+    document.getElementById("removeModal").classList.remove("hidden");
+  }
+
+  function closeRemoveSem8Modal() {
+    document.getElementById("removeModal").classList.add("hidden");
+  }
+
+  // ================= DURATION ACCESS MODAL LOGIC =================
+  function openEnableAccessModal() {
+    document.getElementById("enableAccessModal").classList.remove("hidden");
+  }
+
+  function closeEnableAccessModal() {
+    document.getElementById("enableAccessModal").classList.add("hidden");
+  }
+
+  function toggleCustomDurationInp() {
+    const radioType = document.querySelector('input[name="duration_type"]:checked').value;
+    const wrapper = document.getElementById("custom_days_wrapper");
+    const lbl = document.getElementById("custom_duration_lbl");
+
+    if (radioType === "custom") {
+      wrapper.classList.remove("hidden");
+      lbl.className = "flex items-start gap-3 p-3.5 border-2 border-green-500 bg-green-50/50 rounded-2xl cursor-pointer hover:bg-green-50 transition-colors";
+    } else {
+      wrapper.classList.add("hidden");
+      lbl.className = "flex items-start gap-3 p-3.5 border border-gray-200 bg-gray-50/50 rounded-2xl cursor-pointer hover:bg-white transition-colors";
+      document.getElementById("custom_error_msg").classList.add("hidden");
+    }
+  }
+
+  function submitEnableAccess(btn) {
+    const form = document.getElementById("enableAccessForm");
+    const radioType = document.querySelector('input[name="duration_type"]:checked').value;
+    const customInp = document.getElementById("custom_datetime_inp");
+    const customVal = customInp.value.trim();
+    const globalErr = document.getElementById("global_duration_error");
+    const customErr = document.getElementById("custom_error_msg");
+
+    globalErr.classList.add("hidden");
+    customErr.classList.add("hidden");
+
+    if (radioType === "custom") {
+      if (!customVal) {
+        customErr.textContent = "Please select a date and time.";
+        customErr.classList.remove("hidden");
+        globalErr.textContent = "Auto Disable Date and Time is required to enable No Due Access.";
+        globalErr.classList.remove("hidden");
+        customInp.focus();
+        return;
+      }
+      
+      const selectedTime = new Date(customVal).getTime();
+      const now = new Date().getTime();
+      if (isNaN(selectedTime) || selectedTime <= now) {
+        customErr.textContent = "Please select a future date and time.";
+        customErr.classList.remove("hidden");
+        globalErr.textContent = "Auto Disable Date and Time must be in the future.";
+        globalErr.classList.remove("hidden");
+        customInp.focus();
+        return;
+      }
+    }
+
+    btn.disabled = true;
+    btn.querySelector('span').textContent = 'Enabling...';
+    btn.querySelector('svg').classList.remove('hidden');
+    const cancelBtn = btn.nextElementSibling;
+    if (cancelBtn) cancelBtn.disabled = true;
+
+    form.submit();
+  }
+
+  // ================= LIVE TICKER COUNTDOWN =================
+  const AUTO_DISABLE_ISO = "{{ auto_disable_at_iso }}";
+
+  if (AUTO_DISABLE_ISO) {
+    const disableTime = new Date(AUTO_DISABLE_ISO).getTime();
+    
+    function updateCountdown() {
+      const now = new Date().getTime();
+      const diff = disableTime - now;
+
+      const ticker = document.getElementById("access_countdown_ticker");
+      if (!ticker) return;
+
+      if (diff <= 0) {
+        ticker.textContent = "Expired";
+        ticker.className = "text-red-600";
+        setTimeout(() => location.reload(), 1000);
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      let parts = [];
+      if (days > 0) parts.push(days + "d");
+      parts.push(String(hours).padStart(2, '0') + "h");
+      parts.push(String(minutes).padStart(2, '0') + "m");
+      parts.push(String(seconds).padStart(2, '0') + "s");
+
+      ticker.textContent = parts.join(" ");
+    }
+
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
+  }
+
+  // Initialize UI components on load
+  updateFullPromotionUI();
+</script>
+
+{% endblock %}
