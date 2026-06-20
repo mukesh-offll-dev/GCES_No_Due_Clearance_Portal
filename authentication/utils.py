@@ -25,7 +25,7 @@ def reset_expired_no_dues(no_due_col):
                 public_id,
                 resource_type="raw"
             )
-        except (NotFound, BadRequest):
+        except Exception:
             # Try IMAGE (jpg/png)
             try:
                 cloudinary.uploader.destroy(
@@ -34,6 +34,7 @@ def reset_expired_no_dues(no_due_col):
                 )
             except Exception:
                 pass  # final ignore (already deleted / invalid)
+
 
     # ================= PENDING → NOT_SENT (3 mins) =================
     expired_pending = no_due_col.find({

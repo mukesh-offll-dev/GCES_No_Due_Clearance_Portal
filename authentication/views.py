@@ -519,10 +519,14 @@ def reject_request(request):
     if req and req.get("office") == "HOSTEL":
         public_id = req.get("cloudinary_public_id")
         if public_id:
-            cloudinary.uploader.destroy(
-                public_id,
-                resource_type="raw"
-            )
+            try:
+                cloudinary.uploader.destroy(
+                    public_id,
+                    resource_type="raw"
+                )
+            except Exception:
+                pass  # Ignore cloudinary deletion failure, proceed with DB status update
+
 
     # 🔁 Update DB
     no_due_col.update_one(

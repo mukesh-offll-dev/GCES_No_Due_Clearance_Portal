@@ -43,10 +43,11 @@
         <label class="font-semibold mb-2 block">Year</label>
         <select name="year" onchange="this.form.submit()" class="w-full border rounded-full px-4 py-2">
           <option value="">Select Year</option>
-          <option value="1" {% if year=="1" %}selected{% endif %}>1</option>
-          <option value="2" {% if year=="2" %}selected{% endif %}>2</option>
-          <option value="3" {% if year=="3" %}selected{% endif %}>3</option>
-          <option value="4" {% if year=="4" %}selected{% endif %}>4</option>
+          <option value="1" {% if year == "1" %}selected{% endif %}>1</option>
+          <option value="2" {% if year == "2" %}selected{% endif %}>2</option>
+          <option value="3" {% if year == "3" %}selected{% endif %}>3</option>
+          <option value="4" {% if year == "4" %}selected{% endif %}>4</option>
+
         </select>
       </div>
 
@@ -148,9 +149,9 @@
         {% endif %}
 
       </div>
-      `
       <!-- ACTIONS -->
       <div class="flex flex-wrap gap-3">
+
 
         <!-- APPROVE -->
         <form method="POST" action="{% url 'bulk_approve' %}" onsubmit="disableSubmitButtons(this)">
