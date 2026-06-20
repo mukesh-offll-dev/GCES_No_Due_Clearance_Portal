@@ -47,9 +47,10 @@
       {% if not branch and not year %}
       <div class="flex flex-wrap justify-end gap-3 mb-6">
         {% for b, c in branch_summary.items %}
-        <span class="bg-[#d52b1e] text-white px-5 py-2 rounded-full font-semibold">
+        <a href="?branch={{ b }}"
+          class="bg-[#d52b1e] text-white px-5 py-2 rounded-full font-semibold hover:scale-105 transition cursor-pointer">
           {{ b }} - {{ c }}
-        </span>
+        </a>
         {% endfor %}
       </div>
       {% endif %}
@@ -82,7 +83,7 @@
   </form>
 
   <!-- ACTION BAR -->
-  <form method="POST" action="{% url 'bulk_approve' %}" onsubmit="disableSubmitButtons(this)">
+  <form method="POST" action="{% url 'bulk_approve' %}" onsubmit="return validateBulkApprove(this)">
     {% csrf_token %}
     <div class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] p-4 sm:p-6 mb-6
             flex flex-wrap justify-between items-center gap-3 bg-white shadow-sm">
@@ -99,7 +100,7 @@
       </div>
 
       <div class="flex flex-wrap gap-2 items-center">
-        <button onclick="verifyCheck()"
+        <button type="submit"
           class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-full font-semibold text-sm transition">
           Verify &amp; Approve
         </button>
@@ -293,12 +294,14 @@
   function deselectAll() {
     document.querySelectorAll('input[type=checkbox]').forEach(c => c.checked = false)
   }
-  function verifyCheck() {
-    const checked = document.querySelector('input[type=checkbox]:checked');
+  function validateBulkApprove(form) {
+    const checked = form.querySelector('input[name="request_ids"]:checked');
     if (!checked) {
       alert("Select a student first");
-      return;
+      return false;
     }
+    disableSubmitButtons(form);
+    return true;
   }
   function openRejectModal() {
     const checked = document.querySelector('input[type=checkbox]:checked');

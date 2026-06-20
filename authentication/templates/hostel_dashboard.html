@@ -56,9 +56,10 @@
         {% if not branch and not year %}
         <div class="flex flex-wrap justify-end gap-3 mb-6">
           {% for b, c in branch_summary.items %}
-          <span class="bg-[#d52b1e] text-white px-5 py-2 rounded-full font-semibold">
+          <a href="?branch={{ b }}"
+            class="bg-[#d52b1e] text-white px-5 py-2 rounded-full font-semibold hover:scale-105 transition cursor-pointer">
             {{ b }} - {{ c }}
-          </span>
+          </a>
           {% endfor %}
         </div>
         {% endif %}
