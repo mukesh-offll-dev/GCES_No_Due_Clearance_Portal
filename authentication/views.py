@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect
 from django.contrib import messages
-from datetime import datetime , date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 from .decorators import institution_login_required 
 from .institution_users import INSTITUTION_USERS
 from .mongo import institution_logs , students_col , no_due_col, portal_settings
@@ -153,7 +154,9 @@ def check_no_due_access_status():
     if enabled:
         auto_disable_at = settings_doc.get("auto_disable_at")
         if auto_disable_at:
-            if datetime.now() >= auto_disable_at:
+            if auto_disable_at.tzinfo is None:
+                auto_disable_at = auto_disable_at.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) >= auto_disable_at:
                 portal_settings.update_one(
                     {"_id": "global_config"},
                     {"$set": {"no_due_access_enabled": False}}
@@ -1010,6 +1013,7 @@ def faculty_promotion_page(request):
     auto_disable_at_str = ""
     auto_disable_at_iso = ""
     duration_days = 75
+    remaining_seconds = 0
 
     if settings_doc:
         no_due_access_enabled = settings_doc.get("no_due_access_enabled", False)
@@ -1017,11 +1021,23 @@ def faculty_promotion_page(request):
         auto_disable_at = settings_doc.get("auto_disable_at")
         duration_days = settings_doc.get("duration_days", 75)
         
+        tz_kolkata = ZoneInfo("Asia/Kolkata")
+        
         if enabled_at:
-            enabled_at_str = enabled_at.strftime("%d-%m-%Y %I:%M %p")
+            if enabled_at.tzinfo is None:
+                enabled_at = enabled_at.replace(tzinfo=timezone.utc)
+            enabled_at_kolkata = enabled_at.astimezone(tz_kolkata)
+            enabled_at_str = enabled_at_kolkata.strftime("%d-%m-%Y %I:%M %p")
         if auto_disable_at:
-            auto_disable_at_str = auto_disable_at.strftime("%d-%m-%Y %I:%M %p")
-            auto_disable_at_iso = auto_disable_at.isoformat()
+            if auto_disable_at.tzinfo is None:
+                auto_disable_at = auto_disable_at.replace(tzinfo=timezone.utc)
+            auto_disable_at_kolkata = auto_disable_at.astimezone(tz_kolkata)
+            auto_disable_at_str = auto_disable_at_kolkata.strftime("%d-%m-%Y %I:%M %p")
+            auto_disable_at_iso = auto_disable_at_kolkata.isoformat()
+            
+            now_utc = datetime.now(timezone.utc)
+            if auto_disable_at > now_utc:
+                remaining_seconds = int((auto_disable_at - now_utc).total_seconds())
 
     return render(request, "faculty_promotion.html", {
         "sem8_count": sem8_count,
@@ -1032,6 +1048,7 @@ def faculty_promotion_page(request):
         "auto_disable_at_str": auto_disable_at_str,
         "auto_disable_at_iso": auto_disable_at_iso,
         "duration_days": duration_days,
+        "remaining_seconds": remaining_seconds,
     })
 
 
@@ -1047,15 +1064,17 @@ def toggle_no_due_access(request):
     if request.method == "POST":
         current_status = request.POST.get("current_status", "true") == "true"
         new_status = not current_status
-
         if new_status:
             duration_type = request.POST.get("duration_type", "").strip()
             custom_datetime_str = request.POST.get("custom_datetime", "").strip()
 
-            now = datetime.now()
+            tz_kolkata = ZoneInfo("Asia/Kolkata")
+            now_utc = datetime.now(timezone.utc)
+            now_kolkata = now_utc.astimezone(tz_kolkata)
+            
             days = 0
             if duration_type == "recommended":
-                auto_disable_at = now + timedelta(days=75)
+                auto_disable_at = now_utc + timedelta(days=75)
                 days = 75
             elif duration_type == "custom":
                 if not custom_datetime_str:
@@ -1063,16 +1082,18 @@ def toggle_no_due_access(request):
                     return redirect("faculty_promotion")
                 try:
                     # Parse local datetime-local format: YYYY-MM-DDTHH:MM
-                    auto_disable_at = datetime.fromisoformat(custom_datetime_str)
+                    naive_dt = datetime.fromisoformat(custom_datetime_str)
+                    auto_disable_at_kolkata = naive_dt.replace(tzinfo=tz_kolkata)
+                    auto_disable_at = auto_disable_at_kolkata.astimezone(timezone.utc)
                 except ValueError:
                     messages.error(request, "Invalid Date and Time format.")
                     return redirect("faculty_promotion")
 
-                if auto_disable_at <= now:
+                if auto_disable_at <= now_utc:
                     messages.error(request, "Auto Disable Date and Time must be in the future.")
                     return redirect("faculty_promotion")
 
-                delta = auto_disable_at - now
+                delta = auto_disable_at - now_utc
                 days = delta.days if delta.days > 0 else 1
             else:
                 messages.error(request, "Auto Disable Duration is required to enable No Due Access.")
@@ -1082,7 +1103,7 @@ def toggle_no_due_access(request):
                 {"_id": "global_config"},
                 {"$set": {
                     "no_due_access_enabled": True,
-                    "enabled_at": now,
+                    "enabled_at": now_utc,
                     "auto_disable_at": auto_disable_at,
                     "duration_days": days
                 }},
@@ -1090,7 +1111,8 @@ def toggle_no_due_access(request):
             )
             
             # Format display string for success message
-            exp_str = auto_disable_at.strftime("%d-%m-%Y %I:%M %p")
+            auto_disable_at_kolkata = auto_disable_at.astimezone(tz_kolkata)
+            exp_str = auto_disable_at_kolkata.strftime("%d-%m-%Y %I:%M %p")
             messages.success(request, f"No Due Access has been successfully Enabled globally until {exp_str}.")
         else:
             portal_settings.update_one(

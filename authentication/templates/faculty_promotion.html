@@ -750,14 +750,14 @@
   }
 
   // ================= LIVE TICKER COUNTDOWN =================
-  const AUTO_DISABLE_ISO = "{{ auto_disable_at_iso }}";
+  const REMAINING_SECONDS = parseInt("{{ remaining_seconds|default:0 }}");
 
-  if (AUTO_DISABLE_ISO) {
-    const disableTime = new Date(AUTO_DISABLE_ISO).getTime();
+  if (REMAINING_SECONDS > 0) {
+    const endTime = Date.now() + REMAINING_SECONDS * 1000;
     
     function updateCountdown() {
-      const now = new Date().getTime();
-      const diff = disableTime - now;
+      const now = Date.now();
+      const diff = endTime - now;
 
       const ticker = document.getElementById("access_countdown_ticker");
       if (!ticker) return;
@@ -769,10 +769,11 @@
         return;
       }
 
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      const secondsTotal = Math.floor(diff / 1000);
+      const days = Math.floor(secondsTotal / (3600 * 24));
+      const hours = Math.floor((secondsTotal % (3600 * 24)) / 3600);
+      const minutes = Math.floor((secondsTotal % 3600) / 60);
+      const seconds = secondsTotal % 60;
 
       let parts = [];
       if (days > 0) parts.push(days + "d");
@@ -785,6 +786,12 @@
 
     updateCountdown();
     setInterval(updateCountdown, 1000);
+  } else {
+    const ticker = document.getElementById("access_countdown_ticker");
+    if (ticker) {
+      ticker.textContent = "Expired";
+      ticker.className = "text-red-600";
+    }
   }
 
   // Initialize UI components on load
