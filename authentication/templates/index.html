@@ -17,12 +17,12 @@
   <div class="border-2 border-[#d52b1e] rounded-2xl p-6 sm:p-8 w-full max-w-md mx-auto md:mx-0 bg-white shadow-sm">
     <h2 class="text-center text-[#d52b1e] text-xl sm:text-2xl font-bold mb-6">Institution Login</h2>
 
-    <form method="POST">
+    <form method="POST" onsubmit="return handleFormSubmit(this)">
       {% csrf_token %}
 
       <!-- Office -->
       <label class="block mb-1.5 font-medium text-gray-700 text-sm">Select Office</label>
-      <select name="office" id="office"
+      <select name="office" id="office" required
           class="w-full border border-gray-300 rounded-full px-4 py-2.5 mb-4 text-gray-800 bg-white"
           onchange="toggleDepartment()">
         <option value="">Select office</option>
@@ -50,13 +50,13 @@
 
       <!-- Username -->
       <label class="block mb-1.5 font-medium text-gray-700 text-sm">Username</label>
-      <input type="text" name="username"
+      <input type="text" name="username" required
           placeholder="Enter username"
           class="w-full border border-gray-300 rounded-full px-4 py-2.5 mb-4 text-gray-800">
 
       <!-- Password -->
       <label class="block mb-1.5 font-medium text-gray-700 text-sm">Password</label>
-      <input type="password" name="password"
+      <input type="password" name="password" required
           placeholder="Enter password"
           class="w-full border border-gray-300 rounded-full px-4 py-2.5 mb-5 text-gray-800">
 
@@ -79,16 +79,16 @@
   <div class="border-2 border-[#d52b1e] rounded-2xl p-6 sm:p-8 w-full max-w-md mx-auto md:mx-0 bg-white shadow-sm">
     <h2 class="text-center text-[#d52b1e] text-xl sm:text-2xl font-bold mb-6">Student Login</h2>
 
-    <form method="POST" action="{% url 'student_login' %}">
+    <form method="POST" action="{% url 'student_login' %}" onsubmit="return handleFormSubmit(this)">
       {% csrf_token %}
 
       <label class="block mb-1.5 font-medium text-gray-700 text-sm">Student Register Number</label>
-      <input type="text" name="reg_no" maxlength="12"
+      <input type="text" name="reg_no" maxlength="12" required
         placeholder="Register Number"
         class="w-full border border-gray-300 rounded-full px-4 py-2.5 mb-4 text-gray-800">
 
       <label class="block mb-1.5 font-medium text-gray-700 text-sm">Date of Birth</label>
-      <input type="date" name="dob"
+      <input type="date" name="dob" required
         class="w-full border border-gray-300 rounded-full px-4 py-2.5 mb-5 text-gray-800">
 
       <!-- Spacer to push button down — keeps height consistent with Institution card -->
@@ -131,6 +131,24 @@ function toggleDepartment() {
     const office = document.getElementById("office").value;
     const deptDiv = document.getElementById("departmentDiv");
     deptDiv.classList.toggle("hidden", office !== "department");
+}
+
+function handleFormSubmit(form) {
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-75', 'cursor-not-allowed');
+        btn.innerHTML = `
+            <div class="flex items-center justify-center gap-2">
+                <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Logging in...</span>
+            </div>
+        `;
+    }
+    return true;
 }
 
 window.onload = () => {

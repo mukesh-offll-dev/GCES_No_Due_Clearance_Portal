@@ -512,36 +512,44 @@ def bulk_approve(request):
 
 @institution_login_required
 def reject_request(request):
-    req_id = request.POST.get("req_id")
+    req_ids = request.POST.getlist("request_ids")
+    if not req_ids:
+        req_id = request.POST.get("req_id")
+        if req_id:
+            req_ids = [req_id]
+        else:
+            req_ids = []
+
     reason = request.POST.get("reason")
 
-    # 🔹 Get existing request
-    req = no_due_col.find_one({"_id": ObjectId(req_id)})
+    if req_ids:
+        object_ids = [ObjectId(rid) for rid in req_ids]
 
-    # 🔥 If hostel + file exists → delete from Cloudinary
-    if req and req.get("office") == "HOSTEL":
-        public_id = req.get("cloudinary_public_id")
-        if public_id:
-            try:
-                cloudinary.uploader.destroy(
-                    public_id,
-                    resource_type="raw"
-                )
-            except Exception:
-                pass  # Ignore cloudinary deletion failure, proceed with DB status update
+        # 🔥 If hostel + file exists → delete from Cloudinary
+        requests_to_reject = list(no_due_col.find({"_id": {"$in": object_ids}}))
+        for req in requests_to_reject:
+            if req.get("office") == "HOSTEL":
+                public_id = req.get("cloudinary_public_id")
+                if public_id:
+                    try:
+                        cloudinary.uploader.destroy(
+                            public_id,
+                            resource_type="raw"
+                        )
+                    except Exception:
+                        pass  # Ignore cloudinary deletion failure, proceed with DB status update
 
-
-    # 🔁 Update DB
-    no_due_col.update_one(
-        {"_id": ObjectId(req_id)},
-        {"$set": {
-            "status": "REJECTED",
-            "reject_reason": reason,
-            "receipt_url": None,
-            "cloudinary_public_id": None,
-            "updated_at": datetime.now()
-        }}
-    )
+        # 🔁 Update DB
+        no_due_col.update_many(
+            {"_id": {"$in": object_ids}},
+            {"$set": {
+                "status": "REJECTED",
+                "reject_reason": reason,
+                "receipt_url": None,
+                "cloudinary_public_id": None,
+                "updated_at": datetime.now()
+            }}
+        )
 
     return redirect(request.META.get("HTTP_REFERER"))
 

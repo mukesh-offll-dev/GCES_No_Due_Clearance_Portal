@@ -276,7 +276,7 @@
 
     <textarea name="reason" required class="w-full border rounded-xl p-3 mb-4" placeholder="Enter reason..."></textarea>
 
-    <input type="hidden" name="req_id" id="rejectReqId">
+    <div id="rejectReqIdsContainer"></div>
 
     <button class="bg-[#d52b1e] text-white w-full py-2 rounded-full">
       Submit
@@ -304,17 +304,32 @@
     return true;
   }
   function openRejectModal() {
-    const checked = document.querySelector('input[type=checkbox]:checked');
-    if (!checked) {
+    const checked = document.querySelectorAll('input[name="request_ids"]:checked');
+    if (checked.length === 0) {
       alert("Select a student first");
       return;
     }
-    document.getElementById("rejectReqId").value = checked.value;
+    
+    const container = document.getElementById("rejectReqIdsContainer");
+    container.innerHTML = "";
+
+    checked.forEach(cb => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'request_ids';
+      input.value = cb.value;
+      container.appendChild(input);
+    });
+
     document.getElementById("rejectModal").classList.remove("hidden");
   }
 
   function closeRejectModal() {
     document.getElementById("rejectModal").classList.add("hidden");
+    const container = document.getElementById("rejectReqIdsContainer");
+    if (container) {
+      container.innerHTML = "";
+    }
   }
 
   function searchPending() {
