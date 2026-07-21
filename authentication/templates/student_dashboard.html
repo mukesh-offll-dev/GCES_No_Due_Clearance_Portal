@@ -144,43 +144,68 @@
             <p class="text-red-600 font-semibold">
               Rejected
             </p>
+            {% if d.reject_reason %}
             <p class="text-sm text-gray-600">
               Reason: {{ d.reject_reason }}
             </p>
+            {% endif %}
 
-            {% if no_due_access_enabled %}
-            <form method="POST" action="{% url 'retry_request' %}" class="mt-2">
-              {% csrf_token %}
-              <input type="hidden" name="office" value="{{ d.office }}">
-              <button
-                class="bg-yellow-500 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-yellow-600">
-                Try Again
+            {% if d.is_cooldown_active %}
+            <div class="mt-2 flex flex-col items-end">
+              <button disabled class="bg-gray-400 opacity-60 text-white px-4 py-1.5 rounded-full text-sm font-semibold cursor-not-allowed">
+                Send Request
               </button>
-            </form>
+              <div class="mt-2 text-xs text-red-600 font-semibold text-right max-w-[240px]">
+                <p>Request limit reached. You can send a new request after:</p>
+                <p id="cooldown-timer-{{ d.office }}" class="text-sm font-bold text-red-700 mt-0.5 tracking-wider" data-expiry="{{ d.cooldown_expiry_iso }}">
+                  --h --m --s
+                </p>
+              </div>
+            </div>
             {% else %}
-            <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-xs mt-2">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-              </svg>
-              Locked
-            </span>
+              <p class="text-xs text-amber-600 font-bold mt-1">
+                You have only 1 attempt remaining.
+              </p>
+              {% if no_due_access_enabled %}
+              <form method="POST" action="{% url 'retry_request' %}" class="mt-2">
+                {% csrf_token %}
+                <input type="hidden" name="office" value="{{ d.office }}">
+                <button
+                  class="bg-yellow-500 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-yellow-600">
+                  Try Again
+                </button>
+              </form>
+              {% else %}
+              <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-xs mt-2">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+                Locked
+              </span>
+              {% endif %}
             {% endif %}
           </div>
 
           {% elif d.status == "NOT_SENT" %}
-            {% if no_due_access_enabled %}
-            <button type="button" data-office="{{ d.office }}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold
-                 flex items-center justify-center gap-2">
-              <span class="btn-text">Send for Verification</span>
-            </button>
-            {% else %}
-            <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-sm">
-              <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-              </svg>
-              Locked
-            </span>
-            {% endif %}
+            <div class="flex flex-col items-end">
+              {% if d.attempts_used == 1 %}
+              <p class="text-xs text-amber-600 font-bold mb-1 text-right">
+                You have only 1 attempt remaining.
+              </p>
+              {% endif %}
+              {% if no_due_access_enabled %}
+              <button type="button" data-office="{{ d.office }}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold flex items-center justify-center gap-2">
+                <span class="btn-text">Send for Verification</span>
+              </button>
+              {% else %}
+              <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-sm">
+                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+                Locked
+              </span>
+              {% endif %}
+            </div>
 
           {% endif %}
 
@@ -352,11 +377,11 @@
 
       {% csrf_token %}
 
-      <label class="block font-semibold mb-1">Last Payment ID</label>
-      <input name="payment_id" required class="w-full border rounded-full px-4 py-2 mb-4">
+      <label class="block font-semibold mb-1">Last Payment SBI Reference Number (eg. DUP6767676)</label>
+      <input name="payment_id" placeholder="eg. DUP6767676" required class="w-full border rounded-full px-4 py-2 mb-4">
 
-      <label class="block font-semibold mb-1">Attach Payment Screenshot</label>
-      <input type="file" name="receipt" accept="image/*" required class="mb-5">
+      <label class="block font-semibold mb-1">Attach Last Payment Screenshot / Payment Receipt</label>
+      <input type="file" name="receipt" accept="image/*,application/pdf" required class="mb-5">
 
       <button id="hostelSubmitBtn"
         class="w-full bg-[#d52b1e] text-white py-2 rounded-full font-semibold flex justify-center items-center gap-2">
@@ -576,6 +601,43 @@
   function closeHistoryModal() {
     document.getElementById("historyModal").classList.add("hidden");
   }
+
+  function startCooldownTimers() {
+    const timerElements = document.querySelectorAll('[id^="cooldown-timer-"]');
+    if (!timerElements.length) return;
+
+    function updateTimers() {
+      const now = new Date().getTime();
+
+      timerElements.forEach(el => {
+        const expiryStr = el.dataset.expiry;
+        if (!expiryStr) return;
+
+        const expiryTime = new Date(expiryStr).getTime();
+        const diff = expiryTime - now;
+
+        if (diff <= 0) {
+          el.innerText = "00h 00m 00s";
+          setTimeout(() => location.reload(), 1000);
+        } else {
+          const hours = Math.floor(diff / (1000 * 60 * 60));
+          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+          const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+          const hStr = hours > 0 ? `${hours}h ` : '0h ';
+          const mStr = minutes < 10 ? `0${minutes}m ` : `${minutes}m `;
+          const sStr = seconds < 10 ? `0${seconds}s` : `${seconds}s`;
+
+          el.innerText = `${hStr}${mStr}${sStr}`;
+        }
+      });
+    }
+
+    updateTimers();
+    setInterval(updateTimers, 1000);
+  }
+
+  document.addEventListener("DOMContentLoaded", startCooldownTimers);
 
 </script>
 

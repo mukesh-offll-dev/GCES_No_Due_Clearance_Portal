@@ -132,7 +132,7 @@
         </div>
 
         <div>
-          <p class="font-semibold">Last Payment ID</p>
+          <p class="font-semibold">Last Payment SBI Reference Number</p>
           <p class="text-gray-700">{{ r.last_payment_id }}</p>
         </div>
 
@@ -142,8 +142,13 @@
             View Receipt
           </span>
           <a href="{{ r.receipt_url }}" target="_blank" class="text-blue-600 underline font-semibold">
-            View Receipt
+            View PDF/Original
           </a>
+          {% if ".pdf" in r.receipt_url %}
+          <a href="{{ r.receipt_url|slice:":-4" }}.png" target="_blank" class="text-green-600 underline font-semibold text-xs mt-1">
+            View as Image (PNG)
+          </a>
+          {% endif %}
         </div>
         {% else %}
         <span class="text-gray-400 text-sm">No Receipt</span>

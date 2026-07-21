@@ -201,8 +201,31 @@ def student_dashboard(request):
     for office in offices:
         d = existing.get(office, {
             "office": office,
-            "status": "NOT_SENT"
+            "status": "NOT_SENT",
+            "attempts_used": 0
         })
+
+        attempts_used = d.get("attempts_used", 0)
+        cooldown_expiry = d.get("cooldown_expiry")
+        is_cooldown_active = False
+        cooldown_expiry_iso = ""
+        cooldown_remaining_seconds = 0
+
+        if cooldown_expiry:
+            if cooldown_expiry.tzinfo is None:
+                cooldown_expiry = cooldown_expiry.replace(tzinfo=timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            if now_utc < cooldown_expiry:
+                is_cooldown_active = True
+                cooldown_expiry_iso = cooldown_expiry.isoformat()
+                cooldown_remaining_seconds = int((cooldown_expiry - now_utc).total_seconds())
+
+        d["attempts_used"] = attempts_used
+        d["attempts_remaining"] = max(0, 2 - attempts_used)
+        d["is_cooldown_active"] = is_cooldown_active
+        d["cooldown_expiry_iso"] = cooldown_expiry_iso
+        d["cooldown_remaining_seconds"] = cooldown_remaining_seconds
+
         dues.append(d)
 
         # 🔴 if ANY required office not approved → false
@@ -296,6 +319,27 @@ def send_hostel_request(request):
         return redirect("student_dashboard")
 
     if request.method == "POST":
+        student_id = ObjectId(request.session["student_id"])
+
+        reset_expired_no_dues(no_due_col)
+
+        existing_req = no_due_col.find_one({
+            "student_id": student_id,
+            "office": "HOSTEL"
+        })
+
+        if existing_req:
+            cooldown_expiry = existing_req.get("cooldown_expiry")
+            if cooldown_expiry:
+                if cooldown_expiry.tzinfo is None:
+                    cooldown_expiry = cooldown_expiry.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) < cooldown_expiry and existing_req.get("attempts_used", 0) >= 2:
+                    messages.error(request, "Request limit reached for Hostel Office. Cooldown active.")
+                    return redirect("student_dashboard")
+
+            if existing_req.get("attempts_used", 0) >= 2 and existing_req.get("status") == "REJECTED":
+                messages.error(request, "Maximum request limit (2 attempts) reached for Hostel Office.")
+                return redirect("student_dashboard")
 
         receipt_url = None
         cloudinary_public_id = None
@@ -304,20 +348,33 @@ def send_hostel_request(request):
             upload = cloudinary.uploader.upload(
                 request.FILES["receipt"],
                 folder="no_dues/hostel",
-                resource_type="raw"
+                resource_type="auto"
             )
             receipt_url = upload["secure_url"]
             cloudinary_public_id = upload["public_id"]
 
-        no_due_col.insert_one({
-            "student_id": ObjectId(request.session["student_id"]),
-            "office": "HOSTEL",
-            "last_payment_id": request.POST.get("payment_id"),
-            "receipt_url": receipt_url,
-            "cloudinary_public_id": cloudinary_public_id,
-            "status": "PENDING",
-            "created_at": datetime.now()
-        })
+        current_attempts = existing_req.get("attempts_used", 0) if existing_req else 0
+        new_attempts = min(2, current_attempts + 1)
+
+        no_due_col.update_one(
+            {
+                "student_id": student_id,
+                "office": "HOSTEL"
+            },
+            {
+                "$set": {
+                    "student_id": student_id,
+                    "office": "HOSTEL",
+                    "last_payment_id": request.POST.get("payment_id"),
+                    "receipt_url": receipt_url,
+                    "cloudinary_public_id": cloudinary_public_id,
+                    "status": "PENDING",
+                    "attempts_used": new_attempts,
+                    "created_at": datetime.now()
+                }
+            },
+            upsert=True
+        )
 
     return redirect("student_dashboard")
 
@@ -527,6 +584,9 @@ def reject_request(request):
 
         # 🔥 If hostel + file exists → delete from Cloudinary
         requests_to_reject = list(no_due_col.find({"_id": {"$in": object_ids}}))
+        now_utc = datetime.now(timezone.utc)
+        now_naive = datetime.now()
+
         for req in requests_to_reject:
             if req.get("office") == "HOSTEL":
                 public_id = req.get("cloudinary_public_id")
@@ -537,19 +597,32 @@ def reject_request(request):
                             resource_type="raw"
                         )
                     except Exception:
-                        pass  # Ignore cloudinary deletion failure, proceed with DB status update
+                        pass
+                    try:
+                        cloudinary.uploader.destroy(
+                            public_id,
+                            resource_type="image"
+                        )
+                    except Exception:
+                        pass
 
-        # 🔁 Update DB
-        no_due_col.update_many(
-            {"_id": {"$in": object_ids}},
-            {"$set": {
+            attempts_used = req.get("attempts_used", 1)
+            update_payload = {
                 "status": "REJECTED",
                 "reject_reason": reason,
                 "receipt_url": None,
                 "cloudinary_public_id": None,
-                "updated_at": datetime.now()
-            }}
-        )
+                "updated_at": now_naive
+            }
+
+            if attempts_used >= 2:
+                update_payload["second_rejection_at"] = now_utc
+                update_payload["cooldown_expiry"] = now_utc + timedelta(hours=24)
+
+            no_due_col.update_one(
+                {"_id": req["_id"]},
+                {"$set": update_payload}
+            )
 
     return redirect(request.META.get("HTTP_REFERER"))
 
@@ -712,11 +785,36 @@ def send_no_due_request(request):
 
     if request.method == "POST":
         office = request.POST.get("office")
+        student_id = ObjectId(request.session["student_id"])
+
+        reset_expired_no_dues(no_due_col)
+
+        existing_req = no_due_col.find_one({
+            "student_id": student_id,
+            "office": office
+        })
+
+        if existing_req:
+            cooldown_expiry = existing_req.get("cooldown_expiry")
+            if cooldown_expiry:
+                if cooldown_expiry.tzinfo is None:
+                    cooldown_expiry = cooldown_expiry.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) < cooldown_expiry and existing_req.get("attempts_used", 0) >= 2:
+                    messages.error(request, f"Request limit reached for {office.title() if office else ''} Office. Cooldown active.")
+                    return redirect("student_dashboard")
+
+            if existing_req.get("attempts_used", 0) >= 2 and existing_req.get("status") == "REJECTED":
+                messages.error(request, f"Maximum request limit (2 attempts) reached for {office.title() if office else ''} Office.")
+                return redirect("student_dashboard")
+
+        current_attempts = existing_req.get("attempts_used", 0) if existing_req else 0
+        new_attempts = min(2, current_attempts + 1)
 
         data = {
-            "student_id": ObjectId(request.session["student_id"]),
+            "student_id": student_id,
             "office": office,
             "status": "PENDING",
+            "attempts_used": new_attempts,
             "created_at": datetime.now()
         }
 
@@ -749,25 +847,44 @@ def retry_request(request):
         office = request.POST.get("office")
         student_id = ObjectId(request.session["student_id"])
 
-        result = no_due_col.update_one(
-            {
-                "student_id": student_id,
-                "office": office,
-                "status": "REJECTED"   # 🔥 IMPORTANT FILTER
-            },
-            {
-                "$set": {
-                    "status": "NOT_SENT",
-                    "created_at": datetime.now(),
-                    "updated_at": datetime.now()
-                },
-                "$unset": {
-                    "reject_reason": ""
-                }
-            }
-        )
+        reset_expired_no_dues(no_due_col)
 
-        print("Retry matched:", result.matched_count)
+        existing_req = no_due_col.find_one({
+            "student_id": student_id,
+            "office": office,
+            "status": "REJECTED"
+        })
+
+        if existing_req:
+            cooldown_expiry = existing_req.get("cooldown_expiry")
+            if cooldown_expiry:
+                if cooldown_expiry.tzinfo is None:
+                    cooldown_expiry = cooldown_expiry.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) < cooldown_expiry and existing_req.get("attempts_used", 0) >= 2:
+                    messages.error(request, f"Request limit reached for {office.title() if office else ''} Office. Cooldown active.")
+                    return redirect("student_dashboard")
+
+            if existing_req.get("attempts_used", 0) >= 2:
+                messages.error(request, f"Maximum request limit (2 attempts) reached for {office.title() if office else ''} Office.")
+                return redirect("student_dashboard")
+
+            result = no_due_col.update_one(
+                {
+                    "_id": existing_req["_id"]
+                },
+                {
+                    "$set": {
+                        "status": "NOT_SENT",
+                        "created_at": datetime.now(),
+                        "updated_at": datetime.now()
+                    },
+                    "$unset": {
+                        "reject_reason": ""
+                    }
+                }
+            )
+
+        print("Retry matched:", result.matched_count if existing_req else 0)
 
     return redirect("student_dashboard")
 
@@ -1271,14 +1388,21 @@ def promote_students(request):
                 # Reset dues
                 no_due_col.update_many(
                     {"student_id": student_id},
-                    {"$set": {
-                        "status": "NOT_SENT",
-                        "receipt_url": None,
-                        "cloudinary_public_id": None,
-                        "reject_reason": None,
-                        "last_payment_id": None,
-                        "updated_at": now,
-                    }}
+                    {
+                        "$set": {
+                            "status": "NOT_SENT",
+                            "attempts_used": 0,
+                            "receipt_url": None,
+                            "cloudinary_public_id": None,
+                            "reject_reason": None,
+                            "last_payment_id": None,
+                            "updated_at": now,
+                        },
+                        "$unset": {
+                            "cooldown_expiry": "",
+                            "second_rejection_at": ""
+                        }
+                    }
                 )
 
                 # Insert log
