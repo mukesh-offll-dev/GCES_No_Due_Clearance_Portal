@@ -40,6 +40,7 @@ CSRF_TRUSTED_ORIGINS = [
 SESSION_COOKIE_SECURE = not DEBUG   # True in prod, False in local dev
 CSRF_COOKIE_SECURE    = not DEBUG   # True in prod, False in local dev
 
+SESSION_PROXY_SSL_HEADER = ('HTTP_X_FORWADED_PROTO','https')
 # ================= SESSION SETTINGS =================
 SESSION_COOKIE_AGE         = 60 * 60 * 2  # 2 hours in seconds
 SESSION_SAVE_EVERY_REQUEST = True          # Slide expiry window on every request
