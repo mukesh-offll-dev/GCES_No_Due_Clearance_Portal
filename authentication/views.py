@@ -341,20 +341,40 @@ def send_hostel_request(request):
                 messages.error(request, "Maximum request limit (2 attempts) reached for Hostel Office.")
                 return redirect("student_dashboard")
 
+        student = students_col.find_one({"_id": student_id})
+        is_75 = student.get("is_75_scheme", False) if student else False
+
         receipt_url = None
         cloudinary_public_id = None
 
-        if "receipt" in request.FILES:
-            upload = cloudinary.uploader.upload(
-                request.FILES["receipt"],
-                folder="no_dues/hostel",
-                resource_type="auto"
-            )
-            receipt_url = upload["secure_url"]
-            cloudinary_public_id = upload["public_id"]
+        if not is_75:
+            if "receipt" in request.FILES:
+                upload = cloudinary.uploader.upload(
+                    request.FILES["receipt"],
+                    folder="no_dues/hostel",
+                    resource_type="auto"
+                )
+                receipt_url = upload["secure_url"]
+                cloudinary_public_id = upload["public_id"]
+        else:
+            receipt_url = "7.5 Scheme Student"
+            cloudinary_public_id = "7.5_scheme"
 
         current_attempts = existing_req.get("attempts_used", 0) if existing_req else 0
         new_attempts = min(2, current_attempts + 1)
+
+        set_data = {
+            "student_id": student_id,
+            "office": "HOSTEL",
+            "last_payment_id": "7.5 Scheme" if is_75 else request.POST.get("payment_id"),
+            "status": "PENDING",
+            "attempts_used": new_attempts,
+            "created_at": datetime.now()
+        }
+        if receipt_url:
+            set_data["receipt_url"] = receipt_url
+        if cloudinary_public_id:
+            set_data["cloudinary_public_id"] = cloudinary_public_id
 
         no_due_col.update_one(
             {
@@ -362,16 +382,7 @@ def send_hostel_request(request):
                 "office": "HOSTEL"
             },
             {
-                "$set": {
-                    "student_id": student_id,
-                    "office": "HOSTEL",
-                    "last_payment_id": request.POST.get("payment_id"),
-                    "receipt_url": receipt_url,
-                    "cloudinary_public_id": cloudinary_public_id,
-                    "status": "PENDING",
-                    "attempts_used": new_attempts,
-                    "created_at": datetime.now()
-                }
+                "$set": set_data
             },
             upsert=True
         )
@@ -943,6 +954,7 @@ def faculty_dashboard(request):
                 "branch": s["branch"],
                 "year": s["year"],
                 "student_type": s_type,
+                "is_75_scheme": s.get("is_75_scheme", False),
                 "no_dues": no_dues
             })
 
@@ -956,6 +968,45 @@ def faculty_dashboard(request):
         "add_error": add_error,
         "add_success": add_success
     })
+
+
+@institution_login_required
+def update_75_scheme(request):
+    if request.session.get("role") != "FACULTY":
+        messages.error(request, "Unauthorized access.")
+        return redirect("index")
+
+    if request.method == "POST":
+        branch = request.POST.get("branch")
+        year = request.POST.get("year")
+
+        selected_ids_str = request.POST.getlist("selected_student_ids")
+        selected_ids = []
+        for sid in selected_ids_str:
+            try:
+                selected_ids.append(ObjectId(sid))
+            except Exception:
+                pass
+
+        query = {}
+        if year and year.isdigit():
+            query["year"] = int(year)
+        if branch:
+            query["branch"] = branch
+
+        if query:
+            # Set is_75_scheme = False for all students in this cohort
+            students_col.update_many(query, {"$set": {"is_75_scheme": False}})
+            # Set is_75_scheme = True for selected students
+            if selected_ids:
+                students_col.update_many({"_id": {"$in": selected_ids}}, {"$set": {"is_75_scheme": True}})
+
+        messages.success(request, "7.5 Scheme student status updated successfully.")
+
+        redirect_url = f"/faculty/?branch={branch or ''}&year={year or ''}"
+        return redirect(redirect_url)
+
+    return redirect("faculty_dashboard")
 
 
 @institution_login_required
@@ -1784,6 +1835,7 @@ def office_student_status_api(request):
                 "name": s.get("name"),
                 "branch": s.get("branch"),
                 "semester": s.get("semester"),
+                "is_75_scheme": s.get("is_75_scheme", False),
                 "status": s.get("office_status"),
                 "completed_time": completed_time_str
             })
@@ -1968,6 +2020,7 @@ def office_report_preview_api(request):
                 "year": s.get("year"),
                 "semester": s.get("semester"),
                 "student_type": s.get("student_type", "Hosteller"),
+                "is_75_scheme": s.get("is_75_scheme", False),
                 "status": s.get("office_status"),
                 "completed_time": completed_time_str
             })

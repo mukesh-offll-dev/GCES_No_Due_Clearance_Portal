@@ -38,9 +38,16 @@
   <!-- STUDENT DETAILS -->
   <section
     class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] px-4 sm:px-10 py-6 sm:py-8 mb-8 bg-white shadow-sm">
-    <h1 class="text-[#d52b1e] font-extrabold text-2xl mb-6">
-      Student Details
-    </h1>
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-[#d52b1e] font-extrabold text-2xl">
+        Student Details
+      </h1>
+      {% if student.is_75_scheme %}
+      <span class="inline-block bg-purple-600 text-white font-bold text-xs sm:text-sm px-4 py-1.5 rounded-full shadow-sm">
+        7.5 Scheme Student
+      </span>
+      {% endif %}
+    </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-16 text-gray-900">
 
@@ -391,6 +398,35 @@
     </form>
   </div>
 </div>
+
+<!-- 7.5 HOSTEL CONFIRMATION MODAL -->
+<div id="hostel75Modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+  <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm relative text-center">
+    <button onclick="closeHostel75Modal()" class="absolute top-3 right-4 text-xl font-bold text-gray-500 hover:text-black">✖</button>
+    <h2 class="text-xl font-extrabold text-[#d52b1e] mb-3">
+      Send Hostel Request?
+    </h2>
+    <p class="text-sm font-semibold text-gray-700 mb-6">
+      Are you sure you want to send the request to the Hostel Office?
+    </p>
+
+    <form method="POST" action="{% url 'send_hostel' %}" onsubmit="handleHostel75Submit(this)">
+      {% csrf_token %}
+      <div class="flex flex-col gap-3">
+        <button type="submit" id="hostel75SubmitBtn" class="w-full bg-[#d52b1e] hover:bg-red-800 text-white py-2 rounded-full font-semibold transition flex justify-center items-center gap-2">
+          <span>Send Request</span>
+          <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+          </svg>
+        </button>
+        <button type="button" onclick="closeHostel75Modal()" class="w-full border border-gray-300 text-gray-700 py-2 rounded-full font-semibold transition hover:bg-gray-100">
+          Cancel
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endif %}
 
 
@@ -459,6 +495,7 @@
 
 
 
+  const IS_75_SCHEME = {% if student.is_75_scheme %}true{% else %}false{% endif %};
   let selectedOffice = null;
   let selectedBtn = null;
   let sending = false;
@@ -467,8 +504,31 @@
     selectedBtn = btn;                       // 🔥 store button
     selectedOffice = btn.dataset.office;
 
+    if (selectedOffice === "HOSTEL" && IS_75_SCHEME) {
+      openHostel75Modal();
+      return;
+    }
+
     document.getElementById("officeName").innerText = selectedOffice;
     document.getElementById("confirmModal").classList.remove("hidden");
+  }
+
+  function openHostel75Modal() {
+    document.getElementById("hostel75Modal").classList.remove("hidden");
+  }
+
+  function closeHostel75Modal() {
+    document.getElementById("hostel75Modal").classList.add("hidden");
+    sending = false;
+  }
+
+  function handleHostel75Submit(form) {
+    const btn = document.getElementById("hostel75SubmitBtn");
+    if (btn) {
+      btn.disabled = true;
+      btn.querySelector('span').textContent = 'Sending...';
+      btn.querySelector('svg').classList.remove('hidden');
+    }
   }
 
   function closeConfirmModal() {
@@ -484,7 +544,11 @@
 
     // ================= HOSTEL =================
     if (selectedOffice === "HOSTEL") {
-      document.getElementById("hostelModal").classList.remove("hidden");
+      if (IS_75_SCHEME) {
+        openHostel75Modal();
+      } else {
+        document.getElementById("hostelModal").classList.remove("hidden");
+      }
       return;
     }
 

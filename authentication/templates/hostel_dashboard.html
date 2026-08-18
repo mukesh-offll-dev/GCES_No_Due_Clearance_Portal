@@ -123,7 +123,7 @@
 
         <div>
           <p class="font-semibold">Name</p>
-          <p class="text-gray-700">{{ r.student.name }}</p>
+          <p class="text-gray-700">{{ r.student.name }} {% if r.student.is_75_scheme %}<span class="inline-block bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-1 shadow-sm">7.5</span>{% endif %}</p>
         </div>
 
         <div>
@@ -136,7 +136,7 @@
           <p class="text-gray-700">{{ r.last_payment_id }}</p>
         </div>
 
-        {% if r.receipt_url %}
+        {% if r.receipt_url and not r.student.is_75_scheme %}
         <div class="flex flex-col gap-1 text-right">
           <span class="text-sm font-semibold ">
             View Receipt
@@ -150,6 +150,8 @@
           </a>
           {% endif %}
         </div>
+        {% elif r.student.is_75_scheme %}
+        <span class="text-gray-400 text-sm">No Receipt Required</span>
         {% else %}
         <span class="text-gray-400 text-sm">No Receipt</span>
         {% endif %}
@@ -425,7 +427,7 @@
       const row = `
         <tr class="hover:bg-gray-50 transition border-b">
           <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${s.reg_no}</td>
-          <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-700">${s.name}</td>
+          <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-700">${s.name} ${s.is_75_scheme ? '<span class="inline-block bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-1 shadow-sm">7.5</span>' : ''}</td>
           <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.branch}</td>
           <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.semester}</td>
           <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>

@@ -1,6 +1,6 @@
 from django.urls import path
-from .views import index, library_dashboard, logout_view, faculty_dashboard, add_student , delete_students , edit_student, student_login, student_dashboard, send_hostel_request, college_dashboard, department_dashboard, hostel_dashboard, bulk_approve, reject_request, send_no_due_request, retry_request, update_student_profile , no_due_certificate , download_student_template, import_students_excel, office_student_status_api, office_report_preview_api, office_report_pdf_view, faculty_promotion_page, promote_students, remove_sem8_students, toggle_no_due_access
- 
+from .views import index, library_dashboard, logout_view, faculty_dashboard, add_student , delete_students , edit_student, student_login, student_dashboard, send_hostel_request, college_dashboard, department_dashboard, hostel_dashboard, bulk_approve, reject_request, send_no_due_request, retry_request, update_student_profile , no_due_certificate , download_student_template, import_students_excel, office_student_status_api, office_report_preview_api, office_report_pdf_view, faculty_promotion_page, promote_students, remove_sem8_students, toggle_no_due_access, update_75_scheme
+
 from django.conf.urls.static import static
 
 urlpatterns = [
@@ -37,6 +37,7 @@ urlpatterns = [
     path("faculty/promote/", promote_students, name="promote_students"),
     path("faculty/remove-sem8/", remove_sem8_students, name="remove_sem8_students"),
     path("faculty/toggle-no-due-access/", toggle_no_due_access, name="toggle_no_due_access"),
+    path("faculty/update-75-scheme/", update_75_scheme, name="update_75_scheme"),
     path("office/student-status/", office_student_status_api, name="student_status_api"),
     path("office/report/preview/", office_report_preview_api, name="report_preview_api"),
     path("office/report/pdf/", office_report_pdf_view, name="report_pdf_view"),
