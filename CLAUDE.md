@@ -15,12 +15,22 @@ pip install -r requirements.txt
 # Run development server (DEBUG must be True in .env for local HTTP)
 python manage.py runserver
 
-# Production (see Procfile)
-gunicorn nodue_portal.wsgi
+# Production (see Procfile) — gthread workers, auto-scaled, ~400 slots
+gunicorn -c gunicorn.conf.py nodue_portal.wsgi
 
 # Collect static files (WhiteNoise, required before deploy)
 python manage.py collectstatic --noinput
+
+# Build MongoDB indexes (idempotent; also auto-run at server boot)
+python manage.py ensure_indexes
+
+# Maintenance cycle (also runs in a background thread inside each worker)
+python manage.py run_maintenance         # once, for a systemd timer/cron
+python manage.py run_maintenance --loop  # standalone daemon
 ```
+
+See `PRODUCTION.md` for the full deployment guide (systemd units, env tuning,
+load testing). Worker config lives in `gunicorn.conf.py`.
 
 There is no test suite (`authentication/tests.py` is empty) and no linter configured. `python manage.py migrate` only affects the SQLite session/admin store — application data lives in MongoDB (see below).
 
@@ -56,7 +66,8 @@ The `_ROLE_REDIRECT` dict in `views.py` maps roles to their dashboard URL names.
 ## Key Business Logic (all in `authentication/views.py`)
 
 - **Required offices depend on `student_type`**: Day Scholars need LIBRARY/COLLEGE/DEPARTMENT (3); Hostellers add HOSTEL (4). This branching recurs across `student_dashboard`, `no_due_certificate`, `promote_students`, and the report/status aggregation pipelines — update all of them together.
-- **Attempt/cooldown system**: students get 2 attempts per office. A 2nd rejection sets a 24h `cooldown_expiry`. `reset_expired_no_dues()` (in `utils.py`) is called at the top of most dashboards — it expires stale `PENDING` requests (older than 3 min → back to `NOT_SENT`, decrementing attempts) and clears elapsed cooldowns. Cooldown datetimes may be naive or tz-aware; code normalizes to UTC before comparing.
+- **Attempt/cooldown system**: students get 2 attempts per office. A 2nd rejection sets a 24h `cooldown_expiry`. `reset_expired_no_dues()` (in `utils.py`) is still called at the top of most dashboards but is now a **thin, cheap wrapper** that only clears elapsed cooldowns in one bulk update (`fast_cooldown_reset`). The heavy work — expiring stale `PENDING` requests (older than 3 min → back to `NOT_SENT`, decrementing attempts) and deleting orphaned Cloudinary receipts — moved to `maintenance.py` (`run_maintenance_cycle`), run by a background scheduler thread (`scheduler.py`, started in `apps.ready`) and the `run_maintenance` command. A MongoDB lock (`portal_settings._id="maintenance_lock"`) ensures only one worker runs a cycle at a time. Cooldown datetimes may be naive or tz-aware; code normalizes to UTC before comparing.
+- **Indexes & concurrency**: MongoDB indexes are declared in `db_indexes.py` and built at boot / via `ensure_indexes`. There are **unique** indexes on `students.reg_no`, `students.roll_no`, and `no_due_requests.(student_id, office)` — the last one is the DB-level guard against duplicate no-due docs, so student request views catch `DuplicateKeyError` on upsert races. `ExceptionHandlingMiddleware`/`RequestLogMiddleware` (in `middleware.py`) provide the global error safety net (DB errors → 503, else → 500) and structured access logs. Logging config is in `settings.py` (`nodue`, `nodue.access`, `nodue.error`, `nodue.audit`, `nodue.mongo` loggers).
 - **Global no-due access toggle** (`check_no_due_access_status`): faculty enable/disable the whole request process with an `auto_disable_at` timestamp; the check lazily auto-disables when that time passes. All student request views short-circuit if this is off.
 - **Semester promotion** (`promote_students`): moves students up the `progression` map (sem→sem, year increments on even→odd transitions). Guarded by a `promotion_in_progress` lock in `portal_settings` (via `find_one_and_update`) to prevent concurrent runs. Blocks if target semester already populated (would merge batches) or if sem-8 students still present. Resets all no-dues on promotion.
 - **7.5 scheme students** bypass hostel receipt upload.

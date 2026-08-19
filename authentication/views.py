@@ -2,17 +2,25 @@ from django.shortcuts import render, redirect
 from django.contrib import messages
 from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
-from .decorators import institution_login_required 
+import logging
+from .decorators import institution_login_required
 from .institution_users import INSTITUTION_USERS
 from .mongo import institution_logs , students_col , no_due_col, portal_settings
 from bson.errors import InvalidId
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 from django.conf import settings
 from .utils import save_receipt , reset_expired_no_dues
 import re
 import cloudinary.uploader
 from django.http import HttpResponse
-from openpyxl import Workbook ,load_workbook 
+from openpyxl import Workbook ,load_workbook
+
+logger = logging.getLogger("nodue")
+audit_logger = logging.getLogger("nodue.audit")
+
+# Office roles that may approve/reject their own no-due requests.
+_OFFICE_ROLES = ("LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT")
 
 # ReportLab Imports
 from reportlab.lib.pagesizes import A4
@@ -31,6 +39,79 @@ _ROLE_REDIRECT = {
     "DEPARTMENT": "department_dashboard",
     "STUDENT":    "student_dashboard",
 }
+
+
+def _safe_referer(request, role):
+    """
+    Redirect back to the referring page, but only if it's same-host (prevents
+    open-redirect via a forged Referer). Falls back to the role dashboard.
+    """
+    from urllib.parse import urlparse
+    referer = request.META.get("HTTP_REFERER")
+    if referer:
+        ref_host = urlparse(referer).netloc
+        if not ref_host or ref_host == request.get_host():
+            return redirect(referer)
+    return redirect(_ROLE_REDIRECT.get(role, "index"))
+
+
+# Reusable $lookup stage joining a no-due request to its student.
+_STUDENT_LOOKUP = {
+    "$lookup": {
+        "from": "students",
+        "localField": "student_id",
+        "foreignField": "_id",
+        "as": "student",
+    }
+}
+
+
+def _office_branch_summary(office, branches):
+    """
+    Count PENDING requests per branch for one office in a SINGLE aggregation
+    (was one aggregation per branch). Returns {branch: count} with 0 defaults.
+    """
+    pipeline = [
+        {"$match": {"office": office, "status": "PENDING"}},
+        _STUDENT_LOOKUP,
+        {"$unwind": "$student"},
+        {"$group": {"_id": "$student.branch", "count": {"$sum": 1}}},
+    ]
+    counts = {row["_id"]: row["count"] for row in no_due_col.aggregate(pipeline)}
+    return {b: counts.get(b, 0) for b in branches}
+
+
+def _office_year_summary(office, branch, years=(1, 2, 3, 4)):
+    """
+    Count PENDING requests per year for one office+branch in a SINGLE
+    aggregation (was one aggregation per year). Returns {year: count}.
+    """
+    pipeline = [
+        {"$match": {"office": office, "status": "PENDING"}},
+        _STUDENT_LOOKUP,
+        {"$unwind": "$student"},
+        {"$match": {"student.branch": branch}},
+        {"$group": {"_id": "$student.year", "count": {"$sum": 1}}},
+    ]
+    counts = {row["_id"]: row["count"] for row in no_due_col.aggregate(pipeline)}
+    return {y: counts.get(y, 0) for y in years}
+
+
+def _office_pending_requests(office, branch, year):
+    """PENDING requests for an office filtered to branch+year, with a string id."""
+    try:
+        year_int = int(year)
+    except (ValueError, TypeError):
+        return []
+    requests = list(no_due_col.aggregate([
+        {"$match": {"office": office, "status": "PENDING"}},
+        _STUDENT_LOOKUP,
+        {"$unwind": "$student"},
+        {"$match": {"student.branch": branch, "student.year": year_int}},
+    ]))
+    for r in requests:
+        r["id"] = str(r["_id"])
+    return requests
 
 
 # ================= INDEX = INSTITUTION LOGIN =================
@@ -93,6 +174,8 @@ def index(request):
                     return redirect("faculty_dashboard")
 
         # ❌ INVALID LOGIN
+        audit_logger.warning("LOGIN failed office=%s username=%s ip=%s",
+                             office, username, request.META.get("REMOTE_ADDR"))
         messages.error(request, "Invalid credentials")
 
     return render(request, "index.html")
@@ -125,6 +208,8 @@ def student_login(request):
         })
 
         if not student:
+            audit_logger.warning("STUDENT LOGIN failed reg_no=%s ip=%s",
+                                 reg_no, request.META.get("REMOTE_ADDR"))
             request.session["student_error"] = "Invalid credentials"
             return redirect("index")
 
@@ -349,16 +434,22 @@ def send_hostel_request(request):
 
         if not is_75:
             if "receipt" in request.FILES:
-                upload = cloudinary.uploader.upload(
-                    request.FILES["receipt"],
-                    folder="no_dues/hostel",
-                    resource_type="auto"
-                )
-                receipt_url = upload["secure_url"]
-                cloudinary_public_id = upload["public_id"]
+                try:
+                    upload = cloudinary.uploader.upload(
+                        request.FILES["receipt"],
+                        folder="no_dues/hostel",
+                        resource_type="auto"
+                    )
+                    receipt_url = upload["secure_url"]
+                    cloudinary_public_id = upload["public_id"]
+                except Exception as exc:
+                    logger.error("Cloudinary upload failed for student %s: %s",
+                                 student_id, exc)
+                    messages.error(request, "Receipt upload failed. Please try again.")
+                    return redirect("student_dashboard")
         else:
-            receipt_url = "7.5 Scheme Student"
-            cloudinary_public_id = "7.5_scheme"
+            receipt_url = None
+            cloudinary_public_id = None
 
         current_attempts = existing_req.get("attempts_used", 0) if existing_req else 0
         new_attempts = min(2, current_attempts + 1)
@@ -376,16 +467,14 @@ def send_hostel_request(request):
         if cloudinary_public_id:
             set_data["cloudinary_public_id"] = cloudinary_public_id
 
-        no_due_col.update_one(
-            {
-                "student_id": student_id,
-                "office": "HOSTEL"
-            },
-            {
-                "$set": set_data
-            },
-            upsert=True
-        )
+        hostel_filter = {"student_id": student_id, "office": "HOSTEL"}
+        try:
+            no_due_col.update_one(hostel_filter, {"$set": set_data}, upsert=True)
+        except DuplicateKeyError:
+            # Concurrent submit created the doc first — apply our update to it.
+            no_due_col.update_one(hostel_filter, {"$set": set_data})
+        audit_logger.info("NO_DUE_REQUEST office=HOSTEL student=%s attempt=%d",
+                          student_id, new_attempts)
 
     return redirect("student_dashboard")
 
@@ -407,60 +496,14 @@ def hostel_dashboard(request):
     year_summary = {}
     branch_summary = {}
 
-    # ================= 3️⃣ Branch + Year =================
     if branch and year:
-        requests = list(no_due_col.aggregate([
-            {"$match": {"office": "HOSTEL", "status": "PENDING"}},
-            {"$lookup": {
-                "from": "students",
-                "localField": "student_id",
-                "foreignField": "_id",
-                "as": "student"
-            }},
-            {"$unwind": "$student"},
-            {"$match": {
-                "student.branch": branch,
-                "student.year": int(year)
-            }}
-        ]))
-
-        for r in requests:
-            r["id"] = str(r["_id"])
-
+        requests = _office_pending_requests("HOSTEL", branch, year)
         count = len(requests)
-
-    # ================= 2️⃣ Only Branch =================
     elif branch:
-        for y in [1, 2, 3, 4]:
-            year_summary[y] = len(list(no_due_col.aggregate([
-                {"$match": {"office": "HOSTEL", "status": "PENDING"}},
-                {"$lookup": {
-                    "from": "students",
-                    "localField": "student_id",
-                    "foreignField": "_id",
-                    "as": "student"
-                }},
-                {"$unwind": "$student"},
-                {"$match": {
-                    "student.branch": branch,
-                    "student.year": y
-                }}
-            ])))
-
-    # ================= 1️⃣ Nothing Selected =================
+        year_summary = _office_year_summary("HOSTEL", branch)
     else:
-        for b in ["CSE", "ECE", "EEE", "CIVIL", "MECH", "MCT"]:
-            branch_summary[b] = len(list(no_due_col.aggregate([
-                {"$match": {"office": "HOSTEL", "status": "PENDING"}},
-                {"$lookup": {
-                    "from": "students",
-                    "localField": "student_id",
-                    "foreignField": "_id",
-                    "as": "student"
-                }},
-                {"$unwind": "$student"},
-                {"$match": {"student.branch": b}}
-            ])))
+        branch_summary = _office_branch_summary(
+            "HOSTEL", ["CSE", "ECE", "EEE", "CIVIL", "MECH", "MCT"])
 
     return render(request, "hostel_dashboard.html", {
         "requests": requests,
@@ -493,60 +536,14 @@ def library_dashboard(request):
     branch_summary = {}
     year_summary = {}
 
-    # ================= 3️⃣ Branch + Year =================
     if branch and year:
-        requests = list(no_due_col.aggregate([
-            {"$match": {"office": "LIBRARY", "status": "PENDING"}},
-            {"$lookup": {
-                "from": "students",
-                "localField": "student_id",
-                "foreignField": "_id",
-                "as": "student"
-            }},
-            {"$unwind": "$student"},
-            {"$match": {
-                "student.branch": branch,
-                "student.year": int(year)
-            }}
-        ]))
-
-        for r in requests:
-            r["id"] = str(r["_id"])
-
+        requests = _office_pending_requests("LIBRARY", branch, year)
         count = len(requests)
-
-    # ================= 2️⃣ Branch only =================
     elif branch:
-        for y in [1, 2, 3, 4]:
-            year_summary[y] = len(list(no_due_col.aggregate([
-                {"$match": {"office": "LIBRARY", "status": "PENDING"}},
-                {"$lookup": {
-                    "from": "students",
-                    "localField": "student_id",
-                    "foreignField": "_id",
-                    "as": "student"
-                }},
-                {"$unwind": "$student"},
-                {"$match": {
-                    "student.branch": branch,
-                    "student.year": y
-                }}
-            ])))
-
-    # ================= 1️⃣ Nothing selected =================
+        year_summary = _office_year_summary("LIBRARY", branch)
     else:
-        for b in ["CSE", "ECE", "EEE", "CIVIL", "MECH", "MCT"]:
-            branch_summary[b] = len(list(no_due_col.aggregate([
-                {"$match": {"office": "LIBRARY", "status": "PENDING"}},
-                {"$lookup": {
-                    "from": "students",
-                    "localField": "student_id",
-                    "foreignField": "_id",
-                    "as": "student"
-                }},
-                {"$unwind": "$student"},
-                {"$match": {"student.branch": b}}
-            ])))
+        branch_summary = _office_branch_summary(
+            "LIBRARY", ["CSE", "ECE", "EEE", "CIVIL", "MECH", "MCT"])
 
     return render(request, "institution_dashboard.html", {
         "office_name": "Library Office",
@@ -565,21 +562,50 @@ def library_dashboard(request):
 
 @institution_login_required
 def bulk_approve(request):
-    ids = request.POST.getlist("request_ids")
-    object_ids = [ObjectId(i) for i in ids]
+    role = request.session.get("role")
+    # 🔐 Authorization: only an office may approve, and only its OWN requests.
+    if role not in _OFFICE_ROLES:
+        return redirect("index")
 
+    if request.method != "POST":
+        return redirect(_ROLE_REDIRECT.get(role, "index"))
+
+    ids = request.POST.getlist("request_ids")
+    object_ids = []
+    for i in ids:
+        try:
+            object_ids.append(ObjectId(i))
+        except (InvalidId, TypeError):
+            pass  # ignore malformed ids instead of 500-ing
+
+    approved = 0
     if object_ids:
-        no_due_col.update_many(
-            {"_id": {"$in": object_ids}},
+        # Scope by office==role AND status==PENDING so:
+        #   • one office cannot approve another office's request,
+        #   • already-approved/rejected requests are never re-processed
+        #     (idempotent — protects against duplicate submits / double clicks).
+        result = no_due_col.update_many(
+            {"_id": {"$in": object_ids}, "office": role, "status": "PENDING"},
             {"$set": {"status": "APPROVED", "updated_at": datetime.now()}}
         )
+        approved = result.modified_count
+        audit_logger.info("APPROVE role=%s requested=%d approved=%d",
+                          role, len(object_ids), approved)
 
-    return redirect(request.META.get("HTTP_REFERER"))
+    return redirect(_safe_referer(request, role))
 
 
 
 @institution_login_required
 def reject_request(request):
+    role = request.session.get("role")
+    # 🔐 Authorization: only an office may reject, and only its OWN requests.
+    if role not in _OFFICE_ROLES:
+        return redirect("index")
+
+    if request.method != "POST":
+        return redirect(_ROLE_REDIRECT.get(role, "index"))
+
     req_ids = request.POST.getlist("request_ids")
     if not req_ids:
         req_id = request.POST.get("req_id")
@@ -591,10 +617,18 @@ def reject_request(request):
     reason = request.POST.get("reason")
 
     if req_ids:
-        object_ids = [ObjectId(rid) for rid in req_ids]
+        object_ids = []
+        for rid in req_ids:
+            try:
+                object_ids.append(ObjectId(rid))
+            except (InvalidId, TypeError):
+                pass
 
         # 🔥 If hostel + file exists → delete from Cloudinary
-        requests_to_reject = list(no_due_col.find({"_id": {"$in": object_ids}}))
+        # Scope by office==role AND status==PENDING (idempotent, cross-office safe).
+        requests_to_reject = list(no_due_col.find(
+            {"_id": {"$in": object_ids}, "office": role, "status": "PENDING"}
+        )) if object_ids else []
         now_utc = datetime.now(timezone.utc)
         now_naive = datetime.now()
 
@@ -631,11 +665,13 @@ def reject_request(request):
                 update_payload["cooldown_expiry"] = now_utc + timedelta(hours=24)
 
             no_due_col.update_one(
-                {"_id": req["_id"]},
+                {"_id": req["_id"], "status": "PENDING"},
                 {"$set": update_payload}
             )
 
-    return redirect(request.META.get("HTTP_REFERER"))
+        audit_logger.info("REJECT role=%s count=%d", role, len(requests_to_reject))
+
+    return _safe_referer(request, role)
 
 
 @institution_login_required
@@ -654,60 +690,14 @@ def college_dashboard(request):
     branch_summary = {}
     year_summary = {}
 
-    # ================= 3️⃣ Branch + Year =================
     if branch and year:
-        requests = list(no_due_col.aggregate([
-            {"$match": {"office": "COLLEGE", "status": "PENDING"}},
-            {"$lookup": {
-                "from": "students",
-                "localField": "student_id",
-                "foreignField": "_id",
-                "as": "student"
-            }},
-            {"$unwind": "$student"},
-            {"$match": {
-                "student.branch": branch,
-                "student.year": int(year)
-            }}
-        ]))
-
-        for r in requests:
-            r["id"] = str(r["_id"])
-
+        requests = _office_pending_requests("COLLEGE", branch, year)
         count = len(requests)
-
-    # ================= 2️⃣ Branch only =================
     elif branch:
-        for y in [1, 2, 3, 4]:
-            year_summary[y] = len(list(no_due_col.aggregate([
-                {"$match": {"office": "COLLEGE", "status": "PENDING"}},
-                {"$lookup": {
-                    "from": "students",
-                    "localField": "student_id",
-                    "foreignField": "_id",
-                    "as": "student"
-                }},
-                {"$unwind": "$student"},
-                {"$match": {
-                    "student.branch": branch,
-                    "student.year": y
-                }}
-            ])))
-
-    # ================= 1️⃣ Nothing selected =================
+        year_summary = _office_year_summary("COLLEGE", branch)
     else:
-        for b in ["CSE","ECE","EEE","CIVIL","MECH","MCT"]:
-            branch_summary[b] = len(list(no_due_col.aggregate([
-                {"$match": {"office": "COLLEGE", "status": "PENDING"}},
-                {"$lookup": {
-                    "from": "students",
-                    "localField": "student_id",
-                    "foreignField": "_id",
-                    "as": "student"
-                }},
-                {"$unwind": "$student"},
-                {"$match": {"student.branch": b}}
-            ])))
+        branch_summary = _office_branch_summary(
+            "COLLEGE", ["CSE", "ECE", "EEE", "CIVIL", "MECH", "MCT"])
 
     return render(request, "institution_dashboard.html", {
         "office_name": "College Office",
@@ -737,45 +727,11 @@ def department_dashboard(request):
     count = 0
     year_summary = {}
 
-    # ================= 2️⃣ Year selected =================
     if year:
-        requests = list(no_due_col.aggregate([
-            {"$match": {"office": "DEPARTMENT", "status": "PENDING"}},
-            {"$lookup": {
-                "from": "students",
-                "localField": "student_id",
-                "foreignField": "_id",
-                "as": "student"
-            }},
-            {"$unwind": "$student"},
-            {"$match": {
-                "student.branch": dept,
-                "student.year": int(year)
-            }}
-        ]))
-
-        for r in requests:
-            r["id"] = str(r["_id"])
-
+        requests = _office_pending_requests("DEPARTMENT", dept, year)
         count = len(requests)
-
-    # ================= 1️⃣ No year selected =================
     else:
-        for y in [1, 2, 3, 4]:
-            year_summary[y] = len(list(no_due_col.aggregate([
-                {"$match": {"office": "DEPARTMENT", "status": "PENDING"}},
-                {"$lookup": {
-                    "from": "students",
-                    "localField": "student_id",
-                    "foreignField": "_id",
-                    "as": "student"
-                }},
-                {"$unwind": "$student"},
-                {"$match": {
-                    "student.branch": dept,
-                    "student.year": y
-                }}
-            ])))
+        year_summary = _office_year_summary("DEPARTMENT", dept)
 
     return render(request, "institution_dashboard.html", {
         "office_name": "Department",
@@ -836,14 +792,14 @@ def send_no_due_request(request):
             data["last_payment_id"] = request.POST.get("payment_id")
 
         # 🔁 UPDATE if exists, else INSERT
-        no_due_col.update_one(
-            {
-                "student_id": data["student_id"],
-                "office": office
-            },
-            {"$set": data},
-            upsert=True
-        )
+        office_filter = {"student_id": data["student_id"], "office": office}
+        try:
+            no_due_col.update_one(office_filter, {"$set": data}, upsert=True)
+        except DuplicateKeyError:
+            # Concurrent submit created the doc first — apply our update to it.
+            no_due_col.update_one(office_filter, {"$set": data})
+        audit_logger.info("NO_DUE_REQUEST office=%s student=%s attempt=%d",
+                          office, student_id, new_attempts)
 
     return redirect("student_dashboard")
 
@@ -895,8 +851,6 @@ def retry_request(request):
                 }
             )
 
-        print("Retry matched:", result.matched_count if existing_req else 0)
-
     return redirect("student_dashboard")
 
 
@@ -920,16 +874,28 @@ def faculty_dashboard(request):
     count = 0
 
     if branch and year:
-        cursor = students_col.find({
-            "branch": branch,
-            "year": int(year)
-        })
+        try:
+            year_int = int(year)
+        except (ValueError, TypeError):
+            year_int = None
 
-        for s in cursor:
+        if year_int is not None:
+            student_docs = list(students_col.find({
+                "branch": branch,
+                "year": year_int
+            }))
+        else:
+            student_docs = []
+
+        # 🔥 Batch-fetch ALL no-dues for these students in ONE query (no N+1).
+        student_ids = [s["_id"] for s in student_docs]
+        dues_by_student = {}
+        if student_ids:
+            for d in no_due_col.find({"student_id": {"$in": student_ids}}):
+                dues_by_student.setdefault(d["student_id"], {})[d["office"]] = d["status"]
+
+        for s in student_docs:
             student_id = s["_id"]
-
-            # 🔥 FETCH NO DUES FOR THIS STUDENT
-            dues_cursor = no_due_col.find({"student_id": student_id})
 
             no_dues = {
                 "LIBRARY": "NOT_SENT",
@@ -937,9 +903,8 @@ def faculty_dashboard(request):
                 "COLLEGE": "NOT_SENT",
                 "DEPARTMENT": "NOT_SENT"
             }
-
-            for d in dues_cursor:
-                no_dues[d["office"]] = d["status"]
+            for office, status in dues_by_student.get(student_id, {}).items():
+                no_dues[office] = status
 
             s_type = s.get("student_type", "Hosteller")
 
@@ -1324,6 +1289,7 @@ def promote_students(request):
             {"$set": {"promotion_in_progress": True}}
         )
         if not lock_acquired:
+            audit_logger.warning("PROMOTION blocked: another run in progress")
             messages.error(request, "A promotion is already in progress. Please wait.")
             return redirect("faculty_promotion")
 
@@ -1470,7 +1436,13 @@ def promote_students(request):
                 })
                 promoted_count += 1
 
+            audit_logger.info("PROMOTION completed: from_sem=%s promoted=%d",
+                              from_sem if from_sem is not None else "ALL", promoted_count)
             messages.success(request, f"Successfully promoted {promoted_count} students to the next semester!")
+        except Exception as exc:
+            # Lock is still released by `finally`; surface a safe error.
+            logger.exception("Promotion failed")
+            messages.error(request, "Promotion failed due to an internal error. No further changes were made.")
         finally:
             portal_settings.update_one(
                 {"_id": "global_config"},
@@ -1568,8 +1540,6 @@ def download_student_template(request):
 
 @institution_login_required
 def import_students_excel(request):
-    print("Import Students Excel called")
-
     # 🔐 ROLE CHECK
     if request.session.get("role") != "FACULTY":
         return redirect("index")
@@ -1590,24 +1560,34 @@ def import_students_excel(request):
     skipped_students = []   # name + reason
 
     try:
-        wb = load_workbook(excel)
+        year_int = int(year)
+    except (ValueError, TypeError):
+        messages.error(request, "Invalid year selected for import ❌")
+        return redirect(f"/faculty/?branch={branch}&year={year}")
+
+    try:
+        wb = load_workbook(excel, read_only=True, data_only=True)
         ws = wb.active
 
-        for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        # ── Pass 1: parse, validate & clean every row into candidates ──
+        candidates = []          # dicts ready to insert
+        seen_in_file = set()     # (roll_no or reg_no) already seen this file
+        roll_nos = set()
+        reg_nos = set()
 
-            # Expected columns
-            if len(row) < 6:
-                skipped += 1
-                skipped_students.append(f"Row {idx} (Invalid column format)")
+        for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            if not row or len(row) < 6:
+                # blank tail rows in read_only mode → ignore silently
+                if row and any(row):
+                    skipped += 1
+                    skipped_students.append(f"Row {idx} (Invalid column format)")
                 continue
 
-            roll_no, reg_no, name, dob, phone, semester = row
+            roll_no, reg_no, name, dob, phone, semester = row[:6]
 
-            # 🛑 Completely empty row → IGNORE
             if not any([roll_no, reg_no, name, dob, phone, semester]):
                 continue
 
-            # 🛑 Mandatory field missing
             if not roll_no or not reg_no or not name:
                 skipped += 1
                 skipped_students.append(
@@ -1615,62 +1595,97 @@ def import_students_excel(request):
                 )
                 continue
 
-            # 🔧 CLEAN VALUES
             roll_no = str(roll_no).strip().upper()
             reg_no = str(reg_no).strip()
             name = str(name).strip().upper()
             phone = str(phone).strip()
 
-            # 🔥 DOB FIX → remove 00:00:00
             if isinstance(dob, (datetime, date)):
                 dob = dob.strftime("%Y-%m-%d")
             else:
                 dob = str(dob).strip()
 
-            # 🛑 Duplicate check
-            exists = students_col.find_one({
-                "$or": [
-                    {"roll_no": roll_no},
-                    {"reg_no": reg_no}
-                ]
-            })
-
-            if exists:
+            try:
+                semester_int = int(semester)
+            except (ValueError, TypeError):
                 skipped += 1
-                skipped_students.append(
-                    f"{name} (Duplicate RegNo / RollNo)"
-                )
+                skipped_students.append(f"{name} (Row {idx} – Invalid semester)")
                 continue
 
-            # ✅ INSERT STUDENT
-            students_col.insert_one({
+            # Duplicate WITHIN the uploaded file.
+            if roll_no in seen_in_file or reg_no in seen_in_file:
+                skipped += 1
+                skipped_students.append(f"{name} (Duplicate in file)")
+                continue
+            seen_in_file.add(roll_no)
+            seen_in_file.add(reg_no)
+
+            roll_nos.add(roll_no)
+            reg_nos.add(reg_no)
+            candidates.append({
                 "roll_no": roll_no,
                 "reg_no": reg_no,
                 "name": name,
-                "dob": dob,                 # ✅ yyyy-mm-dd only
+                "dob": dob,
                 "phone": phone,
                 "branch": branch,
-                "year": int(year),
-                "semester": int(semester),
-                "student_type": "Hosteller"  # ✅ default for bulk imports
+                "year": year_int,
+                "semester": semester_int,
+                "student_type": "Hosteller",
             })
 
-            inserted += 1
+        wb.close()
 
-        # ✅ SUCCESS MESSAGE
+        # ── One query for ALL existing duplicates (was one per row) ──
+        existing_rolls = set()
+        existing_regs = set()
+        if roll_nos or reg_nos:
+            for doc in students_col.find(
+                {"$or": [
+                    {"roll_no": {"$in": list(roll_nos)}},
+                    {"reg_no": {"$in": list(reg_nos)}},
+                ]},
+                {"roll_no": 1, "reg_no": 1},
+            ):
+                if doc.get("roll_no"):
+                    existing_rolls.add(doc["roll_no"])
+                if doc.get("reg_no"):
+                    existing_regs.add(doc["reg_no"])
+
+        to_insert = []
+        for c in candidates:
+            if c["roll_no"] in existing_rolls or c["reg_no"] in existing_regs:
+                skipped += 1
+                skipped_students.append(f"{c['name']} (Duplicate RegNo / RollNo)")
+            else:
+                to_insert.append(c)
+
+        # ── One bulk insert (unordered: a bad doc won't abort the rest) ──
+        if to_insert:
+            try:
+                result = students_col.insert_many(to_insert, ordered=False)
+                inserted = len(result.inserted_ids)
+            except Exception as bulk_exc:
+                # Unique-index collision on a concurrent import → count what stuck.
+                inserted = getattr(bulk_exc, "details", {}).get("nInserted", 0) \
+                    if hasattr(bulk_exc, "details") else 0
+                skipped += len(to_insert) - inserted
+                logger.warning("Bulk import partial failure: %s", bulk_exc)
+
         messages.success(
             request,
             f"Excel Import Completed ✅ Added: {inserted}, Skipped: {skipped}"
         )
-
-        # ⚠️ SKIPPED DETAILS
         if skipped_students:
             messages.warning(
                 request,
                 "Skipped Students:\n" + "\n".join(skipped_students)
             )
+        logger.info("Excel import branch=%s year=%s added=%d skipped=%d",
+                    branch, year, inserted, skipped)
 
     except Exception as e:
+        logger.exception("Excel import failed")
         messages.error(request, f"Excel import failed ❌ {str(e)}")
 
     return redirect(f"/faculty/?branch={branch}&year={year}")

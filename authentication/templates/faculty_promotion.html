@@ -432,15 +432,13 @@
   </form>
 </div>
 
+{{ sem_counts|json_script:"semCountsData" }}
+
 <script>
   // Setup standard semester counts injected from Django context
-  const SEM_COUNTS = {
-    {% for sem, count in sem_counts.items %}
-      "{{ sem }}": {{ count }},
-    {% endfor %}
-  };
+  const SEM_COUNTS = JSON.parse(document.getElementById("semCountsData") ? document.getElementById("semCountsData").textContent : "{}");
 
-  const GLOBAL_SEM8_COUNT = {{ global_sem8_count }};
+  const GLOBAL_SEM8_COUNT = Number("{{ global_sem8_count|default:0 }}");
   let activePromotionFormId = "promotionForm";
 
   // Simulate Full Promotion to check dynamic status

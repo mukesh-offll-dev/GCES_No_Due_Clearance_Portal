@@ -1,1 +1,1 @@
-web: gunicorn nodue_portal.wsgi
+web: gunicorn -c gunicorn.conf.py nodue_portal.wsgi

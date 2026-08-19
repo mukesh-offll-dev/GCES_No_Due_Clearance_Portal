@@ -24,6 +24,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get("SECRET_KEY", "fallback-secret-key")
 DEBUG = os.environ.get("DEBUG", "False") == "True"
 
+# In production the app must NOT run with the insecure fallback key — that would
+# make session/CSRF signing forgeable. Fail fast at boot instead.
+if not DEBUG and SECRET_KEY == "fallback-secret-key":
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured(
+        "SECRET_KEY must be set to a strong random value in production "
+        "(set it in .env; do not use the development fallback)."
+    )
+
 
 
 
@@ -40,7 +49,21 @@ CSRF_TRUSTED_ORIGINS = [
 SESSION_COOKIE_SECURE = not DEBUG   # True in prod, False in local dev
 CSRF_COOKIE_SECURE    = not DEBUG   # True in prod, False in local dev
 
-SESSION_PROXY_SSL_HEADER = ('HTTP_X_FORWADED_PROTO','https')
+# Behind a TLS-terminating reverse proxy (nginx), trust its forwarded-proto
+# header so Django knows the original request was HTTPS. (Correct setting name
+# is SECURE_PROXY_SSL_HEADER; the header spelling must match nginx's config.)
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# ================= HTTPS HARDENING (production, behind TLS) =================
+# Enable only once TLS is actually terminating in front of the app, otherwise
+# SSL redirect + secure cookies will lock you out over plain HTTP.
+ENABLE_HTTPS = os.environ.get("ENABLE_HTTPS", "False") == "True"
+if ENABLE_HTTPS and not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", 31536000))  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
 # ================= SESSION SETTINGS =================
 SESSION_COOKIE_AGE         = 60 * 60 * 2  # 2 hours in seconds
 SESSION_SAVE_EVERY_REQUEST = True          # Slide expiry window on every request
@@ -62,6 +85,10 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    # Global safety net: converts unhandled/DB errors into safe responses.
+    "authentication.middleware.ExceptionHandlingMiddleware",
+    # Per-request structured access log with correlation id + duration.
+    "authentication.middleware.RequestLogMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -127,6 +154,51 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # ================= DEFAULT PK =================
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ================= UPLOAD LIMITS =================
+# Reject oversized uploads early (receipts / excel). 10 MB is generous.
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get("MAX_UPLOAD_BYTES", 10 * 1024 * 1024))
+FILE_UPLOAD_MAX_MEMORY_SIZE = DATA_UPLOAD_MAX_MEMORY_SIZE
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000  # bulk selects (7.5 scheme, delete) can be large
+
+# ================= LOGGING =================
+# Structured logs to stdout — captured by systemd/journald or gunicorn.
+# Never log passwords, DOB, or session contents.
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "WARNING",
+    },
+    "loggers": {
+        # Application loggers (nodue, nodue.access, nodue.error, nodue.mongo, ...)
+        "nodue": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        # Django's own request errors (4xx/5xx).
+        "django.request": {
+            "handlers": ["console"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+    },
+}
 
 
 

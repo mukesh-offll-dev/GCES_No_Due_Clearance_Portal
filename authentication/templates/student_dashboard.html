@@ -23,10 +23,14 @@
 
   <!-- Lock warning banner -->
   {% if not no_due_access_enabled %}
-  <div class="max-w-xl mx-auto border-2 border-red-200 bg-red-50 rounded-2xl p-5 mb-6 flex flex-col items-center text-center shadow-sm">
+  <div
+    class="max-w-xl mx-auto border-2 border-red-200 bg-red-50 rounded-2xl p-5 mb-6 flex flex-col items-center text-center shadow-sm">
     <div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-3">
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
+        xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+        </path>
       </svg>
     </div>
     <p class="text-sm font-bold text-red-800">
@@ -43,7 +47,8 @@
         Student Details
       </h1>
       {% if student.is_75_scheme %}
-      <span class="inline-block bg-purple-600 text-white font-bold text-xs sm:text-sm px-4 py-1.5 rounded-full shadow-sm">
+      <span
+        class="inline-block bg-purple-600 text-white font-bold text-xs sm:text-sm px-4 py-1.5 rounded-full shadow-sm">
         7.5 Scheme Student
       </span>
       {% endif %}
@@ -159,60 +164,69 @@
 
             {% if d.is_cooldown_active %}
             <div class="mt-2 flex flex-col items-end">
-              <button disabled class="bg-gray-400 opacity-60 text-white px-4 py-1.5 rounded-full text-sm font-semibold cursor-not-allowed">
+              <button disabled
+                class="bg-gray-400 opacity-60 text-white px-4 py-1.5 rounded-full text-sm font-semibold cursor-not-allowed">
                 Send Request
               </button>
               <div class="mt-2 text-xs text-red-600 font-semibold text-right max-w-[240px]">
                 <p>Request limit reached. You can send a new request after:</p>
-                <p id="cooldown-timer-{{ d.office }}" class="text-sm font-bold text-red-700 mt-0.5 tracking-wider" data-expiry="{{ d.cooldown_expiry_iso }}">
+                <p id="cooldown-timer-{{ d.office }}" class="text-sm font-bold text-red-700 mt-0.5 tracking-wider"
+                  data-expiry="{{ d.cooldown_expiry_iso }}">
                   --h --m --s
                 </p>
               </div>
             </div>
             {% else %}
-              <p class="text-xs text-amber-600 font-bold mt-1">
-                You have only 1 attempt remaining.
-              </p>
-              {% if no_due_access_enabled %}
-              <form method="POST" action="{% url 'retry_request' %}" class="mt-2">
-                {% csrf_token %}
-                <input type="hidden" name="office" value="{{ d.office }}">
-                <button
-                  class="bg-yellow-500 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-yellow-600">
-                  Try Again
-                </button>
-              </form>
-              {% else %}
-              <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-xs mt-2">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-                </svg>
-                Locked
-              </span>
-              {% endif %}
+            <p class="text-xs text-amber-600 font-bold mt-1">
+              You have only 1 attempt remaining.
+            </p>
+            {% if no_due_access_enabled %}
+            <form method="POST" action="{% url 'retry_request' %}" class="mt-2">
+              {% csrf_token %}
+              <input type="hidden" name="office" value="{{ d.office }}">
+              <button
+                class="bg-yellow-500 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-yellow-600">
+                Try Again
+              </button>
+            </form>
+            {% else %}
+            <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-xs mt-2">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                </path>
+              </svg>
+              Locked
+            </span>
+            {% endif %}
             {% endif %}
           </div>
 
           {% elif d.status == "NOT_SENT" %}
-            <div class="flex flex-col items-end">
-              {% if d.attempts_used == 1 %}
-              <p class="text-xs text-amber-600 font-bold mb-1 text-right">
-                You have only 1 attempt remaining.
-              </p>
-              {% endif %}
-              {% if no_due_access_enabled %}
-              <button type="button" data-office="{{ d.office }}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold flex items-center justify-center gap-2">
-                <span class="btn-text">Send for Verification</span>
-              </button>
-              {% else %}
-              <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-sm">
-                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-                </svg>
-                Locked
-              </span>
-              {% endif %}
-            </div>
+          <div class="flex flex-col items-end">
+            {% if d.attempts_used == 1 %}
+            <p class="text-xs text-amber-600 font-bold mb-1 text-right">
+              You have only 1 attempt remaining.
+            </p>
+            {% endif %}
+            {% if no_due_access_enabled %}
+            <button type="button" data-office="{{ d.office }}" onclick="openConfirmModal(this)"
+              class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold flex items-center justify-center gap-2">
+              <span class="btn-text">Send for Verification</span>
+            </button>
+            {% else %}
+            <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-sm">
+              <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                </path>
+              </svg>
+              Locked
+            </span>
+            {% endif %}
+          </div>
 
           {% endif %}
 
@@ -233,10 +247,12 @@
   {% endif %}
 
   <!-- CLEARANCE HISTORY MODAL -->
-  <div id="historyModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-    <div class="bg-white border-4 border-[#d52b1e] rounded-[24px] p-6 w-full max-w-2xl relative overflow-y-auto max-h-[90vh]">
+  <div id="historyModal" class="hidden fixed inset-0 bg-black/60 z-50 overflow-y-auto p-4 flex items-center justify-center">
+    <div
+      class="bg-white border-4 border-[#d52b1e] rounded-[24px] p-6 w-full max-w-2xl relative my-auto shadow-2xl overflow-y-auto max-h-[90vh]">
       <!-- Close Button -->
-      <button onclick="closeHistoryModal()" class="absolute top-3 right-4 text-2xl font-bold text-gray-600 hover:text-black transition active:scale-90">✖</button>
+      <button onclick="closeHistoryModal()"
+        class="absolute top-3 right-4 text-2xl font-bold text-gray-600 hover:text-black transition active:scale-90">✖</button>
 
       <h2 class="text-[#d52b1e] font-extrabold text-xl mb-6 flex items-center gap-2">
         Clearance History
@@ -276,7 +292,8 @@
       {% endif %}
 
       <div class="flex justify-end mt-6">
-        <button onclick="closeHistoryModal()" class="px-6 py-2 rounded-full bg-gray-300 hover:bg-gray-400 font-semibold transition active:scale-95 text-sm">
+        <button onclick="closeHistoryModal()"
+          class="px-6 py-2 rounded-full bg-gray-300 hover:bg-gray-400 font-semibold transition active:scale-95 text-sm">
           Close
         </button>
       </div>
@@ -298,19 +315,19 @@
 </main>
 
 
-<div id="confirmModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-  <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm text-center">
+<div id="confirmModal" class="hidden fixed inset-0 bg-black/60 z-50 overflow-y-auto p-4 flex items-center justify-center">
+  <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm text-center my-auto shadow-2xl relative">
 
     <h3 class="text-lg font-bold mb-4">
       Send request to <span id="officeName"></span> Office?
     </h3>
 
     <div class="flex justify-center gap-4">
-      <button onclick="closeConfirmModal()" class="px-6 py-2 rounded-full bg-gray-300">
+      <button type="button" onclick="closeConfirmModal()" class="px-6 py-2 rounded-full bg-gray-300 hover:bg-gray-400 font-semibold transition active:scale-95 text-sm">
         Cancel
       </button>
 
-      <button onclick="confirmRequest()" class="px-6 py-2 rounded-full bg-[#d52b1e] text-white">
+      <button type="button" onclick="confirmRequest()" class="px-6 py-2 rounded-full bg-[#d52b1e] hover:bg-red-800 text-white font-semibold transition active:scale-95 text-sm">
         Yes
       </button>
     </div>
@@ -324,11 +341,11 @@
 
 
 <!-- ================= EDIT PROFILE MODAL ================= -->
-<div id="editProfileModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+<div id="editProfileModal" class="hidden fixed inset-0 bg-black/60 z-50 overflow-y-auto p-4 flex items-center justify-center">
 
-  <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm relative">
+  <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm relative my-auto shadow-2xl">
 
-    <button onclick="closeEditProfileModal()" class="absolute top-3 right-4 text-xl font-bold">✖</button>
+    <button type="button" onclick="closeEditProfileModal()" class="absolute top-3 right-4 text-xl font-bold text-gray-500 hover:text-black">✖</button>
 
     <h2 class="text-center text-[#d52b1e] font-bold text-xl mb-4">
       Edit Profile
@@ -337,17 +354,17 @@
     <form method="POST" action="{% url 'update_student_profile' %}">
       {% csrf_token %}
 
-      <label class="block font-semibold mb-1">Year</label>
+      <label class="block font-semibold mb-1 text-sm text-gray-800">Year</label>
       <select id="profile_year" name="year" required onchange="updateSemesterOptions('profile_year','profile_sem')"
-        class="w-full border rounded-full px-4 py-2 mb-4">
+        class="w-full border border-gray-300 rounded-full px-4 py-2 mb-4 text-sm focus:border-[#d52b1e] focus:outline-none">
         <option value="1" {% if student.year == 1 %}selected{% endif %}>Year 1</option>
         <option value="2" {% if student.year == 2 %}selected{% endif %}>Year 2</option>
         <option value="3" {% if student.year == 3 %}selected{% endif %}>Year 3</option>
         <option value="4" {% if student.year == 4 %}selected{% endif %}>Year 4</option>
       </select>
 
-      <label class="block font-semibold mb-1">Semester</label>
-      <select id="profile_sem" name="semester" required class="w-full border rounded-full px-4 py-2 mb-1">
+      <label class="block font-semibold mb-1 text-sm text-gray-800">Semester</label>
+      <select id="profile_sem" name="semester" required class="w-full border border-gray-300 rounded-full px-4 py-2 mb-1 text-sm focus:border-[#d52b1e] focus:outline-none">
         <option value="">Select semester</option>
       </select>
       <p id="profileSemError" class="hidden text-red-600 text-xs mb-4 px-2">
@@ -355,7 +372,7 @@
       </p>
 
       <button type="button" onclick="validateAndSubmitProfile()"
-        class="w-full bg-[#d52b1e] hover:bg-red-800 text-white py-2 rounded-full font-semibold mt-3 transition">
+        class="w-full bg-[#d52b1e] hover:bg-red-800 text-white py-2.5 rounded-full font-semibold mt-3 transition active:scale-95 shadow-md">
         Update
       </button>
     </form>
@@ -369,29 +386,33 @@
 
 {% if student_type != "Day Scholar" %}
 <!-- HOSTEL MODAL -->
-<div id="hostelModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+<div id="hostelModal" class="hidden fixed inset-0 bg-black/60 z-50 overflow-y-auto p-4 flex items-center justify-center">
 
-  <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm relative overflow-y-auto max-h-[90vh]">
+  <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-md relative my-auto shadow-2xl">
 
     <!-- Close -->
-    <button onclick="closeHostelModal()" class="absolute top-3 right-4 text-xl font-bold" id="clbtn">✖</button>
+    <button type="button" onclick="closeHostelModal()" class="absolute top-3 right-4 text-xl font-bold text-gray-500 hover:text-black cursor-pointer p-1" id="clbtn">✖</button>
 
-    <h2 class="text-center text-[#d52b1e] font-bold text-xl mb-4">
+    <h2 class="text-center text-[#d52b1e] font-extrabold text-xl mb-4">
       Hostel Verification
     </h2>
 
-    <form method="POST" action="{% url 'send_hostel' %}" enctype="multipart/form-data" onsubmit="handleHostelSubmit()">
+    <form method="POST" action="{% url 'send_hostel' %}" enctype="multipart/form-data" onsubmit="return handleHostelSubmit()">
 
       {% csrf_token %}
 
-      <label class="block font-semibold mb-1">Last Payment SBI Reference Number (eg. DUP6767676)</label>
-      <input name="payment_id" placeholder="eg. DUP6767676" required class="w-full border rounded-full px-4 py-2 mb-4">
+      <div class="mb-4">
+        <label class="block font-semibold text-gray-800 text-sm mb-1.5">Last Payment SBI Reference Number (eg. DUP6767676)</label>
+        <input type="text" name="payment_id" placeholder="eg. DUP6767676" required class="w-full border border-gray-300 rounded-full px-4 py-2 text-sm focus:border-[#d52b1e] focus:outline-none">
+      </div>
 
-      <label class="block font-semibold mb-1">Attach Last Payment Screenshot / Payment Receipt</label>
-      <input type="file" name="receipt" accept="image/*,application/pdf" required class="mb-5">
+      <div class="mb-5">
+        <label class="block font-semibold text-gray-800 text-sm mb-1.5">Attach Last Payment Screenshot / Payment Receipt</label>
+        <input type="file" name="receipt" accept="image/*,application/pdf" required class="w-full border border-gray-200 rounded-xl p-2 text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-[#d52b1e] hover:file:bg-red-100 cursor-pointer">
+      </div>
 
-      <button id="hostelSubmitBtn"
-        class="w-full bg-[#d52b1e] text-white py-2 rounded-full font-semibold flex justify-center items-center gap-2">
+      <button type="submit" id="hostelSubmitBtn"
+        class="w-full bg-[#d52b1e] hover:bg-red-800 active:scale-95 text-white py-2.5 rounded-full font-semibold flex justify-center items-center gap-2 transition shadow-md">
         <span id="hostelBtnText">Send for Verification</span>
       </button>
 
@@ -400,9 +421,10 @@
 </div>
 
 <!-- 7.5 HOSTEL CONFIRMATION MODAL -->
-<div id="hostel75Modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-  <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm relative text-center">
-    <button onclick="closeHostel75Modal()" class="absolute top-3 right-4 text-xl font-bold text-gray-500 hover:text-black">✖</button>
+<div id="hostel75Modal" class="hidden fixed inset-0 bg-black/60 z-50 overflow-y-auto p-4 flex items-center justify-center">
+  <div class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm relative text-center my-auto shadow-2xl">
+    <button type="button" onclick="closeHostel75Modal()"
+      class="absolute top-3 right-4 text-xl font-bold text-gray-500 hover:text-black">✖</button>
     <h2 class="text-xl font-extrabold text-[#d52b1e] mb-3">
       Send Hostel Request?
     </h2>
@@ -413,14 +435,17 @@
     <form method="POST" action="{% url 'send_hostel' %}" onsubmit="handleHostel75Submit(this)">
       {% csrf_token %}
       <div class="flex flex-col gap-3">
-        <button type="submit" id="hostel75SubmitBtn" class="w-full bg-[#d52b1e] hover:bg-red-800 text-white py-2 rounded-full font-semibold transition flex justify-center items-center gap-2">
+        <button type="submit" id="hostel75SubmitBtn"
+          class="w-full bg-[#d52b1e] hover:bg-red-800 text-white py-2.5 rounded-full font-semibold transition flex justify-center items-center gap-2 shadow-md">
           <span>Send Request</span>
-          <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none"
+            viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
           </svg>
         </button>
-        <button type="button" onclick="closeHostel75Modal()" class="w-full border border-gray-300 text-gray-700 py-2 rounded-full font-semibold transition hover:bg-gray-100">
+        <button type="button" onclick="closeHostel75Modal()"
+          class="w-full border border-gray-300 text-gray-700 py-2.5 rounded-full font-semibold transition hover:bg-gray-100">
           Cancel
         </button>
       </div>
@@ -457,10 +482,10 @@
   }
 
   function openEditProfileModal() {
-    updateSemesterOptions('profile_year', 'profile_sem', {{ student.semester }});
-  document.getElementById('profileSemError').classList.add('hidden');
-  document.getElementById('editProfileModal').classList.remove('hidden');
-}
+    updateSemesterOptions('profile_year', 'profile_sem', '{{ student.semester|default:1 }}');
+    document.getElementById('profileSemError').classList.add('hidden');
+    document.getElementById('editProfileModal').classList.remove('hidden');
+  }
 
   function closeEditProfileModal() {
     document.getElementById('editProfileModal').classList.add('hidden');
@@ -495,7 +520,7 @@
 
 
 
-  const IS_75_SCHEME = {% if student.is_75_scheme %}true{% else %}false{% endif %};
+  const IS_75_SCHEME = '{{ student.is_75_scheme|yesno:"true,false" }}' === 'true';
   let selectedOffice = null;
   let selectedBtn = null;
   let sending = false;
