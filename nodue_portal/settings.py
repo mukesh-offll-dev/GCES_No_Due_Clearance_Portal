@@ -85,17 +85,18 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
-    # Global safety net: converts unhandled/DB errors into safe responses.
-    "authentication.middleware.ExceptionHandlingMiddleware",
-    # Per-request structured access log with correlation id + duration.
-    "authentication.middleware.RequestLogMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Per-request structured access log with correlation id + duration.
+    "authentication.middleware.RequestLogMiddleware",
+    # Anti-caching headers for protected responses.
     "authentication.middleware.NoCacheProtectedMiddleware",
+    # Global safety net: converts unhandled/DB errors into safe responses.
+    "authentication.middleware.ExceptionHandlingMiddleware",
 ]
 
 # ================= URL / WSGI =================

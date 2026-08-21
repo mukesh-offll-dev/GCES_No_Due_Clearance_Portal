@@ -25,12 +25,11 @@ bind = os.environ.get("GUNICORN_BIND", "0.0.0.0:8000")
 # gthread: threaded sync workers. Ideal for blocking I/O clients like pymongo.
 worker_class = "gthread"
 
-# Processes: ~2*cores gives CPU headroom without excessive memory. Capped so a
-# very large box doesn't spawn an unreasonable number of Python interpreters.
-workers = int(os.environ.get("WEB_CONCURRENCY", min(_cores * 2 + 1, 25)))
+# Processes: 2-4 worker processes. Prevents SQLite write lock contention and MongoDB connection exhaustion.
+workers = int(os.environ.get("WEB_CONCURRENCY", min(max(_cores, 2), 4)))
 
-# Threads per worker: high, because requests spend most time waiting on the DB.
-threads = int(os.environ.get("WEB_THREADS", 16))
+# Threads per worker: 4 threads per worker process for I/O concurrency without excessive thread overhead.
+threads = int(os.environ.get("WEB_THREADS", 4))
 
 # Effective capacity = workers * threads  (e.g. 25 * 16 = 400 slots).
 # Backlog of pending connections before the OS refuses new ones.

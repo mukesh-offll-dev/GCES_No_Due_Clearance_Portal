@@ -654,7 +654,7 @@ def bulk_approve(request):
         audit_logger.info("APPROVE role=%s requested=%d approved=%d",
                           role, len(object_ids), approved)
 
-    return redirect(_safe_referer(request, role))
+    return _safe_referer(request, role)
 
 
 

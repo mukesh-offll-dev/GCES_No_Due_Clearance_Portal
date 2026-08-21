@@ -34,8 +34,12 @@ def institution_login_required(view_func):
         role = request.session.get("role")
 
         if not role or role not in VALID_ROLES:
-            # No session or invalid role → flush and redirect to login
-            request.session.flush()
+            # If a role/session key was present but invalid, clear it safely.
+            if role:
+                try:
+                    request.session.flush()
+                except Exception:
+                    pass
             response = redirect("index")
             return _add_no_cache_headers(response)
 

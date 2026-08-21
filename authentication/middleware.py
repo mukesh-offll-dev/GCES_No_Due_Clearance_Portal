@@ -35,7 +35,8 @@ class RequestLogMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        request.request_id = uuid.uuid4().hex[:12]
+        if not hasattr(request, "request_id"):
+            request.request_id = uuid.uuid4().hex[:12]
         start = time.monotonic()
         response = self.get_response(request)
         duration_ms = int((time.monotonic() - start) * 1000)
@@ -43,10 +44,11 @@ class RequestLogMiddleware:
         path = request.path
         if not path.startswith(_QUIET_PREFIXES):
             role = None
-            try:
-                role = request.session.get("role")
-            except Exception:
-                pass
+            if hasattr(request, "session"):
+                try:
+                    role = request.session.get("role")
+                except Exception:
+                    pass
             access_logger.info(
                 "rid=%s %s %s -> %s %dms role=%s ip=%s",
                 request.request_id, request.method, path,
@@ -70,6 +72,8 @@ class NoCacheProtectedMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        if not hasattr(request, "request_id"):
+            request.request_id = uuid.uuid4().hex[:12]
         response = self.get_response(request)
         path = request.path
 
@@ -79,10 +83,11 @@ class NoCacheProtectedMiddleware:
 
         # If user is authenticated or visiting protected/auth routes or logout
         is_authenticated = False
-        try:
-            is_authenticated = bool(request.session.get("role") or request.session.get("student_id"))
-        except Exception:
-            pass
+        if hasattr(request, "session"):
+            try:
+                is_authenticated = bool(request.session.get("role") or request.session.get("student_id"))
+            except Exception:
+                pass
 
         is_protected_path = (
             path != "/" 
@@ -107,6 +112,8 @@ class ExceptionHandlingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        if not hasattr(request, "request_id"):
+            request.request_id = uuid.uuid4().hex[:12]
         return self.get_response(request)
 
     # JSON endpoints (see urls.py): status + report preview APIs return JSON.
