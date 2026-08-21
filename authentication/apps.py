@@ -14,11 +14,26 @@ _SKIP_COMMANDS = {
 }
 
 
+def _enable_sqlite_wal(sender, connection, **kwargs):
+    """Enable Write-Ahead Logging (WAL) and 30s busy timeout for SQLite."""
+    if connection.vendor == 'sqlite':
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("PRAGMA journal_mode = WAL;")
+                cursor.execute("PRAGMA synchronous = NORMAL;")
+                cursor.execute("PRAGMA busy_timeout = 30000;")
+        except Exception as exc:
+            logger.warning("Could not set SQLite PRAGMA journal_mode=WAL: %s", exc)
+
+
 class AuthenticationConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'authentication'
 
     def ready(self):
+        from django.db.backends.signals import connection_created
+        connection_created.connect(_enable_sqlite_wal)
+
         argv = sys.argv
         if len(argv) > 1 and argv[1] in _SKIP_COMMANDS:
             return
@@ -40,3 +55,4 @@ class AuthenticationConfig(AppConfig):
             start_scheduler()
         except Exception as exc:
             logger.error("Scheduler failed to start: %s", exc)
+

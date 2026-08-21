@@ -66,7 +66,7 @@ if ENABLE_HTTPS and not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
 # ================= SESSION SETTINGS =================
 SESSION_COOKIE_AGE         = 60 * 60 * 2  # 2 hours in seconds
-SESSION_SAVE_EVERY_REQUEST = True          # Slide expiry window on every request
+SESSION_SAVE_EVERY_REQUEST = False         # Save only when modified (prevents SQLite lock contention)
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False    # Survive tab close within cookie age
 SESSION_COOKIE_HTTPONLY    = True          # JS cannot read the session cookie
 
@@ -95,6 +95,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "authentication.middleware.NoCacheProtectedMiddleware",
 ]
 
 # ================= URL / WSGI =================
@@ -125,6 +126,9 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
+        "OPTIONS": {
+            "timeout": 30,  # 30-second busy timeout to prevent lock failures under concurrency
+        },
     }
 }
 

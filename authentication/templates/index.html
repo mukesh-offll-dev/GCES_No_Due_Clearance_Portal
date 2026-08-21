@@ -100,10 +100,10 @@
       </button>
     </form>
 
-    {% if request.session.student_error %}
+    {% if student_error or request.session.student_error %}
     <p id="studentError"
        class="text-red-600 font-semibold text-center mt-3 text-sm bg-red-50 rounded-xl py-2 px-3">
-      {{ request.session.student_error }}
+      {{ student_error|default:request.session.student_error }}
     </p>
     {% endif %}
   </div>

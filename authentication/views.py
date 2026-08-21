@@ -115,6 +115,7 @@ def _office_pending_requests(office, branch, year):
 
 
 # ================= INDEX = INSTITUTION LOGIN =================
+# ================= INDEX = INSTITUTION LOGIN =================
 def index(request):
     # ── If a valid session already exists, skip the login page ──
     role = request.session.get("role")
@@ -123,26 +124,31 @@ def index(request):
         if dest:
             return redirect(dest)
 
+    student_error = request.session.pop("student_error", None)
+
     if request.method == "POST":
-        office = request.POST.get("office")
-        username = request.POST.get("username")
-        password = request.POST.get("password")
-        department = request.POST.get("department")
+        office = request.POST.get("office", "").strip()
+        username = request.POST.get("username", "").strip()
+        password = request.POST.get("password", "").strip()
+        department = request.POST.get("department", "").strip()
 
         # ================= DEPARTMENT LOGIN =================
         if office == "department":
-            dept = INSTITUTION_USERS["department"].get(department)
+            dept = INSTITUTION_USERS.get("department", {}).get(department)
 
-            if dept and dept["username"] == username and dept["password"] == password:
+            if dept and dept.get("username") == username and dept.get("password") == password:
                 request.session["role"] = "DEPARTMENT"
                 request.session["department"] = department
 
-                institution_logs.insert_one({
-                    "office": "DEPARTMENT",
-                    "department": department,
-                    "username": username,
-                    "login_time": datetime.now()
-                })
+                try:
+                    institution_logs.insert_one({
+                        "office": "DEPARTMENT",
+                        "department": department,
+                        "username": username,
+                        "login_time": datetime.now()
+                    })
+                except Exception as exc:
+                    logger.warning("Failed to record department login log: %s", exc)
 
                 return redirect("department_dashboard")
 
@@ -150,35 +156,29 @@ def index(request):
         else:
             office_data = INSTITUTION_USERS.get(office)
 
-            if office_data and office_data["username"] == username and office_data["password"] == password:
+            if office_data and office_data.get("username") == username and office_data.get("password") == password:
                 role = office_data["role"]
                 request.session["role"] = role
 
-                institution_logs.insert_one({
-                    "office": role,
-                    "username": username,
-                    "login_time": datetime.now()
-                })
+                try:
+                    institution_logs.insert_one({
+                        "office": role,
+                        "username": username,
+                        "login_time": datetime.now()
+                    })
+                except Exception as exc:
+                    logger.warning("Failed to record office login log: %s", exc)
 
                 # 🔀 REDIRECT BASED ON ROLE
-                if role == "LIBRARY":
-                    return redirect("library_dashboard")
-
-                elif role == "HOSTEL":
-                    return redirect("hostel_dashboard")
-
-                elif role == "COLLEGE":
-                    return redirect("college_dashboard")
-
-                elif role == "FACULTY":
-                    return redirect("faculty_dashboard")
+                dest = _ROLE_REDIRECT.get(role, "index")
+                return redirect(dest)
 
         # ❌ INVALID LOGIN
         audit_logger.warning("LOGIN failed office=%s username=%s ip=%s",
                              office, username, request.META.get("REMOTE_ADDR"))
         messages.error(request, "Invalid credentials")
 
-    return render(request, "index.html")
+    return render(request, "index.html", {"student_error": student_error})
 
 
 def student_login(request):
@@ -202,10 +202,15 @@ def student_login(request):
             return redirect("index")
 
         # 🔎 CHECK STUDENT IN DB
-        student = students_col.find_one({
-            "reg_no": reg_no,
-            "dob": dob
-        })
+        try:
+            student = students_col.find_one({
+                "reg_no": reg_no,
+                "dob": dob
+            })
+        except Exception as exc:
+            logger.error("Database query failed on student_login: %s", exc)
+            request.session["student_error"] = "Service temporarily unavailable. Please try again."
+            return redirect("index")
 
         if not student:
             audit_logger.warning("STUDENT LOGIN failed reg_no=%s ip=%s",
@@ -215,7 +220,6 @@ def student_login(request):
 
         # ================= LOGIN SUCCESS =================
         # 🔒 Cycle session ID (prevent session-fixation attacks).
-        # Falls back silently if the session was never persisted yet.
         try:
             request.session.cycle_key()
         except Exception:
@@ -263,8 +267,22 @@ def student_dashboard(request):
 
     reset_expired_no_dues(no_due_col)
 
-    student_id = ObjectId(request.session["student_id"])
-    student = students_col.find_one({"_id": student_id})
+    student_id_raw = request.session.get("student_id")
+    if not student_id_raw:
+        request.session.flush()
+        return redirect("index")
+
+    try:
+        student_id = ObjectId(student_id_raw)
+        student = students_col.find_one({"_id": student_id})
+    except Exception as exc:
+        logger.error("Error fetching student %s: %s", student_id_raw, exc)
+        request.session.flush()
+        return redirect("index")
+
+    if not student:
+        request.session.flush()
+        return redirect("index")
 
     # ── Determine offices based on student type ──
     student_type = student.get("student_type", "Hosteller")
@@ -275,10 +293,15 @@ def student_dashboard(request):
         offices = ["LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"]
         required_count = 4
 
-    existing = {
-        d["office"]: d
-        for d in no_due_col.find({"student_id": student_id})
-    }
+    try:
+        existing = {
+            d.get("office"): d
+            for d in no_due_col.find({"student_id": student_id})
+            if d.get("office")
+        }
+    except Exception as exc:
+        logger.error("Error querying dues for student %s: %s", student_id, exc)
+        existing = {}
 
     dues = []
     all_approved = True   # 🔥 FLAG
@@ -318,8 +341,12 @@ def student_dashboard(request):
             all_approved = False
 
     # Query promotion logs for this student
-    from .mongo import promotion_logs
-    logs = list(promotion_logs.find({"student_id": student_id}).sort("promotion_time", -1))
+    logs = []
+    try:
+        from .mongo import promotion_logs
+        logs = list(promotion_logs.find({"student_id": student_id}).sort("promotion_time", -1))
+    except Exception as exc:
+        logger.warning("Error loading promotion logs for student %s: %s", student_id, exc)
 
     no_due_access_enabled = check_no_due_access_status()
 
@@ -332,14 +359,15 @@ def student_dashboard(request):
         "no_due_access_enabled": no_due_access_enabled,
     })
 
-    
-    
+
 @institution_login_required
 def update_student_profile(request):
-    if request.method == "POST" and request.session.get("role") == "STUDENT":
+    if request.session.get("role") != "STUDENT":
+        return redirect("index")
 
-        year = request.POST.get("year")
-        semester = request.POST.get("semester")
+    if request.method == "POST":
+        year = request.POST.get("year", "")
+        semester = request.POST.get("semester", "")
 
         # 🔐 STRICT VALIDATION
         if not year.isdigit() or not (1 <= int(year) <= 4):
@@ -348,13 +376,21 @@ def update_student_profile(request):
         if not semester.isdigit() or not (1 <= int(semester) <= 8):
             return redirect("student_dashboard")
 
-        students_col.update_one(
-            {"_id": ObjectId(request.session["student_id"])},
-            {"$set": {
-                "year": int(year),
-                "semester": int(semester)
-            }}
-        )
+        student_id_raw = request.session.get("student_id")
+        if not student_id_raw:
+            request.session.flush()
+            return redirect("index")
+
+        try:
+            students_col.update_one(
+                {"_id": ObjectId(student_id_raw)},
+                {"$set": {
+                    "year": int(year),
+                    "semester": int(semester)
+                }}
+            )
+        except Exception as exc:
+            logger.error("Failed to update student profile: %s", exc)
 
     return redirect("student_dashboard")
 
@@ -364,15 +400,31 @@ def no_due_certificate(request):
     if request.session.get("role") != "STUDENT":
         return redirect("index")
 
-    student_id = ObjectId(request.session["student_id"])
+    student_id_raw = request.session.get("student_id")
+    if not student_id_raw:
+        request.session.flush()
+        return redirect("index")
 
-    student = students_col.find_one({"_id": student_id})
+    try:
+        student_id = ObjectId(student_id_raw)
+        student = students_col.find_one({"_id": student_id})
+    except Exception:
+        request.session.flush()
+        return redirect("index")
+
+    if not student:
+        request.session.flush()
+        return redirect("index")
 
     # Fetch all approved no-dues
-    dues = list(no_due_col.find({
-        "student_id": student_id,
-        "status": "APPROVED"
-    }))
+    try:
+        dues = list(no_due_col.find({
+            "student_id": student_id,
+            "status": "APPROVED"
+        }))
+    except Exception as exc:
+        logger.error("Failed to fetch approved dues for certificate: %s", exc)
+        dues = []
 
     # 🔐 Safety check
     student_type = student.get("student_type", "Hosteller")
@@ -395,16 +447,26 @@ def no_due_certificate(request):
     })
 
 
-
-    
 @institution_login_required
 def send_hostel_request(request):
+    if request.session.get("role") != "STUDENT":
+        return redirect("index")
+
     if not check_no_due_access_status():
         messages.error(request, "No Due process is currently locked. Please contact your Faculty.")
         return redirect("student_dashboard")
 
     if request.method == "POST":
-        student_id = ObjectId(request.session["student_id"])
+        student_id_raw = request.session.get("student_id")
+        if not student_id_raw:
+            request.session.flush()
+            return redirect("index")
+
+        try:
+            student_id = ObjectId(student_id_raw)
+        except (InvalidId, TypeError):
+            request.session.flush()
+            return redirect("index")
 
         reset_expired_no_dues(no_due_col)
 
@@ -720,8 +782,11 @@ def department_dashboard(request):
     reset_expired_no_dues(no_due_col)
 
     dept = request.session.get("department")
-    year = request.GET.get("year")
-    semester = request.GET.get("semester")
+    if not dept:
+        return redirect("index")
+
+    year = request.GET.get("year", "").strip()
+    semester = request.GET.get("semester", "").strip()
 
     requests = []
     count = 0
@@ -746,13 +811,25 @@ def department_dashboard(request):
 
 @institution_login_required
 def send_no_due_request(request):
+    if request.session.get("role") != "STUDENT":
+        return redirect("index")
+
     if not check_no_due_access_status():
         messages.error(request, "No Due process is currently locked. Please contact your Faculty.")
         return redirect("student_dashboard")
 
     if request.method == "POST":
-        office = request.POST.get("office")
-        student_id = ObjectId(request.session["student_id"])
+        office = request.POST.get("office", "").strip()
+        student_id_raw = request.session.get("student_id")
+        if not student_id_raw:
+            request.session.flush()
+            return redirect("index")
+
+        try:
+            student_id = ObjectId(student_id_raw)
+        except (InvalidId, TypeError):
+            request.session.flush()
+            return redirect("index")
 
         reset_expired_no_dues(no_due_col)
 
@@ -806,13 +883,25 @@ def send_no_due_request(request):
 
 @institution_login_required
 def retry_request(request):
+    if request.session.get("role") != "STUDENT":
+        return redirect("index")
+
     if not check_no_due_access_status():
         messages.error(request, "No Due process is currently locked. Please contact your Faculty.")
         return redirect("student_dashboard")
 
-    if request.method == "POST" and request.session.get("role") == "STUDENT":
-        office = request.POST.get("office")
-        student_id = ObjectId(request.session["student_id"])
+    if request.method == "POST":
+        office = request.POST.get("office", "").strip()
+        student_id_raw = request.session.get("student_id")
+        if not student_id_raw:
+            request.session.flush()
+            return redirect("index")
+
+        try:
+            student_id = ObjectId(student_id_raw)
+        except (InvalidId, TypeError):
+            request.session.flush()
+            return redirect("index")
 
         reset_expired_no_dues(no_due_col)
 
@@ -835,7 +924,7 @@ def retry_request(request):
                 messages.error(request, f"Maximum request limit (2 attempts) reached for {office.title() if office else ''} Office.")
                 return redirect("student_dashboard")
 
-            result = no_due_col.update_one(
+            no_due_col.update_one(
                 {
                     "_id": existing_req["_id"]
                 },
@@ -867,8 +956,8 @@ def faculty_dashboard(request):
     add_error = request.session.pop("add_error", None)
     add_success = request.session.pop("add_success", None)
 
-    branch = request.GET.get("branch")
-    year = request.GET.get("year")
+    branch = request.GET.get("branch", "").strip()
+    year = request.GET.get("year", "").strip()
 
     students = []
     count = 0
@@ -880,22 +969,35 @@ def faculty_dashboard(request):
             year_int = None
 
         if year_int is not None:
-            student_docs = list(students_col.find({
-                "branch": branch,
-                "year": year_int
-            }))
+            try:
+                student_docs = list(students_col.find({
+                    "branch": branch,
+                    "year": year_int
+                }))
+            except Exception as exc:
+                logger.error("Failed to query students in faculty_dashboard: %s", exc)
+                student_docs = []
         else:
             student_docs = []
 
         # 🔥 Batch-fetch ALL no-dues for these students in ONE query (no N+1).
-        student_ids = [s["_id"] for s in student_docs]
+        student_ids = [s["_id"] for s in student_docs if "_id" in s]
         dues_by_student = {}
         if student_ids:
-            for d in no_due_col.find({"student_id": {"$in": student_ids}}):
-                dues_by_student.setdefault(d["student_id"], {})[d["office"]] = d["status"]
+            try:
+                for d in no_due_col.find({"student_id": {"$in": student_ids}}):
+                    sid = d.get("student_id")
+                    office = d.get("office")
+                    status = d.get("status", "NOT_SENT")
+                    if sid and office:
+                        dues_by_student.setdefault(sid, {})[office] = status
+            except Exception as exc:
+                logger.error("Failed to query dues in faculty_dashboard: %s", exc)
 
         for s in student_docs:
-            student_id = s["_id"]
+            student_id = s.get("_id")
+            if not student_id:
+                continue
 
             no_dues = {
                 "LIBRARY": "NOT_SENT",
@@ -910,14 +1012,14 @@ def faculty_dashboard(request):
 
             students.append({
                 "id": str(student_id),
-                "roll_no": s["roll_no"],
-                "reg_no": s["reg_no"],
-                "name": s["name"],
-                "semester": s["semester"],
-                "dob": s["dob"],
-                "phone": s["phone"],
-                "branch": s["branch"],
-                "year": s["year"],
+                "roll_no": s.get("roll_no", ""),
+                "reg_no": s.get("reg_no", ""),
+                "name": s.get("name", ""),
+                "semester": s.get("semester", ""),
+                "dob": s.get("dob", ""),
+                "phone": s.get("phone", ""),
+                "branch": s.get("branch", ""),
+                "year": s.get("year", ""),
                 "student_type": s_type,
                 "is_75_scheme": s.get("is_75_scheme", False),
                 "no_dues": no_dues
@@ -942,8 +1044,8 @@ def update_75_scheme(request):
         return redirect("index")
 
     if request.method == "POST":
-        branch = request.POST.get("branch")
-        year = request.POST.get("year")
+        branch = request.POST.get("branch", "").strip()
+        year = request.POST.get("year", "").strip()
 
         selected_ids_str = request.POST.getlist("selected_student_ids")
         selected_ids = []
@@ -960,13 +1062,16 @@ def update_75_scheme(request):
             query["branch"] = branch
 
         if query:
-            # Set is_75_scheme = False for all students in this cohort
-            students_col.update_many(query, {"$set": {"is_75_scheme": False}})
-            # Set is_75_scheme = True for selected students
-            if selected_ids:
-                students_col.update_many({"_id": {"$in": selected_ids}}, {"$set": {"is_75_scheme": True}})
-
-        messages.success(request, "7.5 Scheme student status updated successfully.")
+            try:
+                # Set is_75_scheme = False for all students in this cohort
+                students_col.update_many(query, {"$set": {"is_75_scheme": False}})
+                # Set is_75_scheme = True for selected students
+                if selected_ids:
+                    students_col.update_many({"_id": {"$in": selected_ids}}, {"$set": {"is_75_scheme": True}})
+                messages.success(request, "7.5 Scheme student status updated successfully.")
+            except Exception as exc:
+                logger.error("Failed to update 7.5 scheme status: %s", exc)
+                messages.error(request, "Failed to update 7.5 scheme status.")
 
         redirect_url = f"/faculty/?branch={branch or ''}&year={year or ''}"
         return redirect(redirect_url)
@@ -980,14 +1085,14 @@ def add_student(request):
         return redirect("index")
 
     if request.method == "POST":
-        roll_no = request.POST["roll_no"].strip()
-        reg_no = request.POST["reg_no"].strip()
-        name = request.POST["name"].strip()
-        dob = request.POST["dob"]
-        semester = request.POST["semester"]
-        phone = request.POST["phone"].strip()
-        branch = request.POST["branch"]
-        year = request.POST["year"]
+        roll_no = request.POST.get("roll_no", "").strip()
+        reg_no = request.POST.get("reg_no", "").strip()
+        name = request.POST.get("name", "").strip()
+        dob = request.POST.get("dob", "").strip()
+        semester = request.POST.get("semester", "").strip()
+        phone = request.POST.get("phone", "").strip()
+        branch = request.POST.get("branch", "").strip()
+        year = request.POST.get("year", "").strip()
 
         # ================= FORMAT FIXES =================
 
@@ -1021,13 +1126,22 @@ def add_student(request):
             request.session["add_error"] = "Semester must be between 1 and 8"
             return redirect(f"/faculty/?branch={branch}&year={year}")
 
+        # Year → 1 to 4
+        if not year.isdigit() or not (1 <= int(year) <= 4):
+            request.session["add_error"] = "Year must be between 1 and 4"
+            return redirect(f"/faculty/?branch={branch}&year={year}")
+
         # Duplicate check (Roll No / Reg No)
-        existing_student = students_col.find_one({
-            "$or": [
-                {"roll_no": roll_no},
-                {"reg_no": reg_no}
-            ]
-        })
+        try:
+            existing_student = students_col.find_one({
+                "$or": [
+                    {"roll_no": roll_no},
+                    {"reg_no": reg_no}
+                ]
+            })
+        except Exception as exc:
+            logger.error("Error checking duplicate student: %s", exc)
+            existing_student = None
 
         if existing_student:
             request.session["add_error"] = (
@@ -1040,23 +1154,24 @@ def add_student(request):
         if student_type not in ("Hosteller", "Day Scholar"):
             student_type = "Hosteller"
 
-        students_col.insert_one({
-            "roll_no": roll_no,
-            "reg_no": reg_no,
-            "name": name,
-            "dob": dob,
-            "phone": phone,
-            "branch": branch,
-            "year": int(year),
-            "semester": int(semester),
-            "student_type": student_type
-        })
-
-        request.session["add_success"] = "Student added successfully"
+        try:
+            students_col.insert_one({
+                "roll_no": roll_no,
+                "reg_no": reg_no,
+                "name": name,
+                "dob": dob,
+                "phone": phone,
+                "branch": branch,
+                "year": int(year),
+                "semester": int(semester),
+                "student_type": student_type
+            })
+            request.session["add_success"] = "Student added successfully"
+        except Exception as exc:
+            logger.error("Failed to insert student: %s", exc)
+            request.session["add_error"] = "Failed to add student. Please try again."
 
     return redirect(f"/faculty/?branch={branch}&year={year}")
-
-
 
 
 @institution_login_required
@@ -1075,12 +1190,18 @@ def delete_students(request):
                 pass   # ignore empty / invalid ids
 
         if valid_object_ids:
-            students_col.delete_many({
-                "_id": {"$in": valid_object_ids}
-            })
+            try:
+                students_col.delete_many({
+                    "_id": {"$in": valid_object_ids}
+                })
+                no_due_col.delete_many({
+                    "student_id": {"$in": valid_object_ids}
+                })
+            except Exception as exc:
+                logger.error("Failed to delete students: %s", exc)
 
-    branch = request.POST.get("branch")
-    year = request.POST.get("year")
+    branch = request.POST.get("branch", "").strip()
+    year = request.POST.get("year", "").strip()
 
     return redirect(f"/faculty/?branch={branch}&year={year}")
 
@@ -1090,32 +1211,39 @@ def edit_student(request):
     if request.session.get("role") != "FACULTY":
         return redirect("index")
 
+    branch = request.POST.get("branch", "").strip()
+    year = request.POST.get("year", "").strip()
+
     if request.method == "POST":
-        student_id = request.POST.get("student_id")
+        student_id = request.POST.get("student_id", "").strip()
 
         student_type = request.POST.get("student_type", "Hosteller")
         if student_type not in ("Hosteller", "Day Scholar"):
             student_type = "Hosteller"
 
+        year_val_raw = request.POST.get("year", "").strip()
+        sem_val_raw = request.POST.get("semester", "").strip()
+
         try:
+            year_val = int(year_val_raw) if year_val_raw.isdigit() else 1
+            sem_val = int(sem_val_raw) if sem_val_raw.isdigit() else 1
+
             students_col.update_one(
                 {"_id": ObjectId(student_id)},
                 {"$set": {
-                    "roll_no": request.POST["roll_no"],
-                    "reg_no": request.POST["reg_no"],
-                    "name": request.POST["name"],
-                    "dob": request.POST["dob"],
-                    "year": int(request.POST["year"]),
-                    "phone": request.POST["phone"],
-                    "semester": int(request.POST["semester"]),
+                    "roll_no": request.POST.get("roll_no", "").strip().upper(),
+                    "reg_no": request.POST.get("reg_no", "").strip(),
+                    "name": request.POST.get("name", "").strip().upper(),
+                    "dob": request.POST.get("dob", "").strip(),
+                    "year": year_val,
+                    "phone": request.POST.get("phone", "").strip(),
+                    "semester": sem_val,
                     "student_type": student_type
                 }}
             )
-        except InvalidId:
-            pass
+        except (InvalidId, Exception) as exc:
+            logger.warning("Failed to edit student %s: %s", student_id, exc)
 
-    branch = request.POST.get("branch")
-    year = request.POST.get("year")
     return redirect(f"/faculty/?branch={branch}&year={year}")
 
 
@@ -1692,8 +1820,19 @@ def import_students_excel(request):
 
 # ================= LOGOUT =================
 def logout_view(request):
+    """
+    Invalidates the authentication session completely, removes cookies,
+    sets strict anti-caching headers, and redirects to login page.
+    """
     request.session.flush()
-    return redirect("index")
+    response = redirect("index")
+    # Explicitly clear session & CSRF cookies from client browser
+    response.delete_cookie(settings.SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(settings.CSRF_COOKIE_NAME, path="/")
+    response["Cache-Control"] = "no-cache, no-store, must-revalidate, private, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
+    return response
 
 
 # ================= OFFICE STUDENT STATUS API =================

@@ -1,3 +1,366 @@
-from django.test import TestCase
+import unittest
+from unittest.mock import patch, MagicMock
+from django.test import TestCase, Client
+from django.urls import reverse
+from django.conf import settings
+from bson import ObjectId
 
-# Create your tests here.
+
+class AuthenticationAndSecurityTests(TestCase):
+    """
+    Tests covering:
+    - Production 500 error prevention (defensive field access, null checks)
+    - Logout invalidation and anti-caching headers
+    - Browser back-button protection and session expiry
+    - Role-based server-side authorization
+    """
+
+    def setUp(self):
+        self.client = Client()
+
+    # ─────────────────────────────────────────────────────────────
+    #  1. Unauthenticated & Protected Routes
+    # ─────────────────────────────────────────────────────────────
+    def test_unauthenticated_access_redirects_to_login(self):
+        """Unauthenticated requests to protected endpoints must redirect to login."""
+        protected_urls = [
+            reverse("faculty_dashboard"),
+            reverse("student_dashboard"),
+            reverse("library_dashboard"),
+            reverse("hostel_dashboard"),
+            reverse("college_dashboard"),
+            reverse("department_dashboard"),
+            reverse("no_due_certificate"),
+            reverse("faculty_promotion"),
+        ]
+        for url in protected_urls:
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 302, f"Expected 302 for {url}")
+            self.assertEqual(response.url, reverse("index"))
+            # Anti-cache headers must be present even on redirect
+            self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+
+    def test_anti_cache_headers_on_all_responses(self):
+        """Protected pages and logout must return strict anti-cache headers."""
+        response = self.client.get(reverse("logout"))
+        self.assertEqual(response.status_code, 302)
+        cache_control = response.headers.get("Cache-Control", "")
+        self.assertIn("no-store", cache_control)
+        self.assertIn("no-cache", cache_control)
+        self.assertIn("must-revalidate", cache_control)
+        self.assertEqual(response.headers.get("Pragma"), "no-cache")
+        self.assertEqual(response.headers.get("Expires"), "0")
+
+    # ─────────────────────────────────────────────────────────────
+    #  2. Login & Logout Lifecycle
+    # ─────────────────────────────────────────────────────────────
+    def test_institution_faculty_login_and_logout(self):
+        """Valid faculty login creates session, logout completely invalidates it."""
+        with patch("authentication.views.institution_logs.insert_one"):
+            response = self.client.post(reverse("index"), {
+                "office": "faculty",
+                "username": "faculty_admin",
+                "password": "fac@123",
+            })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("faculty_dashboard"))
+
+        # Session should contain role FACULTY
+        session = self.client.session
+        self.assertEqual(session.get("role"), "FACULTY")
+
+        # Visiting faculty dashboard should now succeed
+        with patch("authentication.views.students_col") as mock_students, \
+             patch("authentication.views.no_due_col") as mock_no_due:
+            mock_students.find.return_value = []
+            mock_no_due.find.return_value = []
+            dash_response = self.client.get(reverse("faculty_dashboard"))
+            self.assertEqual(dash_response.status_code, 200)
+            self.assertIn("no-store", dash_response.headers.get("Cache-Control", ""))
+
+        # Logout
+        logout_response = self.client.get(reverse("logout"))
+        self.assertEqual(logout_response.status_code, 302)
+        self.assertEqual(logout_response.url, reverse("index"))
+
+        # Session must be completely flushed
+        self.assertIsNone(self.client.session.get("role"))
+
+        # Simulating Browser Back Button: request faculty dashboard again
+        back_response = self.client.get(reverse("faculty_dashboard"))
+        self.assertEqual(back_response.status_code, 302)
+        self.assertEqual(back_response.url, reverse("index"))
+
+    def test_student_login_and_logout(self):
+        """Valid student login establishes session and logout flushes it."""
+        fake_id = ObjectId()
+        fake_student = {
+            "_id": fake_id,
+            "reg_no": "830123104001",
+            "dob": "2003-01-01",
+            "name": "TEST STUDENT",
+            "student_type": "Hosteller",
+            "branch": "CSE",
+            "year": 3,
+            "semester": 5,
+        }
+
+        with patch("authentication.views.students_col.find_one", return_value=fake_student):
+            response = self.client.post(reverse("student_login"), {
+                "reg_no": "830123104001",
+                "dob": "2003-01-01",
+            })
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.url, reverse("student_dashboard"))
+
+        # Session should contain role STUDENT and student_id
+        session = self.client.session
+        self.assertEqual(session.get("role"), "STUDENT")
+        self.assertEqual(session.get("student_id"), str(fake_id))
+
+        # Logout
+        self.client.get(reverse("logout"))
+
+        # Session must be flushed
+        self.assertIsNone(self.client.session.get("role"))
+        self.assertIsNone(self.client.session.get("student_id"))
+
+        # Accessing student dashboard after logout redirects to login
+        back_response = self.client.get(reverse("student_dashboard"))
+        self.assertEqual(back_response.status_code, 302)
+        self.assertEqual(back_response.url, reverse("index"))
+
+    # ─────────────────────────────────────────────────────────────
+    #  3. Role-Based Authorization
+    # ─────────────────────────────────────────────────────────────
+    def test_cross_role_access_prevented(self):
+        """A user with role STUDENT cannot access FACULTY or OFFICE dashboards."""
+        fake_id = ObjectId()
+        session = self.client.session
+        session["role"] = "STUDENT"
+        session["student_id"] = str(fake_id)
+        session.save()
+
+        with patch("authentication.decorators.students_col.find_one", return_value={"_id": fake_id}):
+            # Student accessing Faculty dashboard -> redirected
+            response = self.client.get(reverse("faculty_dashboard"))
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.url, reverse("index"))
+
+            # Student accessing Hostel dashboard -> redirected
+            response = self.client.get(reverse("hostel_dashboard"))
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.url, reverse("index"))
+
+    # ─────────────────────────────────────────────────────────────
+    #  4. Defensive Field Access (500 Error Prevention)
+    # ─────────────────────────────────────────────────────────────
+    def test_faculty_dashboard_missing_fields_no_500(self):
+        """Student documents with null/missing fields must render cleanly without KeyError or 500."""
+        session = self.client.session
+        session["role"] = "FACULTY"
+        session.save()
+
+        fake_id = ObjectId()
+        # Incomplete student document missing phone, dob, semester, etc.
+        incomplete_students = [
+            {
+                "_id": fake_id,
+                "reg_no": "830123104002",
+                "roll_no": "23CS002",
+                "name": "PARTIAL DATA STUDENT",
+                "branch": "CSE",
+                "year": 3,
+                # phone, dob, semester, student_type are missing
+            }
+        ]
+
+        with patch("authentication.views.students_col.find", return_value=incomplete_students), \
+             patch("authentication.views.no_due_col.find", return_value=[]):
+            response = self.client.get(reverse("faculty_dashboard") + "?branch=CSE&year=3")
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, "PARTIAL DATA STUDENT")
+            self.assertContains(response, "23CS002")
+
+    def test_add_student_missing_post_fields_no_500(self):
+        """Submitting malformed or empty POST to add_student must not throw KeyError / 500."""
+        session = self.client.session
+        session["role"] = "FACULTY"
+        session.save()
+
+        response = self.client.post(reverse("add_student"), {
+            "branch": "CSE",
+            "year": "3",
+            # missing roll_no, reg_no, name, etc.
+        })
+        self.assertEqual(response.status_code, 302)
+        # Should redirect back to faculty view with error in session
+        self.assertIn("/faculty/?branch=CSE&year=3", response.url)
+
+    def test_edit_student_invalid_values_no_500(self):
+        """Submitting invalid integer or ObjectId to edit_student must not throw 500."""
+        session = self.client.session
+        session["role"] = "FACULTY"
+        session.save()
+
+        response = self.client.post(reverse("edit_student"), {
+            "student_id": "invalid-object-id-string",
+            "branch": "CSE",
+            "year": "invalid-year",
+            "semester": "invalid-sem",
+            "roll_no": "23CS003",
+            "reg_no": "830123104003",
+            "name": "TEST",
+        })
+        self.assertEqual(response.status_code, 302)
+
+    # ─────────────────────────────────────────────────────────────
+    #  5. Protected APIs Authorization & Anti-Caching
+    # ─────────────────────────────────────────────────────────────
+    def test_office_student_status_api_unauthorized(self):
+        """Protected API rejects unauthenticated requests with 302 to index."""
+        response = self.client.get(reverse("student_status_api") + "?year=3")
+        self.assertEqual(response.status_code, 302)
+
+    def test_office_student_status_api_authorized(self):
+        """Protected API allows authorized office roles and returns anti-cache headers."""
+        session = self.client.session
+        session["role"] = "LIBRARY"
+        session.save()
+
+        with patch("authentication.views.students_col.aggregate", return_value=[{"metadata": [{"total": 0}], "data": []}]):
+            response = self.client.get(reverse("student_status_api") + "?year=3")
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+
+    # ─────────────────────────────────────────────────────────────
+    #  6. Office Dashboards & Department Specific Tests
+    # ─────────────────────────────────────────────────────────────
+    def test_department_login_and_dashboard(self):
+        """Department login sets role and department, dashboard renders correctly."""
+        with patch("authentication.views.institution_logs.insert_one"):
+            response = self.client.post(reverse("index"), {
+                "office": "department",
+                "department": "CSE",
+                "username": "cse_admin",
+                "password": "cse@123",
+            })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("department_dashboard"))
+        self.assertEqual(self.client.session.get("role"), "DEPARTMENT")
+        self.assertEqual(self.client.session.get("department"), "CSE")
+
+        with patch("authentication.views.no_due_col.aggregate", return_value=[]):
+            dash_response = self.client.get(reverse("department_dashboard"))
+            self.assertEqual(dash_response.status_code, 200)
+            self.assertIn("no-store", dash_response.headers.get("Cache-Control", ""))
+
+    def test_hostel_and_college_login(self):
+        """Hostel and College logins establish correct roles and redirect to dashboards."""
+        client_h = Client()
+        client_c = Client()
+        with patch("authentication.views.institution_logs.insert_one"):
+            h_resp = client_h.post(reverse("index"), {
+                "office": "hostel",
+                "username": "hostel_admin",
+                "password": "host@123",
+            })
+            self.assertEqual(h_resp.status_code, 302)
+            self.assertEqual(h_resp.url, reverse("hostel_dashboard"))
+            self.assertEqual(client_h.session.get("role"), "HOSTEL")
+
+            c_resp = client_c.post(reverse("index"), {
+                "office": "college",
+                "username": "college_admin",
+                "password": "col@123",
+            })
+            self.assertEqual(c_resp.status_code, 302)
+            self.assertEqual(c_resp.url, reverse("college_dashboard"))
+            self.assertEqual(client_c.session.get("role"), "COLLEGE")
+
+    # ─────────────────────────────────────────────────────────────
+    #  7. Faculty Promotion Password Gate
+    # ─────────────────────────────────────────────────────────────
+    def test_faculty_promotion_unlock_flow(self):
+        """Promotion page requires password verification before displaying actions."""
+        session = self.client.session
+        session["role"] = "FACULTY"
+        session.save()
+
+        # Initial access shows promotion password form
+        response = self.client.get(reverse("faculty_promotion"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "promotion_password")
+
+        # Wrong password shows error
+        wrong_resp = self.client.post(reverse("faculty_promotion"), {
+            "promotion_password": "wrong_password",
+        })
+        self.assertEqual(wrong_resp.status_code, 200)
+        self.assertFalse(self.client.session.get("promotion_unlocked", False))
+
+        # Correct password unlocks
+        with patch("authentication.views.portal_settings.find_one", return_value=None), \
+             patch("authentication.views.students_col.count_documents", return_value=0):
+            correct_resp = self.client.post(reverse("faculty_promotion"), {
+                "promotion_password": "gces8301",
+            })
+            self.assertEqual(correct_resp.status_code, 302)
+            self.assertEqual(correct_resp.url, reverse("faculty_promotion"))
+            self.assertTrue(self.client.session.get("promotion_unlocked"))
+
+    # ─────────────────────────────────────────────────────────────
+    #  8. Expired / Stale Student ID Session Handling
+    # ─────────────────────────────────────────────────────────────
+    def test_deleted_student_session_auto_flushes(self):
+        """If a student was deleted from DB, any subsequent request flushes session and redirects."""
+        fake_id = ObjectId()
+        session = self.client.session
+        session["role"] = "STUDENT"
+        session["student_id"] = str(fake_id)
+        session.save()
+
+        # Database returns None (student was deleted)
+        with patch("authentication.decorators.students_col.find_one", return_value=None):
+            response = self.client.get(reverse("student_dashboard"))
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.url, reverse("index"))
+            # Session must now be flushed
+            self.assertIsNone(self.client.session.get("role"))
+            self.assertIsNone(self.client.session.get("student_id"))
+
+    # ─────────────────────────────────────────────────────────────
+    #  9. Concurrent / Multiple User Sessions
+    # ─────────────────────────────────────────────────────────────
+    def test_multiple_simultaneous_users_isolated(self):
+        """Multiple users logged in concurrently maintain isolated sessions."""
+        client_faculty = Client()
+        client_student = Client()
+
+        # Login faculty
+        with patch("authentication.views.institution_logs.insert_one"):
+            client_faculty.post(reverse("index"), {
+                "office": "faculty",
+                "username": "faculty_admin",
+                "password": "fac@123",
+            })
+
+        # Login student
+        fake_id = ObjectId()
+        with patch("authentication.views.students_col.find_one", return_value={"_id": fake_id, "student_type": "Hosteller"}):
+            client_student.post(reverse("student_login"), {
+                "reg_no": "830123104009",
+                "dob": "2003-05-15",
+            })
+
+        # Check sessions are isolated
+        self.assertEqual(client_faculty.session.get("role"), "FACULTY")
+        self.assertEqual(client_student.session.get("role"), "STUDENT")
+
+        # Faculty logs out
+        client_faculty.get(reverse("logout"))
+        self.assertIsNone(client_faculty.session.get("role"))
+
+        # Student session remains active
+        self.assertEqual(client_student.session.get("role"), "STUDENT")
+

@@ -15,6 +15,8 @@ from pymongo.errors import (
     AutoReconnect,
 )
 
+from django.db import OperationalError as DjangoDbOperationalError, DatabaseError as DjangoDatabaseError
+
 access_logger = logging.getLogger("nodue.access")
 error_logger = logging.getLogger("nodue.error")
 
@@ -54,6 +56,47 @@ class RequestLogMiddleware:
         return response
 
 
+class NoCacheProtectedMiddleware:
+    """
+    Ensures that all protected or authenticated responses include strict anti-caching headers:
+    Cache-Control: no-cache, no-store, must-revalidate, private, max-age=0
+    Pragma: no-cache
+    Expires: 0
+    This prevents browsers from caching authenticated HTML or private JSON data,
+    guaranteeing that pressing browser Back or opening old URLs forces revalidation with the server.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        path = request.path
+
+        # Never touch static asset headers (handled by WhiteNoise)
+        if path.startswith(_QUIET_PREFIXES):
+            return response
+
+        # If user is authenticated or visiting protected/auth routes or logout
+        is_authenticated = False
+        try:
+            is_authenticated = bool(request.session.get("role") or request.session.get("student_id"))
+        except Exception:
+            pass
+
+        is_protected_path = (
+            path != "/" 
+            and not path.startswith("/static/")
+        )
+
+        if is_authenticated or is_protected_path or path == "/logout/":
+            response["Cache-Control"] = "no-cache, no-store, must-revalidate, private, max-age=0"
+            response["Pragma"] = "no-cache"
+            response["Expires"] = "0"
+
+        return response
+
+
 class ExceptionHandlingMiddleware:
     """
     Converts unhandled exceptions into safe responses and logs them.
@@ -78,10 +121,10 @@ class ExceptionHandlingMiddleware:
             or "application/json" in request.headers.get("Accept", "")
         )
 
-        # ── Database unavailable → 503, ask the client to retry ──
-        if isinstance(exception, (ServerSelectionTimeoutError, NetworkTimeout,
-                                  AutoReconnect)):
-            error_logger.error("rid=%s DB unavailable on %s: %s",
+        # ── Database unavailable / locking → 503, ask the client to retry ──
+        if isinstance(exception, (ServerSelectionTimeoutError, NetworkTimeout, AutoReconnect,
+                                  DjangoDbOperationalError, DjangoDatabaseError)):
+            error_logger.error("rid=%s DB unavailable/locked on %s: %s",
                                rid, request.path, exception)
             return self._respond(wants_json, 503, _DB_DOWN_MESSAGE, rid)
 
@@ -101,11 +144,16 @@ class ExceptionHandlingMiddleware:
     @staticmethod
     def _respond(wants_json, status, message, rid):
         if wants_json:
-            return JsonResponse({"error": message, "request_id": rid}, status=status)
-        return HttpResponse(
-            "%s (ref: %s)" % (message, rid),
-            status=status, content_type="text/plain",
-        )
+            response = JsonResponse({"error": message, "request_id": rid}, status=status)
+        else:
+            response = HttpResponse(
+                "%s (ref: %s)" % (message, rid),
+                status=status, content_type="text/plain",
+            )
+        response["Cache-Control"] = "no-cache, no-store, must-revalidate, private, max-age=0"
+        response["Pragma"] = "no-cache"
+        response["Expires"] = "0"
+        return response
 
 
 def _client_ip(request):
@@ -113,3 +161,4 @@ def _client_ip(request):
     if xff:
         return xff.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR", "-")
+
