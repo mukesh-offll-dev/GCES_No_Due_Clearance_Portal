@@ -4,8 +4,15 @@ import os
 import sys
 
 
+from pathlib import Path
+from dotenv import load_dotenv
+
+
 def main():
     """Run administrative tasks."""
+    BASE_DIR = Path(__file__).resolve().parent
+    load_dotenv(BASE_DIR / ".env")
+    load_dotenv()
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'nodue_portal.settings')
     try:
         from django.core.management import execute_from_command_line

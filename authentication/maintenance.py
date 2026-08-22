@@ -16,6 +16,7 @@ This module splits that work:
 Concurrency: run_maintenance_cycle() takes a short-lived MongoDB lock so that
 across N gunicorn workers only ONE actually performs a cycle at a time.
 """
+import time
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -30,13 +31,20 @@ PENDING_TTL = timedelta(days=1)
 # Cloudinary deletes are batched per cycle to bound runtime.
 MAX_CLOUDINARY_DELETES_PER_CYCLE = 200
 
+_last_cooldown_reset = 0.0
 
-def fast_cooldown_reset():
+
+def fast_cooldown_reset(throttle_seconds=0, force=False):
     """
     Clear elapsed 24h cooldowns in a single bulk update. Cheap and idempotent —
-    safe to call inline on hot request paths. Cooldown datetimes may be naive or
-    tz-aware, so we compare against both a naive and an aware 'now'.
+    safe to call inline on hot request paths.
     """
+    global _last_cooldown_reset
+    now_ts = time.time()
+    if not force and throttle_seconds > 0 and (now_ts - _last_cooldown_reset) < throttle_seconds:
+        return
+
+    _last_cooldown_reset = now_ts
     now_utc = datetime.now(timezone.utc)
     now_naive = datetime.now()
     try:
@@ -237,7 +245,7 @@ def run_maintenance_cycle(lock_ttl_seconds=50):
         return None
 
     try:
-        fast_cooldown_reset()
+        fast_cooldown_reset(force=True)
         _check_auto_disable_access()
         reverted = _expire_stale_pending()
         if reverted:

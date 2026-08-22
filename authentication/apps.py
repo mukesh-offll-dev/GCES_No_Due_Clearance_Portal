@@ -44,11 +44,16 @@ class AuthenticationConfig(AppConfig):
         if "runserver" in argv and os.environ.get("RUN_MAIN") != "true":
             return
 
-        try:
-            from .db_indexes import ensure_indexes
-            ensure_indexes()
-        except Exception as exc:
-            logger.error("Index initialization skipped: %s", exc)
+        import threading
+
+        def _bg_ensure_indexes():
+            try:
+                from .db_indexes import ensure_indexes
+                ensure_indexes()
+            except Exception as exc:
+                logger.warning("Index initialization skipped: %s", exc)
+
+        threading.Thread(target=_bg_ensure_indexes, name="nodue-index-init", daemon=True).start()
 
         try:
             from .scheduler import start_scheduler

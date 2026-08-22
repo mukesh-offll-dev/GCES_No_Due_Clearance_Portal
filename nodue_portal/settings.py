@@ -2,7 +2,11 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# ================= BASE =================
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file (both absolute BASE_DIR and cwd fallback)
+load_dotenv(BASE_DIR / ".env")
 load_dotenv()
 
 import cloudinary
@@ -16,9 +20,6 @@ cloudinary.config(
     api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
     secure=True
 )
-
-# ================= BASE =================
-BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ================= SECURITY =================
 SECRET_KEY = os.environ.get("SECRET_KEY", "fallback-secret-key")
@@ -41,12 +42,22 @@ ALLOWED_HOSTS = ["*"]
 
 
 CSRF_TRUSTED_ORIGINS = [
+    "https://nodue.gces.net.in",
+    "http://nodue.gces.net.in",
     "https://gces-no-due-clearance-portal.onrender.com",
     "http://127.0.0.1:8000",
     "http://localhost:8000",
     "http://127.0.0.1",
     "http://localhost",
 ]
+
+# Support additional custom trusted origins from environment
+_extra_origins = os.environ.get("CSRF_TRUSTED_ORIGINS")
+if _extra_origins:
+    for _origin in _extra_origins.split(","):
+        _origin_clean = _origin.strip()
+        if _origin_clean and _origin_clean not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(_origin_clean)
 
 # ================= HTTPS & COOKIE SECURITY =================
 ENABLE_HTTPS = os.environ.get("ENABLE_HTTPS", "False") == "True"

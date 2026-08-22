@@ -1890,6 +1890,47 @@ def download_student_template(request):
     return response
 
 
+def _parse_excel_dob(dob_raw):
+    """
+    Parses and normalizes date of birth values from Excel into YYYY-MM-DD format.
+    Handles datetime objects, date objects, Excel serial dates, and common date string formats.
+    """
+    if dob_raw is None:
+        return ""
+    if isinstance(dob_raw, (datetime, date)):
+        return dob_raw.strftime("%Y-%m-%d")
+
+    # Handle numeric serial numbers from Excel (e.g. 38450)
+    if isinstance(dob_raw, (int, float)):
+        try:
+            converted_date = date(1899, 12, 30) + timedelta(days=int(dob_raw))
+            return converted_date.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+    dob_str = str(dob_raw).strip()
+    if not dob_str:
+        return ""
+
+    # Try common date formats
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d", "%d.%m.%Y", "%m/%d/%Y", "%d-%b-%Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(dob_str, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+
+    return dob_str
+
+
+def _clean_excel_str(val):
+    """Clean string from Excel cell, stripping trailing float decimals (e.g., 9876543210.0 -> 9876543210)."""
+    if val is None:
+        return ""
+    if isinstance(val, float) and val.is_integer():
+        return str(int(val))
+    return str(val).strip()
+
+
 @institution_login_required
 def import_students_excel(request):
     # 🔐 ROLE CHECK
@@ -1940,6 +1981,12 @@ def import_students_excel(request):
             if not any([roll_no, reg_no, name, dob, phone, semester]):
                 continue
 
+            roll_no = _clean_excel_str(roll_no).upper()
+            reg_no = _clean_excel_str(reg_no)
+            name = _clean_excel_str(name).upper()
+            phone = _clean_excel_str(phone)
+            dob = _parse_excel_dob(dob)
+
             if not roll_no or not reg_no or not name:
                 skipped += 1
                 skipped_students.append(
@@ -1947,15 +1994,12 @@ def import_students_excel(request):
                 )
                 continue
 
-            roll_no = str(roll_no).strip().upper()
-            reg_no = str(reg_no).strip()
-            name = str(name).strip().upper()
-            phone = str(phone).strip()
-
-            if isinstance(dob, (datetime, date)):
-                dob = dob.strftime("%Y-%m-%d")
-            else:
-                dob = str(dob).strip()
+            if not dob:
+                skipped += 1
+                skipped_students.append(
+                    f"{name} (Row {idx} – Missing Date of Birth)"
+                )
+                continue
 
             try:
                 semester_int = int(semester)
@@ -2045,7 +2089,14 @@ def import_students_excel(request):
 
     except Exception as e:
         logger.exception("Excel import failed")
-        messages.error(request, f"Excel import failed ❌ {str(e)}")
+        from pymongo.errors import PyMongoError, ServerSelectionTimeoutError, AutoReconnect
+        if isinstance(e, (PyMongoError, ServerSelectionTimeoutError, AutoReconnect)):
+            messages.error(
+                request,
+                "Excel import failed ❌ Database connection error. Please verify your MongoDB connection and MONGO_URI in .env."
+            )
+        else:
+            messages.error(request, f"Excel import failed ❌ {str(e)}")
 
     return redirect(f"/faculty/?branch={branch}&year={year}")
 

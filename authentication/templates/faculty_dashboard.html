@@ -243,17 +243,16 @@
           
 
       <button type="button"
-        onclick="openEditModal(
-          '{{ s.id }}',
-          '{{ s.roll_no }}',
-          '{{ s.reg_no }}',
-          '{{ s.name }}',
-          '{{ s.dob }}',
-          '{{ s.phone }}',
-          '{{ s.semester }}',
-          '{{ s.year }}',
-          '{{ s.student_type|default:"Hosteller" }}'
-        )"
+        data-id="{{ s.id }}"
+        data-roll="{{ s.roll_no }}"
+        data-reg="{{ s.reg_no }}"
+        data-name="{{ s.name }}"
+        data-dob="{{ s.dob }}"
+        data-phone="{{ s.phone }}"
+        data-sem="{{ s.semester }}"
+        data-year="{{ s.year }}"
+        data-type="{{ s.student_type }}"
+        onclick="handleEditBtnClick(this)"
         class="text-blue-600 font-semibold">
         Edit
       </button>
@@ -669,6 +668,11 @@ function submitAddForm(btn) {
 }
 
 // ── Edit Modal ───────────────────────────────
+function handleEditBtnClick(btn) {
+  const d = btn.dataset;
+  openEditModal(d.id, d.roll, d.reg, d.name, d.dob, d.phone, d.sem, d.year, d.type);
+}
+
 function openEditModal(id, r, rg, n, d, p, sem, y, stype) {
   edit_id.value    = id;
   edit_roll.value  = r;

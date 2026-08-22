@@ -582,3 +582,56 @@ class WebSocketAndRealTimeTests(TestCase):
             self.assertEqual(data["students"][0]["student_id"], str(fake_id))
             self.assertEqual(data["students"][0]["reg_no"], "830123104001")
 
+    def test_excel_dob_parser(self):
+        """Test _parse_excel_dob parses multiple date formats into YYYY-MM-DD."""
+        from authentication.views import _parse_excel_dob
+        from datetime import date, datetime
+
+        # Date / datetime objects
+        self.assertEqual(_parse_excel_dob(date(2003, 5, 15)), "2003-05-15")
+        self.assertEqual(_parse_excel_dob(datetime(2003, 5, 15, 10, 30)), "2003-05-15")
+
+        # Standard strings
+        self.assertEqual(_parse_excel_dob("2003-05-15"), "2003-05-15")
+        self.assertEqual(_parse_excel_dob("15-05-2003"), "2003-05-15")
+        self.assertEqual(_parse_excel_dob("15/05/2003"), "2003-05-15")
+        self.assertEqual(_parse_excel_dob("2003/05/15"), "2003-05-15")
+
+        # Empty / None
+        self.assertEqual(_parse_excel_dob(None), "")
+        self.assertEqual(_parse_excel_dob(""), "")
+
+    def test_import_students_excel_mongo_error_handling(self):
+        """Test import_students_excel gracefully handles database connection exceptions."""
+        from pymongo.errors import AutoReconnect
+        import io
+        from openpyxl import Workbook
+
+        # Create minimal in-memory Excel workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Roll No", "Register No", "Name", "DOB", "Phone", "Semester"])
+        ws.append(["23CS01", "830123104001", "JOHN DOE", "2003-05-15", "9876543210", 3])
+        excel_file = io.BytesIO()
+        wb.save(excel_file)
+        excel_file.seek(0)
+        excel_file.name = "test_students.xlsx"
+
+        session = self.client.session
+        session["role"] = "FACULTY"
+        session.save()
+
+        with patch("authentication.views.students_col.find", side_effect=AutoReconnect("SSL handshake failed")):
+            response = self.client.post(
+                reverse("import_students_excel"),
+                {
+                    "excel": excel_file,
+                    "branch": "CSE",
+                    "year": "2",
+                }
+            )
+            # Should redirect back to faculty dashboard
+            self.assertEqual(response.status_code, 302)
+            self.assertIn("/faculty/?branch=CSE&year=2", response.url)
+
+

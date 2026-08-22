@@ -31,7 +31,7 @@ def reset_expired_no_dues(no_due_col=None):
     Kept for backward compatibility with existing view imports.
 
     Now a thin, cheap wrapper: it only clears elapsed 24h cooldowns (one bulk
-    update). Expiring stale PENDING requests and deleting orphaned receipts is
-    handled asynchronously by the maintenance scheduler.
+    update). Throttled to max once per 30s per worker on request paths to
+    prevent database round-trip overhead on rapid page loads.
     """
-    fast_cooldown_reset()
+    fast_cooldown_reset(throttle_seconds=30)
