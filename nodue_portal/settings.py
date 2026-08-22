@@ -42,22 +42,22 @@ ALLOWED_HOSTS = ["*"]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://gces-no-due-clearance-portal.onrender.com",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://127.0.0.1",
+    "http://localhost",
 ]
 
-# ================= COOKIE SECURITY =================
-# Secure cookies only over HTTPS (production). Disabled on localhost (HTTP).
-SESSION_COOKIE_SECURE = not DEBUG   # True in prod, False in local dev
-CSRF_COOKIE_SECURE    = not DEBUG   # True in prod, False in local dev
+# ================= HTTPS & COOKIE SECURITY =================
+ENABLE_HTTPS = os.environ.get("ENABLE_HTTPS", "False") == "True"
 
-# Behind a TLS-terminating reverse proxy (nginx), trust its forwarded-proto
-# header so Django knows the original request was HTTPS. (Correct setting name
-# is SECURE_PROXY_SSL_HEADER; the header spelling must match nginx's config.)
+# Secure cookies only over HTTPS when ENABLE_HTTPS=True. Disabled on plain HTTP (localhost).
+SESSION_COOKIE_SECURE = ENABLE_HTTPS and not DEBUG
+CSRF_COOKIE_SECURE    = ENABLE_HTTPS and not DEBUG
+
+# Behind a TLS-terminating reverse proxy (nginx/Render), trust its forwarded-proto header.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# ================= HTTPS HARDENING (production, behind TLS) =================
-# Enable only once TLS is actually terminating in front of the app, otherwise
-# SSL redirect + secure cookies will lock you out over plain HTTP.
-ENABLE_HTTPS = os.environ.get("ENABLE_HTTPS", "False") == "True"
 if ENABLE_HTTPS and not DEBUG:
     SECURE_SSL_REDIRECT = True
     SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", 31536000))  # 1 year
@@ -72,12 +72,14 @@ SESSION_COOKIE_HTTPONLY    = True          # JS cannot read the session cookie
 
 # ================= APPS =================
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "channels",
     "authentication",
 ]
 
@@ -99,10 +101,42 @@ MIDDLEWARE = [
     "authentication.middleware.ExceptionHandlingMiddleware",
 ]
 
-# ================= URL / WSGI =================
+# ================= URL / WSGI / ASGI =================
 ROOT_URLCONF = "nodue_portal.urls"
 
 WSGI_APPLICATION = "nodue_portal.wsgi.application"
+ASGI_APPLICATION = "nodue_portal.asgi.application"
+
+# ================= CHANNEL LAYERS (real-time WebSockets) =================
+# The channel layer is the message bus that carries real-time events from the
+# HTTP worker that processed an action (e.g. an office approval) to the worker
+# that holds the target user's WebSocket. With MORE THAN ONE worker process it
+# MUST be a shared broker (Redis) — the in-memory layer is per-process, so a
+# broadcast on worker B would never reach a socket on worker A. That is the
+# classic "DB updates but the UI never changes" failure.
+REDIS_URL = os.environ.get("REDIS_URL") or os.environ.get("REDIS_TLS_URL")
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+                # Distinct prefix so multiple apps can share one Redis safely.
+                "prefix": os.environ.get("CHANNELS_REDIS_PREFIX", "gces_nodue"),
+                "capacity": int(os.environ.get("CHANNELS_CAPACITY", 1500)),
+                "expiry": int(os.environ.get("CHANNELS_EXPIRY", 20)),
+            },
+        },
+    }
+else:
+    # Fallback for single-process local development only. NOT safe for a
+    # multi-worker deployment (see note above). apps.ready() logs a loud
+    # warning if this is selected outside DEBUG.
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer"
+        }
+    }
 
 # ================= TEMPLATES =================
 TEMPLATES = [

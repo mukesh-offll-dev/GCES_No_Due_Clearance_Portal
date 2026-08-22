@@ -794,6 +794,27 @@
 
   // Initialize UI components on load
   updateFullPromotionUI();
+
+  // ── Real-Time Live Updates via WebSocket ──
+  document.addEventListener("DOMContentLoaded", function() {
+    if (window.PortalWS) {
+      PortalWS.on('no_due_access_toggled', function() {
+        PortalWS.softReloadMain();
+      });
+      PortalWS.on('promotion_completed', function() {
+        PortalWS.softReloadMain();
+      });
+      PortalWS.on('cohort_promoted', function() {
+        PortalWS.softReloadMain();
+      });
+      PortalWS.on('student_roster_updated', function() {
+        PortalWS.softReloadMain();
+      });
+      PortalWS.onSync(function() {
+        PortalWS.softReloadMain();
+      });
+    }
+  });
 </script>
 
 {% endblock %}

@@ -11,9 +11,10 @@ from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 from django.conf import settings
 from .utils import save_receipt , reset_expired_no_dues
+from .events import notify_student, notify_all_students, notify_office, notify_faculty, notify_all_offices
 import re
 import cloudinary.uploader
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from openpyxl import Workbook ,load_workbook
 
 logger = logging.getLogger("nodue")
@@ -242,6 +243,7 @@ def check_no_due_access_status():
     enabled = settings_doc.get("no_due_access_enabled", False)
     if enabled:
         auto_disable_at = settings_doc.get("auto_disable_at")
+        disabled_now = False
         if auto_disable_at:
             if auto_disable_at.tzinfo is None:
                 auto_disable_at = auto_disable_at.replace(tzinfo=timezone.utc)
@@ -250,12 +252,26 @@ def check_no_due_access_status():
                     {"_id": "global_config"},
                     {"$set": {"no_due_access_enabled": False}}
                 )
-                return False
+                disabled_now = True
         else:
             portal_settings.update_one(
                 {"_id": "global_config"},
                 {"$set": {"no_due_access_enabled": False}}
             )
+            disabled_now = True
+
+        if disabled_now:
+            try:
+                notify_all_students("no_due_access_toggled", {
+                    "enabled": False,
+                    "auto_disable_str": "",
+                })
+                notify_faculty("no_due_access_toggled", {
+                    "enabled": False,
+                    "auto_disable_str": "",
+                })
+            except Exception as be:
+                logger.warning("[WS] Failed to broadcast auto-disable: %s", be)
             return False
     return enabled
 
@@ -453,19 +469,26 @@ def send_hostel_request(request):
         return redirect("index")
 
     if not check_no_due_access_status():
-        messages.error(request, "No Due process is currently locked. Please contact your Faculty.")
+        err = "No Due process is currently locked. Please contact your Faculty."
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+            return JsonResponse({"success": False, "error": err}, status=400)
+        messages.error(request, err)
         return redirect("student_dashboard")
 
     if request.method == "POST":
         student_id_raw = request.session.get("student_id")
         if not student_id_raw:
             request.session.flush()
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"success": False, "error": "Unauthenticated"}, status=401)
             return redirect("index")
 
         try:
             student_id = ObjectId(student_id_raw)
         except (InvalidId, TypeError):
             request.session.flush()
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"success": False, "error": "Invalid session"}, status=401)
             return redirect("index")
 
         reset_expired_no_dues(no_due_col)
@@ -481,11 +504,17 @@ def send_hostel_request(request):
                 if cooldown_expiry.tzinfo is None:
                     cooldown_expiry = cooldown_expiry.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) < cooldown_expiry and existing_req.get("attempts_used", 0) >= 2:
-                    messages.error(request, "Request limit reached for Hostel Office. Cooldown active.")
+                    err = "Request limit reached for Hostel Office. Cooldown active."
+                    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+                        return JsonResponse({"success": False, "error": err}, status=400)
+                    messages.error(request, err)
                     return redirect("student_dashboard")
 
             if existing_req.get("attempts_used", 0) >= 2 and existing_req.get("status") == "REJECTED":
-                messages.error(request, "Maximum request limit (2 attempts) reached for Hostel Office.")
+                err = "Maximum request limit (2 attempts) reached for Hostel Office."
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+                    return JsonResponse({"success": False, "error": err}, status=400)
+                messages.error(request, err)
                 return redirect("student_dashboard")
 
         student = students_col.find_one({"_id": student_id})
@@ -507,7 +536,10 @@ def send_hostel_request(request):
                 except Exception as exc:
                     logger.error("Cloudinary upload failed for student %s: %s",
                                  student_id, exc)
-                    messages.error(request, "Receipt upload failed. Please try again.")
+                    err = "Receipt upload failed. Please try again."
+                    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+                        return JsonResponse({"success": False, "error": err}, status=400)
+                    messages.error(request, err)
                     return redirect("student_dashboard")
         else:
             receipt_url = None
@@ -537,6 +569,35 @@ def send_hostel_request(request):
             no_due_col.update_one(hostel_filter, {"$set": set_data})
         audit_logger.info("NO_DUE_REQUEST office=HOSTEL student=%s attempt=%d",
                           student_id, new_attempts)
+
+        # 🚀 Broadcast real-time update to student and hostel dashboard
+        try:
+            notify_student(student_id, "request_status_updated", {
+                "office": "HOSTEL",
+                "status": "PENDING",
+                "attempts_used": new_attempts,
+                "attempts_remaining": max(0, 2 - new_attempts),
+                "last_payment_id": set_data.get("last_payment_id"),
+                "receipt_url": set_data.get("receipt_url"),
+            })
+            notify_office("HOSTEL", "new_request_submitted", {
+                "student_id": str(student_id),
+                "reg_no": student.get("reg_no") if student else "",
+                "name": student.get("name") if student else "",
+                "branch": student.get("branch") if student else "",
+                "year": student.get("year") if student else 1,
+                "semester": student.get("semester") if student else 1,
+                "is_75_scheme": is_75,
+                "last_payment_id": set_data.get("last_payment_id"),
+                "receipt_url": set_data.get("receipt_url"),
+                "attempts_used": new_attempts,
+                "created_at": datetime.now().strftime("%d-%m-%Y %I:%M %p"),
+            })
+        except Exception as be:
+            logger.warning("[WS] Failed to broadcast hostel request: %s", be)
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+            return JsonResponse({"success": True, "status": "PENDING", "attempts_used": new_attempts})
 
     return redirect("student_dashboard")
 
@@ -642,6 +703,12 @@ def bulk_approve(request):
 
     approved = 0
     if object_ids:
+        # Pre-fetch requests to know which students are being approved
+        pending_to_approve = list(no_due_col.find(
+            {"_id": {"$in": object_ids}, "office": role, "status": "PENDING"},
+            {"student_id": 1, "office": 1}
+        ))
+
         # Scope by office==role AND status==PENDING so:
         #   • one office cannot approve another office's request,
         #   • already-approved/rejected requests are never re-processed
@@ -653,6 +720,31 @@ def bulk_approve(request):
         approved = result.modified_count
         audit_logger.info("APPROVE role=%s requested=%d approved=%d",
                           role, len(object_ids), approved)
+
+        # 🚀 Broadcast real-time approval to each student individually
+        student_statuses = {}
+        for r in pending_to_approve:
+            sid = r.get("student_id")
+            sid_str = str(sid)
+            student_statuses[sid_str] = "Completed"
+            try:
+                notify_student(sid, "request_status_updated", {
+                    "office": role,
+                    "status": "APPROVED",
+                    "updated_at": datetime.now().isoformat(),
+                })
+            except Exception as be:
+                logger.warning("[WS] Failed to broadcast APPROVED to student %s: %s", sid_str, be)
+        try:
+            notify_office(role, "requests_processed", {
+                "processed_ids": [str(i) for i in object_ids],
+                "student_ids": list(student_statuses.keys()),
+                "student_statuses": student_statuses,
+                "action": "APPROVED",
+                "count": approved,
+            })
+        except Exception as be:
+            logger.warning("[WS] Failed to broadcast approval to office %s: %s", role, be)
 
     return _safe_referer(request, role)
 
@@ -694,6 +786,7 @@ def reject_request(request):
         now_utc = datetime.now(timezone.utc)
         now_naive = datetime.now()
 
+        student_statuses = {}
         for req in requests_to_reject:
             if req.get("office") == "HOSTEL":
                 public_id = req.get("cloudinary_public_id")
@@ -731,7 +824,36 @@ def reject_request(request):
                 {"$set": update_payload}
             )
 
+            sid_str = str(req.get("student_id"))
+            student_statuses[sid_str] = "Incomplete"
+
+            # 🚀 Broadcast real-time rejection to student
+            try:
+                notify_student(req.get("student_id"), "request_status_updated", {
+                    "office": role,
+                    "status": "REJECTED",
+                    "reject_reason": reason,
+                    "attempts_used": attempts_used,
+                    "attempts_remaining": max(0, 2 - attempts_used),
+                    "is_cooldown_active": (attempts_used >= 2),
+                    "cooldown_expiry_iso": update_payload.get("cooldown_expiry", "").isoformat() if update_payload.get("cooldown_expiry") else "",
+                })
+            except Exception as be:
+                logger.warning("[WS] Failed to broadcast REJECTED to student %s: %s", req.get("student_id"), be)
+
         audit_logger.info("REJECT role=%s count=%d", role, len(requests_to_reject))
+
+        # 🚀 Broadcast processed removal to office dashboard
+        try:
+            notify_office(role, "requests_processed", {
+                "processed_ids": [str(r["_id"]) for r in requests_to_reject],
+                "student_ids": [str(r.get("student_id")) for r in requests_to_reject],
+                "student_statuses": student_statuses,
+                "action": "REJECTED",
+                "count": len(requests_to_reject),
+            })
+        except Exception as be:
+            logger.warning("[WS] Failed to broadcast rejection to office %s: %s", role, be)
 
     return _safe_referer(request, role)
 
@@ -815,7 +937,10 @@ def send_no_due_request(request):
         return redirect("index")
 
     if not check_no_due_access_status():
-        messages.error(request, "No Due process is currently locked. Please contact your Faculty.")
+        err = "No Due process is currently locked. Please contact your Faculty."
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+            return JsonResponse({"success": False, "error": err}, status=400)
+        messages.error(request, err)
         return redirect("student_dashboard")
 
     if request.method == "POST":
@@ -823,12 +948,16 @@ def send_no_due_request(request):
         student_id_raw = request.session.get("student_id")
         if not student_id_raw:
             request.session.flush()
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"success": False, "error": "Unauthenticated"}, status=401)
             return redirect("index")
 
         try:
             student_id = ObjectId(student_id_raw)
         except (InvalidId, TypeError):
             request.session.flush()
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"success": False, "error": "Invalid session"}, status=401)
             return redirect("index")
 
         reset_expired_no_dues(no_due_col)
@@ -844,11 +973,17 @@ def send_no_due_request(request):
                 if cooldown_expiry.tzinfo is None:
                     cooldown_expiry = cooldown_expiry.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) < cooldown_expiry and existing_req.get("attempts_used", 0) >= 2:
-                    messages.error(request, f"Request limit reached for {office.title() if office else ''} Office. Cooldown active.")
+                    err = f"Request limit reached for {office.title() if office else ''} Office. Cooldown active."
+                    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+                        return JsonResponse({"success": False, "error": err}, status=400)
+                    messages.error(request, err)
                     return redirect("student_dashboard")
 
             if existing_req.get("attempts_used", 0) >= 2 and existing_req.get("status") == "REJECTED":
-                messages.error(request, f"Maximum request limit (2 attempts) reached for {office.title() if office else ''} Office.")
+                err = f"Maximum request limit (2 attempts) reached for {office.title() if office else ''} Office."
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+                    return JsonResponse({"success": False, "error": err}, status=400)
+                messages.error(request, err)
                 return redirect("student_dashboard")
 
         current_attempts = existing_req.get("attempts_used", 0) if existing_req else 0
@@ -878,6 +1013,32 @@ def send_no_due_request(request):
         audit_logger.info("NO_DUE_REQUEST office=%s student=%s attempt=%d",
                           office, student_id, new_attempts)
 
+        # 🚀 Broadcast real-time event to student and office dashboard
+        try:
+            student = students_col.find_one({"_id": student_id})
+            notify_student(student_id, "request_status_updated", {
+                "office": office,
+                "status": "PENDING",
+                "attempts_used": new_attempts,
+                "attempts_remaining": max(0, 2 - new_attempts),
+            })
+            notify_office(office, "new_request_submitted", {
+                "student_id": str(student_id),
+                "reg_no": student.get("reg_no") if student else "",
+                "name": student.get("name") if student else "",
+                "branch": student.get("branch") if student else "",
+                "year": student.get("year") if student else 1,
+                "semester": student.get("semester") if student else 1,
+                "is_75_scheme": student.get("is_75_scheme", False) if student else False,
+                "attempts_used": new_attempts,
+                "created_at": datetime.now().strftime("%d-%m-%Y %I:%M %p"),
+            }, department=student.get("branch") if office == "DEPARTMENT" and student else None)
+        except Exception as be:
+            logger.warning("[WS] Failed to broadcast send_no_due_request: %s", be)
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+            return JsonResponse({"success": True, "status": "PENDING", "attempts_used": new_attempts})
+
     return redirect("student_dashboard")
 
 
@@ -887,7 +1048,10 @@ def retry_request(request):
         return redirect("index")
 
     if not check_no_due_access_status():
-        messages.error(request, "No Due process is currently locked. Please contact your Faculty.")
+        err = "No Due process is currently locked. Please contact your Faculty."
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+            return JsonResponse({"success": False, "error": err}, status=400)
+        messages.error(request, err)
         return redirect("student_dashboard")
 
     if request.method == "POST":
@@ -895,12 +1059,16 @@ def retry_request(request):
         student_id_raw = request.session.get("student_id")
         if not student_id_raw:
             request.session.flush()
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"success": False, "error": "Unauthenticated"}, status=401)
             return redirect("index")
 
         try:
             student_id = ObjectId(student_id_raw)
         except (InvalidId, TypeError):
             request.session.flush()
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return JsonResponse({"success": False, "error": "Invalid session"}, status=401)
             return redirect("index")
 
         reset_expired_no_dues(no_due_col)
@@ -917,11 +1085,17 @@ def retry_request(request):
                 if cooldown_expiry.tzinfo is None:
                     cooldown_expiry = cooldown_expiry.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) < cooldown_expiry and existing_req.get("attempts_used", 0) >= 2:
-                    messages.error(request, f"Request limit reached for {office.title() if office else ''} Office. Cooldown active.")
+                    err = f"Request limit reached for {office.title() if office else ''} Office. Cooldown active."
+                    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+                        return JsonResponse({"success": False, "error": err}, status=400)
+                    messages.error(request, err)
                     return redirect("student_dashboard")
 
             if existing_req.get("attempts_used", 0) >= 2:
-                messages.error(request, f"Maximum request limit (2 attempts) reached for {office.title() if office else ''} Office.")
+                err = f"Maximum request limit (2 attempts) reached for {office.title() if office else ''} Office."
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+                    return JsonResponse({"success": False, "error": err}, status=400)
+                messages.error(request, err)
                 return redirect("student_dashboard")
 
             no_due_col.update_one(
@@ -939,6 +1113,21 @@ def retry_request(request):
                     }
                 }
             )
+
+            # 🚀 Broadcast real-time update to student
+            try:
+                attempts_used = existing_req.get("attempts_used", 1)
+                notify_student(student_id, "request_status_updated", {
+                    "office": office,
+                    "status": "NOT_SENT",
+                    "attempts_used": attempts_used,
+                    "attempts_remaining": max(0, 2 - attempts_used),
+                })
+            except Exception as be:
+                logger.warning("[WS] Failed to broadcast retry_request: %s", be)
+
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json":
+                return JsonResponse({"success": True, "status": "NOT_SENT", "attempts_used": attempts_used})
 
     return redirect("student_dashboard")
 
@@ -1069,6 +1258,15 @@ def update_75_scheme(request):
                 if selected_ids:
                     students_col.update_many({"_id": {"$in": selected_ids}}, {"$set": {"is_75_scheme": True}})
                 messages.success(request, "7.5 Scheme student status updated successfully.")
+
+                # 🚀 Broadcast 7.5 Scheme updates
+                try:
+                    for sid in selected_ids:
+                        notify_student(sid, "scheme_75_updated", {"is_75_scheme": True})
+                    notify_faculty("scheme_75_updated", {"branch": branch, "year": year})
+                    notify_office("HOSTEL", "scheme_75_updated", {"branch": branch, "year": year})
+                except Exception as be:
+                    logger.warning("[WS] Failed to broadcast 7.5 scheme update: %s", be)
             except Exception as exc:
                 logger.error("Failed to update 7.5 scheme status: %s", exc)
                 messages.error(request, "Failed to update 7.5 scheme status.")
@@ -1155,7 +1353,7 @@ def add_student(request):
             student_type = "Hosteller"
 
         try:
-            students_col.insert_one({
+            inserted_student = students_col.insert_one({
                 "roll_no": roll_no,
                 "reg_no": reg_no,
                 "name": name,
@@ -1167,6 +1365,11 @@ def add_student(request):
                 "student_type": student_type
             })
             request.session["add_success"] = "Student added successfully"
+            try:
+                notify_faculty("student_roster_updated", {"branch": branch, "year": year})
+                notify_all_offices("student_roster_updated", {"branch": branch, "year": year})
+            except Exception:
+                pass
         except Exception as exc:
             logger.error("Failed to insert student: %s", exc)
             request.session["add_error"] = "Failed to add student. Please try again."
@@ -1197,6 +1400,11 @@ def delete_students(request):
                 no_due_col.delete_many({
                     "student_id": {"$in": valid_object_ids}
                 })
+                try:
+                    notify_faculty("student_roster_updated", {})
+                    notify_all_offices("student_roster_updated", {})
+                except Exception:
+                    pass
             except Exception as exc:
                 logger.error("Failed to delete students: %s", exc)
 
@@ -1241,6 +1449,17 @@ def edit_student(request):
                     "student_type": student_type
                 }}
             )
+            try:
+                notify_student(student_id, "student_profile_updated", {
+                    "roll_no": request.POST.get("roll_no", "").strip().upper(),
+                    "name": request.POST.get("name", "").strip().upper(),
+                    "year": year_val,
+                    "semester": sem_val,
+                    "student_type": student_type,
+                })
+                notify_faculty("student_roster_updated", {"branch": branch, "year": year})
+            except Exception:
+                pass
         except (InvalidId, Exception) as exc:
             logger.warning("Failed to edit student %s: %s", student_id, exc)
 
@@ -1383,6 +1602,19 @@ def toggle_no_due_access(request):
             auto_disable_at_kolkata = auto_disable_at.astimezone(tz_kolkata)
             exp_str = auto_disable_at_kolkata.strftime("%d-%m-%Y %I:%M %p")
             messages.success(request, f"No Due Access has been successfully Enabled globally until {exp_str}.")
+
+            # 🚀 Broadcast live enable event to all connected students and faculty
+            try:
+                notify_all_students("no_due_access_toggled", {
+                    "enabled": True,
+                    "auto_disable_str": exp_str,
+                })
+                notify_faculty("no_due_access_toggled", {
+                    "enabled": True,
+                    "auto_disable_str": exp_str,
+                })
+            except Exception as be:
+                logger.warning("[WS] Failed to broadcast no_due_access enable: %s", be)
         else:
             portal_settings.update_one(
                 {"_id": "global_config"},
@@ -1390,6 +1622,19 @@ def toggle_no_due_access(request):
                 upsert=True
             )
             messages.success(request, "No Due Access has been successfully Disabled globally.")
+
+            # 🚀 Broadcast live disable event to all connected students and faculty
+            try:
+                notify_all_students("no_due_access_toggled", {
+                    "enabled": False,
+                    "auto_disable_str": "",
+                })
+                notify_faculty("no_due_access_toggled", {
+                    "enabled": False,
+                    "auto_disable_str": "",
+                })
+            except Exception as be:
+                logger.warning("[WS] Failed to broadcast no_due_access disable: %s", be)
 
     return redirect("faculty_promotion")
 
@@ -1418,69 +1663,22 @@ def promote_students(request):
         )
         if not lock_acquired:
             audit_logger.warning("PROMOTION blocked: another run in progress")
-            messages.error(request, "A promotion is already in progress. Please wait.")
+            messages.error(request, "A promotion operation is already in progress. Please wait.")
             return redirect("faculty_promotion")
 
         try:
-            # Get counts of all semesters in the system
-            counts = {}
-            for sem in range(1, 9):
-                counts[sem] = students_col.count_documents({"semester": sem})
+            from_sem_raw = request.POST.get("from_semester")
+            from_sem = int(from_sem_raw) if from_sem_raw and from_sem_raw.isdigit() else None
 
-            from_sem_raw = request.POST.get("from_sem")
-            from_sem = None
-            if from_sem_raw and from_sem_raw.strip():
-                try:
-                    from_sem = int(from_sem_raw)
-                except (ValueError, TypeError):
-                    from_sem = None
-
-            # Determine if Semester-Wise or Full Promotion
             if from_sem is not None:
-                # ================= SEMESTER-WISE PROMOTION =================
-                if from_sem < 1 or from_sem > 7:
-                    messages.error(request, "Invalid semester selected.")
+                if not (1 <= from_sem <= 7):
+                    messages.error(request, "Semester must be between 1 and 7.")
                     return redirect("faculty_promotion")
-
-                # If even semester promoting to odd (Year transition), check Sem 8 students
-                if from_sem in (2, 4, 6):
-                    if counts[8] > 0:
-                        messages.error(request, "Please remove Semester 8 students before promoting students to the next academic year.")
-                        return redirect("faculty_promotion")
-
-                # Target semester validation
-                target_sem = from_sem + 1
-                if counts[target_sem] > 0:
-                    messages.error(request, f"Promotion blocked. Semester {target_sem} already contains students. Promoting Semester {from_sem} students would merge two different batches.")
-                    return redirect("faculty_promotion")
-
                 students = list(students_col.find({"semester": from_sem}))
                 if not students:
                     messages.warning(request, f"No students in Semester {from_sem} found for promotion.")
                     return redirect("faculty_promotion")
             else:
-                # ================= FULL PROMOTION =================
-                # Check if Semester 8 students exist
-                if counts[8] > 0:
-                    messages.error(request, "Please remove Semester 8 students before promoting students to the next academic year.")
-                    return redirect("faculty_promotion")
-
-                # Target semester validation via descending order simulation
-                sim_counts = dict(counts)
-                for s in range(7, 0, -1):
-                    student_count = sim_counts[s]
-                    if student_count > 0:
-                        t_sem = s + 1
-                        t_count = sim_counts[t_sem]
-                        if t_count > 0:
-                            messages.error(request, f"Promotion blocked. Semester {t_sem} already contains students. Promoting Semester {s} students would merge two different batches.")
-                            return redirect("faculty_promotion")
-                        else:
-                            # Move in simulation
-                            sim_counts[t_sem] = student_count
-                            sim_counts[s] = 0
-
-                # Query all students in Semesters 1 to 7
                 students = list(students_col.find({"semester": {"$in": [1, 2, 3, 4, 5, 6, 7]}}))
                 if not students:
                     messages.warning(request, "No students in Semesters 1 to 7 found for promotion.")
@@ -1564,9 +1762,29 @@ def promote_students(request):
                 })
                 promoted_count += 1
 
+                # 🚀 Broadcast real-time promotion to the specific student
+                try:
+                    notify_student(student_id, "student_promoted", {
+                        "new_semester": next_sem,
+                        "new_year": new_year,
+                        "status": "NOT_SENT",
+                        "attempts_used": 0,
+                        "attempts_remaining": 2,
+                    })
+                except Exception as be:
+                    logger.warning("[WS] Failed to broadcast promotion to student %s: %s", student_id, be)
+
             audit_logger.info("PROMOTION completed: from_sem=%s promoted=%d",
                               from_sem if from_sem is not None else "ALL", promoted_count)
             messages.success(request, f"Successfully promoted {promoted_count} students to the next semester!")
+
+            # 🚀 Broadcast promotion completion to faculty and all offices
+            try:
+                notify_faculty("promotion_completed", {"promoted_count": promoted_count})
+                notify_all_offices("cohort_promoted", {"promoted_count": promoted_count})
+            except Exception as be:
+                logger.warning("[WS] Failed to broadcast promotion completion: %s", be)
+
         except Exception as exc:
             # Lock is still released by `finally`; surface a safe error.
             logger.exception("Promotion failed")
@@ -1605,6 +1823,12 @@ def remove_sem8_students(request):
         promotion_logs.delete_many({"student_id": {"$in": student_ids}})
 
         messages.success(request, f"Successfully removed {len(students)} Semester 8 students from the system.")
+
+        try:
+            notify_faculty("student_roster_updated", {})
+            notify_all_offices("student_roster_updated", {})
+        except Exception as be:
+            logger.warning("[WS] Failed to broadcast sem8 removal: %s", be)
 
     return redirect("faculty_promotion")
 
@@ -1809,6 +2033,13 @@ def import_students_excel(request):
                 request,
                 "Skipped Students:\n" + "\n".join(skipped_students)
             )
+        if inserted > 0:
+            try:
+                notify_faculty("student_roster_updated", {"branch": branch, "year": year})
+                notify_all_offices("student_roster_updated", {"branch": branch, "year": year})
+            except Exception as be:
+                logger.warning("[WS] Failed to broadcast import: %s", be)
+
         logger.info("Excel import branch=%s year=%s added=%d skipped=%d",
                     branch, year, inserted, skipped)
 
@@ -1985,6 +2216,7 @@ def office_student_status_api(request):
                 completed_time_str = "-"
                 
             students_list.append({
+                "student_id": str(s.get("_id", "")),
                 "reg_no": s.get("reg_no"),
                 "name": s.get("name"),
                 "branch": s.get("branch"),

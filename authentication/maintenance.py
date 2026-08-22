@@ -26,7 +26,7 @@ from .mongo import no_due_col, portal_settings
 logger = logging.getLogger("nodue.maintenance")
 
 # How stale a PENDING request may get before it reverts to NOT_SENT.
-PENDING_TTL = timedelta(minutes=3)
+PENDING_TTL = timedelta(days=1)
 # Cloudinary deletes are batched per cycle to bound runtime.
 MAX_CLOUDINARY_DELETES_PER_CYCLE = 200
 
@@ -40,7 +40,8 @@ def fast_cooldown_reset():
     now_utc = datetime.now(timezone.utc)
     now_naive = datetime.now()
     try:
-        no_due_col.update_many(
+        # Find expiring cooldowns to broadcast live unlock to students
+        expired_docs = list(no_due_col.find(
             {
                 "cooldown_expiry": {"$exists": True, "$ne": None},
                 "$or": [
@@ -48,18 +49,90 @@ def fast_cooldown_reset():
                     {"cooldown_expiry": {"$lte": now_naive}},
                 ],
             },
-            {
-                "$set": {
-                    "attempts_used": 0,
-                    "status": "NOT_SENT",
-                    "reject_reason": None,
-                    "updated_at": now_naive,
+            {"student_id": 1, "office": 1}
+        ))
+
+        if expired_docs:
+            no_due_col.update_many(
+                {
+                    "cooldown_expiry": {"$exists": True, "$ne": None},
+                    "$or": [
+                        {"cooldown_expiry": {"$lte": now_utc}},
+                        {"cooldown_expiry": {"$lte": now_naive}},
+                    ],
                 },
-                "$unset": {"cooldown_expiry": "", "second_rejection_at": ""},
-            },
-        )
+                {
+                    "$set": {
+                        "attempts_used": 0,
+                        "status": "NOT_SENT",
+                        "reject_reason": None,
+                        "updated_at": now_naive,
+                    },
+                    "$unset": {"cooldown_expiry": "", "second_rejection_at": ""},
+                },
+            )
+            # Broadcast to affected students
+            try:
+                from .events import notify_student
+                for doc in expired_docs:
+                    sid = doc.get("student_id")
+                    office = doc.get("office")
+                    notify_student(sid, "cooldown_expired", {
+                        "office": office,
+                        "status": "NOT_SENT",
+                        "attempts_used": 0,
+                        "attempts_remaining": 2,
+                    })
+                    notify_student(sid, "request_status_updated", {
+                        "office": office,
+                        "status": "NOT_SENT",
+                        "attempts_used": 0,
+                        "attempts_remaining": 2,
+                        "is_cooldown_active": False,
+                        "cooldown_expiry_iso": "",
+                    })
+            except Exception as e:
+                logger.warning("[WS] Failed to notify students of cooldown expiry: %s", e)
+
     except PyMongoError as exc:
         logger.error("fast_cooldown_reset failed: %s", exc)
+
+
+def _check_auto_disable_access():
+    """
+    Check if scheduled auto-disable time for No Due Access has elapsed.
+    If so, turn off access in MongoDB and broadcast live event to students & faculty.
+    """
+    now_utc = datetime.now(timezone.utc)
+    try:
+        settings_doc = portal_settings.find_one({"_id": "global_config"})
+        if not settings_doc or not settings_doc.get("no_due_access_enabled"):
+            return
+
+        auto_disable_at = settings_doc.get("auto_disable_at")
+        if auto_disable_at:
+            if auto_disable_at.tzinfo is None:
+                auto_disable_at = auto_disable_at.replace(tzinfo=timezone.utc)
+            if now_utc >= auto_disable_at:
+                portal_settings.update_one(
+                    {"_id": "global_config"},
+                    {"$set": {"no_due_access_enabled": False}}
+                )
+                logger.info("Auto-disabled No Due Access via maintenance cycle.")
+                try:
+                    from .events import notify_all_students, notify_faculty
+                    notify_all_students("no_due_access_toggled", {
+                        "enabled": False,
+                        "auto_disable_str": "",
+                    })
+                    notify_faculty("no_due_access_toggled", {
+                        "enabled": False,
+                        "auto_disable_str": "",
+                    })
+                except Exception as be:
+                    logger.warning("[WS] Failed to broadcast auto-disable: %s", be)
+    except PyMongoError as exc:
+        logger.error("_check_auto_disable_access failed: %s", exc)
 
 
 def _delete_cloudinary(public_id):
@@ -86,10 +159,10 @@ def _expire_stale_pending():
     cutoff = now - PENDING_TTL
     reverted = 0
     try:
-        cursor = no_due_col.find(
+        cursor = list(no_due_col.find(
             {"status": "PENDING", "created_at": {"$lte": cutoff}},
-            {"office": 1, "attempts_used": 1, "cloudinary_public_id": 1},
-        ).limit(1000)
+            {"office": 1, "student_id": 1, "attempts_used": 1, "cloudinary_public_id": 1},
+        ).limit(1000))
     except PyMongoError as exc:
         logger.error("_expire_stale_pending query failed: %s", exc)
         return 0
@@ -102,17 +175,34 @@ def _expire_stale_pending():
                 deletes += 1
 
             current = req.get("attempts_used", 1)
+            new_attempts = max(0, current - 1)
             no_due_col.update_one(
                 {"_id": req["_id"], "status": "PENDING"},  # re-check: don't stomp a just-approved req
                 {"$set": {
                     "status": "NOT_SENT",
-                    "attempts_used": max(0, current - 1),
+                    "attempts_used": new_attempts,
                     "receipt_url": None,
                     "cloudinary_public_id": None,
                     "updated_at": now,
                 }},
             )
             reverted += 1
+
+            # Broadcast real-time update to student and office
+            try:
+                from .events import notify_student, notify_office
+                notify_student(req.get("student_id"), "request_status_updated", {
+                    "office": req.get("office"),
+                    "status": "NOT_SENT",
+                    "attempts_used": new_attempts,
+                    "attempts_remaining": max(0, 2 - new_attempts),
+                })
+                notify_office(req.get("office"), "request_expired", {
+                    "request_id": str(req["_id"]),
+                })
+            except Exception as be:
+                logger.warning("[WS] Failed to broadcast pending timeout: %s", be)
+
         except PyMongoError as exc:
             logger.error("Failed to revert pending req %s: %s", req.get("_id"), exc)
     return reverted
@@ -148,6 +238,7 @@ def run_maintenance_cycle(lock_ttl_seconds=50):
 
     try:
         fast_cooldown_reset()
+        _check_auto_disable_access()
         reverted = _expire_stale_pending()
         if reverted:
             logger.info("Maintenance cycle: reverted %d stale PENDING requests", reverted)

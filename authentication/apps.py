@@ -56,3 +56,19 @@ class AuthenticationConfig(AppConfig):
         except Exception as exc:
             logger.error("Scheduler failed to start: %s", exc)
 
+        # Real-time safety check: an in-memory channel layer cannot deliver
+        # WebSocket events across worker processes. In production that silently
+        # breaks live UI updates, so make the misconfiguration impossible to miss.
+        try:
+            from django.conf import settings
+            backend = settings.CHANNEL_LAYERS.get("default", {}).get("BACKEND", "")
+            if not settings.DEBUG and "InMemory" in backend:
+                logger.warning(
+                    "CHANNEL_LAYERS is using the in-memory backend in a non-DEBUG "
+                    "deployment. Real-time WebSocket events will NOT reach clients "
+                    "connected to other worker processes. Set REDIS_URL to enable a "
+                    "shared Redis channel layer."
+                )
+        except Exception:
+            pass
+

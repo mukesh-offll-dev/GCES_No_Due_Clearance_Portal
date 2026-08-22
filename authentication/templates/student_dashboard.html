@@ -22,9 +22,8 @@
   {% endfor %}
 
   <!-- Lock warning banner -->
-  {% if not no_due_access_enabled %}
-  <div
-    class="max-w-xl mx-auto border-2 border-red-200 bg-red-50 rounded-2xl p-5 mb-6 flex flex-col items-center text-center shadow-sm">
+  <div id="access-warning-banner"
+    class="max-w-xl mx-auto border-2 border-red-200 bg-red-50 rounded-2xl p-5 mb-6 flex-col items-center text-center shadow-sm {% if no_due_access_enabled %}hidden{% else %}flex{% endif %}">
     <div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-3">
       <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
         xmlns="http://www.w3.org/2000/svg">
@@ -37,7 +36,6 @@
       No Due process is currently locked. Please contact your Faculty.
     </p>
   </div>
-  {% endif %}
 
   <!-- STUDENT DETAILS -->
   <section
@@ -46,28 +44,30 @@
       <h1 class="text-[#d52b1e] font-extrabold text-2xl">
         Student Details
       </h1>
-      {% if student.is_75_scheme %}
-      <span
-        class="inline-block bg-purple-600 text-white font-bold text-xs sm:text-sm px-4 py-1.5 rounded-full shadow-sm">
-        7.5 Scheme Student
-      </span>
-      {% endif %}
+      <div id="student-75-badge-container">
+        {% if student.is_75_scheme %}
+        <span
+          class="inline-block bg-purple-600 text-white font-bold text-xs sm:text-sm px-4 py-1.5 rounded-full shadow-sm">
+          7.5 Scheme Student
+        </span>
+        {% endif %}
+      </div>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-16 text-gray-900">
 
       <p>
         <span class="font-semibold">Name :</span>
-        <span class="ml-2 tracking-wide">{{ student.name }}</span>
+        <span id="student-name-val" class="ml-2 tracking-wide">{{ student.name }}</span>
       </p>
 
       <p>
         <span class="font-semibold">Year :</span>
-        <span class="ml-2">{{ student.year }}</span>
+        <span id="student-year-val" class="ml-2">{{ student.year }}</span>
       </p>
       <p>
         <span class="font-semibold">Semester :</span>
-        <span class="ml-2">{{ student.semester }}</span>
+        <span id="student-sem-val" class="ml-2">{{ student.semester }}</span>
       </p>
 
       <p>
@@ -131,7 +131,7 @@
     <div class="divide-y-2 divide-[#d52b1e]">
 
       {% for d in dues %}
-      <div class="grid grid-cols-2 items-center px-4 sm:px-8 py-4 sm:py-6">
+      <div id="office-row-{{ d.office }}" data-office="{{ d.office }}" class="grid grid-cols-2 items-center px-4 sm:px-8 py-4 sm:py-6">
 
         <!-- LEFT : OFFICE -->
         <div class="text-lg font-semibold">
@@ -139,7 +139,7 @@
         </div>
 
         <!-- RIGHT : STATUS / BUTTON -->
-        <div class="flex justify-end">
+        <div id="office-status-{{ d.office }}" class="flex justify-end">
 
           {% if d.status == "PENDING" %}
           <span class="text-yellow-600 font-semibold">
@@ -181,14 +181,12 @@
               You have only 1 attempt remaining.
             </p>
             {% if no_due_access_enabled %}
-            <form method="POST" action="{% url 'retry_request' %}" class="mt-2">
-              {% csrf_token %}
-              <input type="hidden" name="office" value="{{ d.office }}">
-              <button
-                class="bg-yellow-500 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-yellow-600">
+            <div class="mt-2">
+              <button onclick="handleRetryClick(this, '{{ d.office }}')"
+                class="bg-yellow-500 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-yellow-600 transition shadow-sm active:scale-95">
                 Try Again
               </button>
-            </form>
+            </div>
             {% else %}
             <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-xs mt-2">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
@@ -237,14 +235,11 @@
     </div>
   </div>
 
-
-  {% if all_approved %}
-  <div class="text-center mt-8">
-    <a href="{% url 'no_due_certificate' %}" class="bg-blue-600 text-white px-6 py-2 rounded-full font-semibold">
+  <div id="cert-download-container" class="text-center mt-8 {% if not all_approved %}hidden{% endif %}">
+    <a href="{% url 'no_due_certificate' %}" class="bg-blue-600 text-white px-6 py-2 rounded-full font-semibold shadow-md hover:bg-blue-700 transition">
       Download No Due Certificate
     </a>
   </div>
-  {% endif %}
 
   <!-- CLEARANCE HISTORY MODAL -->
   <div id="historyModal" class="hidden fixed inset-0 bg-black/60 z-50 overflow-y-auto p-4 flex items-center justify-center">
@@ -397,7 +392,7 @@
       Hostel Verification
     </h2>
 
-    <form method="POST" action="{% url 'send_hostel' %}" enctype="multipart/form-data" onsubmit="return handleHostelSubmit()">
+    <form method="POST" action="{% url 'send_hostel' %}" enctype="multipart/form-data" onsubmit="return handleHostelSubmit(event, this)">
 
       {% csrf_token %}
 
@@ -432,7 +427,7 @@
       Are you sure you want to send the request to the Hostel Office?
     </p>
 
-    <form method="POST" action="{% url 'send_hostel' %}" onsubmit="handleHostel75Submit(this)">
+    <form method="POST" action="{% url 'send_hostel' %}" onsubmit="return handleHostel75Submit(event, this)">
       {% csrf_token %}
       <div class="flex flex-col gap-3">
         <button type="submit" id="hostel75SubmitBtn"
@@ -524,9 +519,17 @@
   let selectedOffice = null;
   let selectedBtn = null;
   let sending = false;
+  let hostelSubmitting = false;
+
+  function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
 
   function openConfirmModal(btn) {
-    selectedBtn = btn;                       // 🔥 store button
+    selectedBtn = btn;
     selectedOffice = btn.dataset.office;
 
     if (selectedOffice === "HOSTEL" && IS_75_SCHEME) {
@@ -547,18 +550,14 @@
     sending = false;
   }
 
-  function handleHostel75Submit(form) {
-    const btn = document.getElementById("hostel75SubmitBtn");
-    if (btn) {
-      btn.disabled = true;
-      btn.querySelector('span').textContent = 'Sending...';
-      btn.querySelector('svg').classList.remove('hidden');
-    }
-  }
-
   function closeConfirmModal() {
     document.getElementById("confirmModal").classList.add("hidden");
     sending = false;
+  }
+
+  function closeHostelModal() {
+    document.getElementById("hostelModal").classList.add("hidden");
+    hostelSubmitting = false;
   }
 
   function confirmRequest() {
@@ -567,8 +566,12 @@
 
     closeConfirmModal();
 
+    const currentOffice = selectedOffice;
+    const currentBtn = selectedBtn;
+
     // ================= HOSTEL =================
-    if (selectedOffice === "HOSTEL") {
+    if (currentOffice === "HOSTEL") {
+      sending = false;
       if (IS_75_SCHEME) {
         openHostel75Modal();
       } else {
@@ -578,109 +581,224 @@
     }
 
     // ================= OTHER OFFICES =================
-    // 🔒 disable original button
-    selectedBtn.disabled = true;
-    selectedBtn.classList.add("opacity-70", "cursor-not-allowed");
+    if (currentBtn) {
+      currentBtn.disabled = true;
+      currentBtn.classList.add("opacity-70", "cursor-not-allowed");
+      currentBtn.innerHTML = `
+        <svg class="animate-spin h-4 w-4 text-white inline-block mr-1.5" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" stroke="white" stroke-width="4" fill="none" stroke-dasharray="31.4" stroke-linecap="round"/>
+        </svg>
+        <span>Sending...</span>
+      `;
+    }
 
-    // 🔄 spinner
-    selectedBtn.innerHTML = `
-    <svg class="animate-spin h-5 w-5 text-white"
-         viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="10"
-        stroke="white"
-        stroke-width="4"
-        fill="none"
-        stroke-dasharray="31.4"
-        stroke-linecap="round"/>
-    </svg>
-    <span>Sending...</span>
-  `;
-
-    // 🚀 send request
     fetch("{% url 'send_no_due' %}", {
       method: "POST",
       headers: {
         "X-CSRFToken": "{{ csrf_token }}",
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest"
       },
-      body: `office=${selectedOffice}`
-    }).then(() => location.reload());
+      body: `office=${encodeURIComponent(currentOffice)}&format=json`
+    })
+    .then(res => res.json())
+    .then(data => {
+      sending = false;
+      if (data.success) {
+        const statusContainer = document.getElementById('office-status-' + currentOffice);
+        if (statusContainer) {
+          statusContainer.innerHTML = `
+            <span class="text-yellow-600 font-semibold flex items-center gap-1.5 animate-pulse">
+              <span class="w-2 h-2 rounded-full bg-yellow-500 animate-ping inline-block"></span>
+              Pending
+            </span>
+          `;
+        }
+      } else if (data.error) {
+        alert(data.error);
+        if (currentBtn) {
+          currentBtn.disabled = false;
+          currentBtn.classList.remove("opacity-70", "cursor-not-allowed");
+          currentBtn.innerHTML = '<span class="btn-text">Send for Verification</span>';
+        }
+      }
+    })
+    .catch(err => {
+      sending = false;
+      console.error(err);
+      if (currentBtn) {
+        currentBtn.disabled = false;
+        currentBtn.classList.remove("opacity-70", "cursor-not-allowed");
+        currentBtn.innerHTML = '<span class="btn-text">Send for Verification</span>';
+      }
+    });
   }
 
-  function closeHostelModal() {
-    document.getElementById("hostelModal").classList.add("hidden");
-    sending = false;
-  }
-
-
-  let hostelSubmitting = false;
-
-  function handleHostelSubmit() {
-    if (hostelSubmitting) {
-      return false; // ❌ block double submit
-    }
-
+  function handleHostelSubmit(e, form) {
+    if (e) e.preventDefault();
+    if (hostelSubmitting) return false;
     hostelSubmitting = true;
 
     const btn = document.getElementById("hostelSubmitBtn");
     const text = document.getElementById("hostelBtnText");
     const clbtn = document.getElementById("clbtn");
-    clbtn.disabled = true;
-    btn.disabled = true;
-    btn.classList.add("opacity-70", "cursor-not-allowed");
+    if (clbtn) clbtn.disabled = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.add("opacity-70", "cursor-not-allowed");
+    }
+    if (text) {
+      text.innerHTML = `
+        <svg class="animate-spin h-5 w-5 text-white inline-block mr-2" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" stroke="white" stroke-width="4" fill="none" stroke-dasharray="31.4" stroke-linecap="round"/>
+        </svg>
+        <span>Sending...</span>
+      `;
+    }
 
-    text.innerHTML = `
-    <svg class="animate-spin h-5 w-5 text-white"
-         viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="10"
-        stroke="white"
-        stroke-width="4"
-        fill="none"
-        stroke-dasharray="31.4"
-        stroke-linecap="round"/>
-    </svg>
-    <span>Sending...</span>
-  `;
+    const formData = new FormData(form);
+    formData.append("format", "json");
 
-    return true; // ✅ allow submit once
-  }
-
-
-  let otherOfficeSending = false;
-
-  function handleOtherOfficeClick(btn) {
-    if (otherOfficeSending) return; // ❌ block multi click
-    otherOfficeSending = true;
-
-    const office = btn.dataset.office;
-
-    // 🔒 disable button
-    btn.disabled = true;
-    btn.classList.add("opacity-70", "cursor-not-allowed");
-
-    // 🔄 replace text with spinner
-    btn.innerHTML = `
-    <svg class="animate-spin h-5 w-5 text-white"
-         viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="10"
-        stroke="white"
-        stroke-width="4"
-        fill="none"
-        stroke-dasharray="31.4"
-        stroke-linecap="round"/>
-    </svg>
-    <span>Sending...</span>
-  `;
-
-    // 🚀 send request
-    fetch("{% url 'send_no_due' %}", {
+    fetch("{% url 'send_hostel' %}", {
       method: "POST",
       headers: {
         "X-CSRFToken": "{{ csrf_token }}",
-        "Content-Type": "application/x-www-form-urlencoded"
+        "X-Requested-With": "XMLHttpRequest"
       },
-      body: `office=${office}`
-    }).then(() => location.reload());
+      body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+      closeHostelModal();
+      hostelSubmitting = false;
+      if (clbtn) clbtn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove("opacity-70", "cursor-not-allowed");
+      }
+      if (text) text.innerText = "Send for Verification";
+      if (data.success) {
+        const statusContainer = document.getElementById('office-status-HOSTEL');
+        if (statusContainer) {
+          statusContainer.innerHTML = `
+            <span class="text-yellow-600 font-semibold flex items-center gap-1.5 animate-pulse">
+              <span class="w-2 h-2 rounded-full bg-yellow-500 animate-ping inline-block"></span>
+              Pending
+            </span>
+          `;
+        }
+      } else if (data.error) {
+        alert(data.error);
+      }
+    })
+    .catch(err => {
+      closeHostelModal();
+      hostelSubmitting = false;
+      if (clbtn) clbtn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove("opacity-70", "cursor-not-allowed");
+      }
+      if (text) text.innerText = "Send for Verification";
+      console.error(err);
+    });
+
+    return false;
+  }
+
+  function handleHostel75Submit(e, form) {
+    if (e) e.preventDefault();
+    const btn = document.getElementById("hostel75SubmitBtn");
+    if (btn) {
+      btn.disabled = true;
+      btn.querySelector('span').textContent = 'Sending...';
+      btn.querySelector('svg').classList.remove('hidden');
+    }
+
+    const formData = new FormData(form);
+    formData.append("format", "json");
+
+    fetch("{% url 'send_hostel' %}", {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": "{{ csrf_token }}",
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+      closeHostel75Modal();
+      if (btn) {
+        btn.disabled = false;
+        btn.querySelector('span').textContent = 'Send Request';
+        btn.querySelector('svg').classList.add('hidden');
+      }
+      if (data.success) {
+        const statusContainer = document.getElementById('office-status-HOSTEL');
+        if (statusContainer) {
+          statusContainer.innerHTML = `
+            <span class="text-yellow-600 font-semibold flex items-center gap-1.5 animate-pulse">
+              <span class="w-2 h-2 rounded-full bg-yellow-500 animate-ping inline-block"></span>
+              Pending
+            </span>
+          `;
+        }
+      } else if (data.error) {
+        alert(data.error);
+      }
+    })
+    .catch(err => {
+      closeHostel75Modal();
+      if (btn) {
+        btn.disabled = false;
+        btn.querySelector('span').textContent = 'Send Request';
+        btn.querySelector('svg').classList.add('hidden');
+      }
+      console.error(err);
+    });
+
+    return false;
+  }
+
+  function handleRetryClick(btn, office) {
+    btn.disabled = true;
+    btn.innerHTML = `
+      <span class="inline-block animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent mr-1 align-middle"></span> Retrying...
+    `;
+    fetch("{% url 'retry_request' %}", {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": "{{ csrf_token }}",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      body: `office=${encodeURIComponent(office)}&format=json`
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        const statusContainer = document.getElementById('office-status-' + office);
+        if (statusContainer) {
+          statusContainer.innerHTML = `
+            <div class="flex flex-col items-end">
+              <button type="button" data-office="${office}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-red-700 transition active:scale-95">
+                <span class="btn-text">Send for Verification</span>
+              </button>
+            </div>
+          `;
+        }
+      } else if (data.error) {
+        alert(data.error);
+        btn.disabled = false;
+        btn.innerText = "Try Again";
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      btn.disabled = false;
+      btn.innerText = "Try Again";
+    });
   }
 
   function openHistoryModal() {
@@ -692,6 +810,10 @@
   }
 
   function startCooldownTimers() {
+    if (window.__cooldownInterval) {
+      clearInterval(window.__cooldownInterval);
+      window.__cooldownInterval = null;
+    }
     const timerElements = document.querySelectorAll('[id^="cooldown-timer-"]');
     if (!timerElements.length) return;
 
@@ -707,7 +829,17 @@
 
         if (diff <= 0) {
           el.innerText = "00h 00m 00s";
-          setTimeout(() => location.reload(), 1000);
+          // Re-enable button directly in DOM
+          const office = el.id.replace('cooldown-timer-', '');
+          const statusContainer = document.getElementById('office-status-' + office);
+          if (statusContainer) {
+            const accessWarning = document.getElementById('access-warning-banner');
+            const accessEnabled = !accessWarning || accessWarning.classList.contains('hidden');
+            let btnHtml = accessEnabled
+              ? `<button type="button" data-office="${office}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-red-700 transition active:scale-95"><span class="btn-text">Send for Verification</span></button>`
+              : `<span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-sm"><svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>Locked</span>`;
+            statusContainer.innerHTML = `<div class="flex flex-col items-end">${btnHtml}</div>`;
+          }
         } else {
           const hours = Math.floor(diff / (1000 * 60 * 60));
           const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -723,12 +855,278 @@
     }
 
     updateTimers();
-    setInterval(updateTimers, 1000);
+    window.__cooldownInterval = setInterval(updateTimers, 1000);
   }
 
-  document.addEventListener("DOMContentLoaded", startCooldownTimers);
+  // Re-run DOM-dependent initialisers
+  window.__reinitPage = function () {
+    startCooldownTimers();
+  };
 
+  document.addEventListener("DOMContentLoaded", function() {
+    startCooldownTimers();
+
+    // ── Real-Time Live Updates via WebSocket ──
+    if (window.PortalWS) {
+      // 1. Request Status Updated (Approved, Rejected, Pending, Not Sent)
+      PortalWS.on('request_status_updated', function(data) {
+        console.log('%c[PortalWS] request_status_updated received', 'color:#16a34a;font-weight:bold', data);
+        if (!data || !data.office) { console.warn('[PortalWS] Missing office in event data'); return; }
+        const office = data.office.toUpperCase();
+        const elementId = 'office-status-' + office;
+        const statusContainer = document.getElementById(elementId);
+        console.log('[PortalWS] Looking for element #' + elementId + ' → found:', !!statusContainer, '  status → ', data.status);
+        if (!statusContainer) return;
+
+        const accessWarning = document.getElementById('access-warning-banner');
+        const accessEnabled = !accessWarning || accessWarning.classList.contains('hidden');
+
+        if (data.status === 'APPROVED') {
+          statusContainer.innerHTML = `
+            <span class="text-green-600 font-semibold flex items-center gap-1.5 animate-bounce">
+              <svg class="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+              </svg>
+              Completed
+            </span>
+          `;
+          // Check if all rows are now completed
+          const allStatuses = document.querySelectorAll('[id^="office-status-"]');
+          let allDone = true;
+          allStatuses.forEach(el => {
+            if (!el.textContent.includes('Completed')) allDone = false;
+          });
+          const certBox = document.getElementById('cert-download-container');
+          if (certBox) {
+            if (allDone) certBox.classList.remove('hidden');
+            else certBox.classList.add('hidden');
+          }
+        } else if (data.status === 'PENDING') {
+          statusContainer.innerHTML = `
+            <span class="text-yellow-600 font-semibold flex items-center gap-1.5 animate-pulse">
+              <span class="w-2 h-2 rounded-full bg-yellow-500 animate-ping inline-block"></span>
+              Pending
+            </span>
+          `;
+          const certBox = document.getElementById('cert-download-container');
+          if (certBox) certBox.classList.add('hidden');
+        } else if (data.status === 'REJECTED') {
+          const certBox = document.getElementById('cert-download-container');
+          if (certBox) certBox.classList.add('hidden');
+
+          let reasonHtml = data.reject_reason ? `<p class="text-sm text-gray-600">Reason: ${escapeHtml(data.reject_reason)}</p>` : '';
+          let actionHtml = '';
+
+          if (data.is_cooldown_active && data.cooldown_expiry_iso) {
+            actionHtml = `
+              <div class="mt-2 flex flex-col items-end">
+                <button disabled class="bg-gray-400 opacity-60 text-white px-4 py-1.5 rounded-full text-sm font-semibold cursor-not-allowed">
+                  Send Request
+                </button>
+                <div class="mt-2 text-xs text-red-600 font-semibold text-right max-w-[240px]">
+                  <p>Request limit reached. You can send a new request after:</p>
+                  <p id="cooldown-timer-${office}" class="text-sm font-bold text-red-700 mt-0.5 tracking-wider" data-expiry="${data.cooldown_expiry_iso}">
+                    --h --m --s
+                  </p>
+                </div>
+              </div>
+            `;
+          } else {
+            let attemptNotice = (data.attempts_used === 1) ? '<p class="text-xs text-amber-600 font-bold mt-1">You have only 1 attempt remaining.</p>' : '';
+            if (accessEnabled) {
+              actionHtml = `
+                ${attemptNotice}
+                <div class="mt-2">
+                  <button onclick="handleRetryClick(this, '${office}')" class="bg-yellow-500 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-yellow-600 transition shadow-sm active:scale-95">
+                    Try Again
+                  </button>
+                </div>
+              `;
+            } else {
+              actionHtml = `
+                ${attemptNotice}
+                <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-xs mt-2">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                  Locked
+                </span>
+              `;
+            }
+          }
+
+          statusContainer.innerHTML = `
+            <div class="text-right">
+              <p class="text-red-600 font-semibold">Rejected</p>
+              ${reasonHtml}
+              ${actionHtml}
+            </div>
+          `;
+          startCooldownTimers();
+        } else if (data.status === 'NOT_SENT') {
+          const certBox = document.getElementById('cert-download-container');
+          if (certBox) certBox.classList.add('hidden');
+
+          let attemptNotice = (data.attempts_used === 1) ? '<p class="text-xs text-amber-600 font-bold mb-1 text-right">You have only 1 attempt remaining.</p>' : '';
+          let btnHtml = '';
+          if (accessEnabled) {
+            btnHtml = `
+              <button type="button" data-office="${office}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-red-700 transition active:scale-95">
+                <span class="btn-text">Send for Verification</span>
+              </button>
+            `;
+          } else {
+            btnHtml = `
+              <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-sm">
+                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                Locked
+              </span>
+            `;
+          }
+          statusContainer.innerHTML = `
+            <div class="flex flex-col items-end">
+              ${attemptNotice}
+              ${btnHtml}
+            </div>
+          `;
+        }
+      });
+
+      // 2. Cooldown Expired Event
+      PortalWS.on('cooldown_expired', function(data) {
+        if (!data || !data.office) return;
+        const office = data.office.toUpperCase();
+        const statusContainer = document.getElementById('office-status-' + office);
+        if (statusContainer) {
+          const accessWarning = document.getElementById('access-warning-banner');
+          const accessEnabled = !accessWarning || accessWarning.classList.contains('hidden');
+          let btnHtml = accessEnabled
+            ? `<button type="button" data-office="${office}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-red-700 transition active:scale-95"><span class="btn-text">Send for Verification</span></button>`
+            : `<span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-sm"><svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>Locked</span>`;
+          statusContainer.innerHTML = `<div class="flex flex-col items-end">${btnHtml}</div>`;
+        }
+      });
+
+      // 3. No Due Access Toggled Event (Global Lock / Unlock)
+      PortalWS.on('no_due_access_toggled', function(data) {
+        const banner = document.getElementById('access-warning-banner');
+        if (banner) {
+          if (data.enabled) {
+            banner.classList.add('hidden');
+            banner.classList.remove('flex');
+          } else {
+            banner.classList.remove('hidden');
+            banner.classList.add('flex');
+          }
+        }
+        // Live update buttons in-place across all office rows:
+        const allRows = document.querySelectorAll('[id^="office-row-"]');
+        allRows.forEach(row => {
+          const office = row.dataset.office;
+          const statusContainer = document.getElementById('office-status-' + office);
+          if (!statusContainer) return;
+
+          const isApproved = statusContainer.textContent.includes('Completed');
+          const isPending = statusContainer.textContent.includes('Pending');
+          const isRejected = statusContainer.textContent.includes('Rejected');
+          const isOnCooldown = !!statusContainer.querySelector('[id^="cooldown-timer-"]');
+
+          if (isApproved || isPending || isOnCooldown) return;
+
+          if (!data.enabled) {
+            const sendBtn = statusContainer.querySelector('button[data-office]');
+            const tryAgainBtn = statusContainer.querySelector('button[onclick*="handleRetryClick"]');
+            if (sendBtn) {
+              sendBtn.outerHTML = `
+                <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-sm">
+                  <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                  Locked
+                </span>
+              `;
+            } else if (tryAgainBtn) {
+              tryAgainBtn.parentElement.innerHTML = `
+                <span class="inline-flex items-center gap-1 text-gray-400 font-semibold text-xs mt-2">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                  Locked
+                </span>
+              `;
+            }
+          } else {
+            if (isRejected) {
+              const lockedSpan = statusContainer.querySelector('span:has(svg)');
+              if (lockedSpan) {
+                lockedSpan.outerHTML = `
+                  <div class="mt-2">
+                    <button onclick="handleRetryClick(this, '${office}')" class="bg-yellow-500 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-yellow-600 transition shadow-sm active:scale-95">
+                      Try Again
+                    </button>
+                  </div>
+                `;
+              }
+            } else {
+              const lockedSpan = statusContainer.querySelector('span:has(svg)');
+              if (lockedSpan) {
+                lockedSpan.outerHTML = `
+                  <button type="button" data-office="${office}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-red-700 transition active:scale-95">
+                    <span class="btn-text">Send for Verification</span>
+                  </button>
+                `;
+              }
+            }
+          }
+        });
+      });
+
+      // 4. Student Promoted Event
+      PortalWS.on('student_promoted', function(data) {
+        if (data.new_semester) {
+          const semEl = document.getElementById('student-sem-val');
+          if (semEl) semEl.textContent = data.new_semester;
+        }
+        if (data.new_year) {
+          const yearEl = document.getElementById('student-year-val');
+          if (yearEl) yearEl.textContent = data.new_year;
+        }
+        const certBox = document.getElementById('cert-download-container');
+        if (certBox) certBox.classList.add('hidden');
+
+        // Reset all office rows in place
+        const allRows = document.querySelectorAll('[id^="office-row-"]');
+        allRows.forEach(row => {
+          const office = row.dataset.office;
+          const statusContainer = document.getElementById('office-status-' + office);
+          if (statusContainer) {
+            statusContainer.innerHTML = `
+              <div class="flex flex-col items-end">
+                <button type="button" data-office="${office}" onclick="openConfirmModal(this)" class="bg-[#d52b1e] text-white px-4 py-1.5 rounded-full font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-red-700 transition active:scale-95">
+                  <span class="btn-text">Send for Verification</span>
+                </button>
+              </div>
+            `;
+          }
+        });
+      });
+
+      // 5. 7.5 Scheme Status Updated
+      PortalWS.on('scheme_75_updated', function(data) {
+        const container = document.getElementById('student-75-badge-container');
+        if (container) {
+          if (data.is_75_scheme) {
+            container.innerHTML = `
+              <span class="inline-block bg-purple-600 text-white font-bold text-xs sm:text-sm px-4 py-1.5 rounded-full shadow-sm animate-pulse">
+                7.5 Scheme Student
+              </span>
+            `;
+          } else {
+            container.innerHTML = '';
+          }
+        }
+      });
+
+      // 6. Resync on Reconnect
+      PortalWS.onSync(function() {
+        PortalWS.softReloadMain();
+      });
+    }
+  });
 </script>
-
 
 {% endblock %}

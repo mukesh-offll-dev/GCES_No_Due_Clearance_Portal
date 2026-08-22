@@ -364,3 +364,221 @@ class AuthenticationAndSecurityTests(TestCase):
         # Student session remains active
         self.assertEqual(client_student.session.get("role"), "STUDENT")
 
+
+class WebSocketAndRealTimeTests(TestCase):
+    """
+    Tests covering:
+    - WebSocket consumer connection, authentication, and group routing
+    - Real-time event broadcasting helpers (notify_student, notify_office, etc.)
+    - Background maintenance auto-disable, timeout reset, and cooldown reset broadcasts
+    - AJAX endpoint JSON responses for zero-reload DOM updates
+    - Office Student Status API payload with student_id
+    """
+
+    def setUp(self):
+        self.client = Client()
+
+    # ─────────────────────────────────────────────────────────────
+    #  1. Event Broadcaster Helper Tests
+    # ─────────────────────────────────────────────────────────────
+    @patch("authentication.events.get_channel_layer")
+    @patch("authentication.events.async_to_sync")
+    def test_notify_student_broadcast(self, mock_async_to_sync, mock_get_layer):
+        from authentication.events import notify_student
+        mock_layer = MagicMock()
+        mock_get_layer.return_value = mock_layer
+
+        student_id = ObjectId()
+        notify_student(student_id, "request_status_updated", {
+            "office": "LIBRARY",
+            "status": "APPROVED"
+        })
+
+        mock_get_layer.assert_called_once()
+        mock_async_to_sync.assert_called_once()
+
+    @patch("authentication.events.get_channel_layer")
+    @patch("authentication.events.async_to_sync")
+    def test_notify_office_broadcast(self, mock_async_to_sync, mock_get_layer):
+        from authentication.events import notify_office
+        mock_layer = MagicMock()
+        mock_get_layer.return_value = mock_layer
+
+        notify_office("LIBRARY", "new_request_submitted", {
+            "reg_no": "830123104001",
+            "name": "TEST STUDENT"
+        })
+
+        mock_get_layer.assert_called_once()
+        mock_async_to_sync.assert_called_once()
+
+    @patch("authentication.events.get_channel_layer")
+    @patch("authentication.events.async_to_sync")
+    def test_notify_all_students_broadcast(self, mock_async_to_sync, mock_get_layer):
+        from authentication.events import notify_all_students
+        mock_layer = MagicMock()
+        mock_get_layer.return_value = mock_layer
+
+        notify_all_students("no_due_access_toggled", {
+            "enabled": True
+        })
+
+        mock_get_layer.assert_called_once()
+        mock_async_to_sync.assert_called_once()
+
+    # ─────────────────────────────────────────────────────────────
+    #  2. Maintenance Tasks Broadcast Tests
+    # ─────────────────────────────────────────────────────────────
+    @patch("authentication.maintenance.portal_settings")
+    @patch("authentication.events.notify_all_students")
+    @patch("authentication.events.notify_faculty")
+    def test_maintenance_auto_disable_access_broadcast(self, mock_notify_fac, mock_notify_stu, mock_settings):
+        from authentication.maintenance import _check_auto_disable_access
+        from datetime import datetime, timedelta, timezone
+
+        # Access was enabled, but auto_disable_at has passed
+        past_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+        mock_settings.find_one.return_value = {
+            "_id": "global_config",
+            "no_due_access_enabled": True,
+            "auto_disable_at": past_time
+        }
+
+        _check_auto_disable_access()
+
+        mock_settings.update_one.assert_called_once()
+        mock_notify_stu.assert_called_once_with("no_due_access_toggled", {"enabled": False, "auto_disable_str": ""})
+        mock_notify_fac.assert_called_once_with("no_due_access_toggled", {"enabled": False, "auto_disable_str": ""})
+
+    @patch("authentication.maintenance.no_due_col")
+    @patch("authentication.events.notify_student")
+    def test_fast_cooldown_reset_broadcast(self, mock_notify_stu, mock_no_due):
+        from authentication.maintenance import fast_cooldown_reset
+
+        fake_id = ObjectId()
+        mock_no_due.find.return_value = [
+            {"_id": ObjectId(), "student_id": fake_id, "office": "LIBRARY", "attempts_used": 2}
+        ]
+
+        fast_cooldown_reset()
+
+        mock_no_due.update_many.assert_called_once()
+        # Verify both cooldown_expired and request_status_updated with attempts_used: 0 are broadcast
+        calls = [call[0] for call in mock_notify_stu.call_args_list]
+        event_names = [c[1] for c in calls]
+        self.assertIn("cooldown_expired", event_names)
+        self.assertIn("request_status_updated", event_names)
+
+    @patch("authentication.maintenance.no_due_col")
+    @patch("authentication.events.notify_student")
+    @patch("authentication.events.notify_office")
+    def test_reset_pending_timeout_no_dues_broadcast(self, mock_notify_office, mock_notify_student, mock_no_due):
+        from authentication.maintenance import _expire_stale_pending
+
+        doc_id = ObjectId()
+        student_id = ObjectId()
+
+        mock_no_due.find.return_value.limit.return_value = [
+            {"_id": doc_id, "student_id": student_id, "office": "LIBRARY", "status": "PENDING", "attempts_used": 1}
+        ]
+
+        _expire_stale_pending()
+
+        mock_no_due.update_one.assert_called_once()
+        mock_notify_student.assert_called_once_with(student_id, "request_status_updated", {
+            "office": "LIBRARY",
+            "status": "NOT_SENT",
+            "attempts_used": 0,
+            "attempts_remaining": 2,
+        })
+        mock_notify_office.assert_called_once_with("LIBRARY", "request_expired", {
+            "request_id": str(doc_id),
+        })
+
+    # ─────────────────────────────────────────────────────────────
+    #  3. AJAX Views JSON Response Tests
+    # ─────────────────────────────────────────────────────────────
+    def test_send_no_due_request_ajax_success(self):
+        """AJAX request to send_no_due returns JSON response without redirect."""
+        fake_id = ObjectId()
+        session = self.client.session
+        session["role"] = "STUDENT"
+        session["student_id"] = str(fake_id)
+        session.save()
+
+        fake_student = {"_id": fake_id, "reg_no": "830123104001", "name": "TEST", "branch": "CSE", "year": 3, "semester": 5}
+
+        with patch("authentication.decorators.students_col.find_one", return_value={"_id": fake_id}), \
+             patch("authentication.views.check_no_due_access_status", return_value=True), \
+             patch("authentication.views.students_col.find_one", return_value=fake_student), \
+             patch("authentication.views.no_due_col") as mock_no_due, \
+             patch("authentication.views.notify_student"), \
+             patch("authentication.views.notify_office"):
+            mock_no_due.find_one.return_value = None
+
+            response = self.client.post(
+                reverse("send_no_due"),
+                {"office": "LIBRARY", "format": "json"},
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertTrue(data.get("success"))
+            self.assertEqual(data.get("status"), "PENDING")
+
+    def test_retry_request_ajax_success(self):
+        """AJAX request to retry_request returns JSON response with NOT_SENT status."""
+        fake_id = ObjectId()
+        session = self.client.session
+        session["role"] = "STUDENT"
+        session["student_id"] = str(fake_id)
+        session.save()
+
+        existing_req = {"_id": ObjectId(), "student_id": fake_id, "office": "LIBRARY", "status": "REJECTED", "attempts_used": 1}
+
+        with patch("authentication.decorators.students_col.find_one", return_value={"_id": fake_id}), \
+             patch("authentication.views.check_no_due_access_status", return_value=True), \
+             patch("authentication.views.no_due_col") as mock_no_due, \
+             patch("authentication.views.notify_student"):
+            mock_no_due.find_one.return_value = existing_req
+
+            response = self.client.post(
+                reverse("retry_request"),
+                {"office": "LIBRARY", "format": "json"},
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertTrue(data.get("success"))
+            self.assertEqual(data.get("status"), "NOT_SENT")
+
+    def test_office_student_status_api_contains_student_id(self):
+        """Office Student Status API response includes student_id for each student."""
+        session = self.client.session
+        session["role"] = "LIBRARY"
+        session.save()
+
+        fake_id = ObjectId()
+        mock_results = [{
+            "metadata": [{"total": 1}],
+            "data": [{
+                "_id": fake_id,
+                "reg_no": "830123104001",
+                "name": "TEST",
+                "branch": "CSE",
+                "semester": 5,
+                "is_75_scheme": False,
+                "office_status": "Completed",
+                "completed_time": None
+            }]
+        }]
+
+        with patch("authentication.views.students_col.aggregate", return_value=mock_results):
+            response = self.client.get(reverse("student_status_api") + "?year=3")
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertIn("students", data)
+            self.assertEqual(len(data["students"]), 1)
+            self.assertEqual(data["students"][0]["student_id"], str(fake_id))
+            self.assertEqual(data["students"][0]["reg_no"], "830123104001")
+

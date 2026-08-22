@@ -425,13 +425,13 @@
       }
 
       const row = `
-        <tr class="hover:bg-gray-50 transition border-b">
+        <tr class="hover:bg-gray-50 transition border-b" data-reg-no="${s.reg_no}" data-student-id="${s.student_id || ''}" id="status-row-${s.reg_no}">
           <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${s.reg_no}</td>
           <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-700">${s.name} ${s.is_75_scheme ? '<span class="inline-block bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-1 shadow-sm">7.5</span>' : ''}</td>
           <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.branch}</td>
           <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.semester}</td>
-          <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.completed_time}</td>
+          <td class="px-6 py-4 whitespace-nowrap" id="status-badge-${s.reg_no}">${statusBadge}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-gray-500" id="status-time-${s.reg_no}">${s.completed_time}</td>
         </tr>
       `;
       tbody.insertAdjacentHTML('beforeend', row);
@@ -492,6 +492,107 @@
     }
     controls.appendChild(nextBtn);
   }
+
+  // ── Real-Time Live Updates via WebSocket ──
+  document.addEventListener("DOMContentLoaded", function() {
+    if (window.PortalWS) {
+      // 1. Incoming new request from student (hostel fee / 7.5 scheme)
+      PortalWS.on('new_request_submitted', function(data) {
+        if (data.student_id || data.reg_no) {
+          const row = document.querySelector(`tr[data-student-id="${data.student_id}"]`) || document.querySelector(`tr[data-reg-no="${data.reg_no}"]`);
+          if (row) {
+            const regNo = row.dataset.regNo || data.reg_no;
+            const badgeCell = document.getElementById('status-badge-' + regNo) || row.children[4];
+            if (badgeCell) {
+              badgeCell.innerHTML = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 animate-pulse">Pending</span>';
+            }
+          }
+        }
+        PortalWS.softReloadMain();
+      });
+
+      // 2. Requests processed (approved/rejected)
+      PortalWS.on('requests_processed', function(data) {
+        if (data.processed_ids && data.processed_ids.length > 0) {
+          data.processed_ids.forEach(id => {
+            const cb = document.querySelector(`input[name="request_ids"][value="${id}"]`);
+            if (cb) {
+              const card = cb.closest('.request-card');
+              if (card) {
+                card.style.transition = 'all 0.4s ease';
+                card.style.opacity = '0';
+                card.style.transform = 'scale(0.95)';
+                setTimeout(() => card.remove(), 400);
+              }
+            }
+          });
+        }
+
+        // Live in-place row update for Student Status table
+        if (data.student_statuses) {
+          const nowStr = new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit', hour12: true});
+          for (const [sid, newStatus] of Object.entries(data.student_statuses)) {
+            const row = document.querySelector(`tr[data-student-id="${sid}"]`);
+            if (row) {
+              const regNo = row.dataset.regNo;
+              const badgeCell = document.getElementById('status-badge-' + regNo) || row.children[4];
+              const timeCell = document.getElementById('status-time-' + regNo) || row.children[5];
+              if (badgeCell) {
+                if (newStatus === 'Completed') {
+                  badgeCell.innerHTML = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 animate-pulse">Completed</span>';
+                  if (timeCell) timeCell.textContent = nowStr;
+                } else if (newStatus === 'Pending') {
+                  badgeCell.innerHTML = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 animate-pulse">Pending</span>';
+                } else {
+                  badgeCell.innerHTML = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 animate-pulse">Incomplete</span>';
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // 3. Stale pending request expired
+      PortalWS.on('request_expired', function(data) {
+        if (data.request_id) {
+          const cb = document.querySelector(`input[name="request_ids"][value="${data.request_id}"]`);
+          if (cb) {
+            const card = cb.closest('.request-card');
+            if (card) card.remove();
+          }
+        }
+        if (data.student_id) {
+          const row = document.querySelector(`tr[data-student-id="${data.student_id}"]`);
+          if (row) {
+            const regNo = row.dataset.regNo;
+            const badgeCell = document.getElementById('status-badge-' + regNo) || row.children[4];
+            if (badgeCell) {
+              badgeCell.innerHTML = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Incomplete</span>';
+            }
+          }
+        }
+      });
+
+      // 4. 7.5 Scheme updated, cohort promoted, or roster updated — refresh
+      // the pending list without a full-page reload.
+      PortalWS.on('scheme_75_updated', function() {
+        PortalWS.softReloadMain();
+      });
+
+      PortalWS.on('cohort_promoted', function() {
+        PortalWS.softReloadMain();
+      });
+
+      PortalWS.on('student_roster_updated', function() {
+        PortalWS.softReloadMain();
+      });
+
+      // 5. Resync on Reconnect
+      PortalWS.onSync(function() {
+        PortalWS.softReloadMain();
+      });
+    }
+  });
 </script>
 
 <!-- Include Reusable Report Modal -->

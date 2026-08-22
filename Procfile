@@ -1,1 +1,1 @@
-web: gunicorn -c gunicorn.conf.py nodue_portal.wsgi
+web: gunicorn nodue_portal.asgi:application -k uvicorn.workers.UvicornWorker --workers ${WEB_CONCURRENCY:-3} --bind 0.0.0.0:${PORT:-8000} --timeout 120 --graceful-timeout 30 --access-logfile - --error-logfile -

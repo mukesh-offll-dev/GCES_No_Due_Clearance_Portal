@@ -949,6 +949,38 @@ function toggleSelectAllScheme(checked) {
     }
   });
 }
+
+// ── Real-Time Live Updates via WebSocket ──
+document.addEventListener("DOMContentLoaded", function() {
+  if (window.PortalWS) {
+    // All faculty-relevant changes refresh the dashboard content in place
+    // (no full-page reload) — the server render stays the source of truth.
+    // 1. Live 7.5 Scheme updates
+    PortalWS.on('scheme_75_updated', function() {
+      PortalWS.softReloadMain();
+    });
+
+    // 2. Roster updates (add/edit/delete)
+    PortalWS.on('student_roster_updated', function() {
+      PortalWS.softReloadMain();
+    });
+
+    // 3. Promotion completed
+    PortalWS.on('promotion_completed', function() {
+      PortalWS.softReloadMain();
+    });
+
+    // 4. No Due access toggled
+    PortalWS.on('no_due_access_toggled', function() {
+      PortalWS.softReloadMain();
+    });
+
+    // 5. Resync on Reconnect
+    PortalWS.onSync(function() {
+      PortalWS.softReloadMain();
+    });
+  }
+});
 </script>
 
 {% endblock %}

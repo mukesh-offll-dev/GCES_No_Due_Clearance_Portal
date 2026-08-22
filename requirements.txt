@@ -8,5 +8,9 @@ cloudinary
 django-cloudinary-storage
 openpyxl
 reportlab>=4.0.0
+channels>=4.0.0
+daphne>=4.0.0
+channels-redis>=4.0.0
+uvicorn>=0.30.0
 
 
