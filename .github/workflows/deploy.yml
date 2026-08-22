@@ -1,4 +1,4 @@
-name: Deploy to Render
+name: Deploy
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   test-and-deploy:
-    name: Test and Trigger Render Deploy
+    name: Test and Deploy
     runs-on: ubuntu-latest
 
     steps:
@@ -35,10 +35,10 @@ jobs:
         run: |
           python manage.py test authentication
 
-      - name: Trigger Render Deploy Hook
+      - name: Trigger Deployment Webhook
         env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL || 'https://api.render.com/deploy/srv-d58kvsqli9vc73a4srjg?key=Woe2b2lkmC4' }}
+          SECRET_VARIABLE: ${{ secrets.SECRET_VARIABLE || secrets.DEPLOY_WEBHOOK_TOKEN || secrets.DEPLOY_TOKEN }}
         run: |
-          echo "Triggering Render deployment..."
-          curl -f -X POST "$RENDER_DEPLOY_HOOK"
-          echo "Render deployment triggered successfully!"
+          echo "Triggering deployment webhook..."
+          curl -f -sS "https://fedora.tail9454e5.ts.net/deploy_nodue_portal.sh?token=${SECRET_VARIABLE}&async=true"
+          echo "Deployment webhook triggered successfully!"
