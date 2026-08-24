@@ -12,6 +12,12 @@ jobs:
     name: Test and Deploy
     runs-on: ubuntu-latest
 
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
