@@ -1583,16 +1583,16 @@
         PortalWS.softReloadMain();
       });
       PortalWS.on('department_added', function() {
-        showPortalToast("New department added in the system.", "info");
+        PortalWS.softReloadMain();
       });
       PortalWS.on('department_updated', function() {
-        showPortalToast("Department details updated.", "info");
+        PortalWS.softReloadMain();
       });
       PortalWS.on('department_toggled', function() {
-        showPortalToast("Department status toggled.", "info");
+        PortalWS.softReloadMain();
       });
       PortalWS.on('department_deleted', function() {
-        showPortalToast("Department removed from the system.", "info");
+        PortalWS.softReloadMain();
       });
       PortalWS.onSync(function() {
         PortalWS.softReloadMain();

@@ -266,8 +266,8 @@
           <tbody class="divide-y divide-gray-100 text-gray-700">
             {% for log in promotion_logs %}
             <tr>
-              <td class="py-3 px-4 font-medium">Semester {{ log.previous_semester }} (Year {{ log.previous_year }})</td>
-              <td class="py-3 px-4">{{ log.promotion_time|date:"Y-m-d H:i" }}</td>
+              <td class="py-3 px-4 font-medium">Semester {{ log.previous_semester|default:log.semester }} (Year {{ log.previous_year|default:log.year }})</td>
+              <td class="py-3 px-4">{{ log.completion_time|default:log.promotion_time|date:"Y-m-d H:i" }}</td>
               <td class="py-3 px-4 text-right">
                 {% if log.no_due_cleared or log.no_due_cleared is None %}
                 <span class="bg-green-100 text-green-800 text-xs px-2.5 py-1 rounded-full font-bold">Cleared</span>

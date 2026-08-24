@@ -6,6 +6,7 @@ events through Django Channels layer to students, offices, faculty, and global g
 """
 import logging
 import re
+import uuid
 from datetime import datetime, date, timezone
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -58,6 +59,9 @@ def _broadcast_to_group(group_name, payload):
         if not channel_layer:
             logger.debug("[WS] No channel layer configured; skipping broadcast.")
             return
+
+        if isinstance(payload, dict) and "msg_id" not in payload:
+            payload["msg_id"] = uuid.uuid4().hex
 
         clean_payload = _sanitize_for_json(payload)
         safe_group = _clean_group_name(group_name)

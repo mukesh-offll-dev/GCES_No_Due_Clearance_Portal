@@ -24,13 +24,48 @@
   var wasConnected = false;
   var broadcastChannel = null;
 
+  var processedMsgIds = new Set();
+  var maxRecentIds = 250;
+  var lastEventTimestamps = {};
+
+  function isDuplicateEvent(eventName, data) {
+    if (!eventName) return true;
+
+    // 1. Check unique message ID if provided
+    var msgId = data && data.msg_id;
+    if (msgId) {
+      if (processedMsgIds.has(msgId)) {
+        return true;
+      }
+      processedMsgIds.add(msgId);
+      if (processedMsgIds.size > maxRecentIds) {
+        var first = processedMsgIds.values().next().value;
+        processedMsgIds.delete(first);
+      }
+    }
+
+    // 2. Debounce identical eventName + payload within 600ms
+    try {
+      var eventKey = eventName + ':' + (data ? (data.id || data.student_id || data.timestamp || '') : '');
+      var now = Date.now();
+      if (lastEventTimestamps[eventKey] && (now - lastEventTimestamps[eventKey] < 600)) {
+        return true;
+      }
+      lastEventTimestamps[eventKey] = now;
+    } catch (e) {}
+
+    return false;
+  }
+
   // Initialize Cross-Tab Broadcast Channel if available
   if ('BroadcastChannel' in window) {
     try {
       broadcastChannel = new BroadcastChannel('gces_nodue_sync');
       broadcastChannel.onmessage = function (event) {
         if (event && event.data && event.data.event) {
-          PortalWS.dispatch(event.data.event, event.data);
+          var eventName = event.data.event;
+          if (isDuplicateEvent(eventName, event.data)) return;
+          PortalWS.dispatch(eventName, event.data);
           PortalWS.dispatch('*', event.data);
         }
       };
@@ -102,6 +137,10 @@
         try {
           var data = JSON.parse(event.data);
           var eventName = data.event || data.type;
+          if (eventName && isDuplicateEvent(eventName, data)) {
+            log('Skipping duplicate event:', eventName);
+            return;
+          }
           log('📨 Message received  event=' + eventName, data);
           if (eventName) {
             PortalWS.dispatch(eventName, data);

@@ -11,7 +11,7 @@ from bson.errors import InvalidId
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 from django.conf import settings
-from .utils import save_receipt , reset_expired_no_dues
+from .utils import save_receipt , reset_expired_no_dues, record_student_no_due_completion
 from .events import notify_student, notify_all_students, notify_office, notify_faculty, notify_all_offices, notify_department_changed
 from .departments import (
     get_all_departments,
@@ -381,11 +381,18 @@ def student_dashboard(request):
         if d.get("status") != "APPROVED":
             all_approved = False
 
+    # ⚡ As soon as all required offices are approved, immediately record the completion log
+    if all_approved and student_id:
+        try:
+            record_student_no_due_completion(student_id)
+        except Exception as exc:
+            logger.warning("Error auto-recording completion log on dashboard for student %s: %s", student_id, exc)
+
     # Query promotion logs for this student
     logs = []
     try:
         from .mongo import promotion_logs
-        logs = list(promotion_logs.find({"student_id": student_id}).sort("promotion_time", -1))
+        logs = list(promotion_logs.find({"student_id": student_id}).sort("completion_time", -1))
     except Exception as exc:
         logger.warning("Error loading promotion logs for student %s: %s", student_id, exc)
 
@@ -472,6 +479,12 @@ def no_due_certificate(request):
     required_count = 3 if student_type == "Day Scholar" else 4
     if len(dues) < required_count:
         return redirect("student_dashboard")
+
+    # Record completion log immediately if not already recorded
+    try:
+        record_student_no_due_completion(student_id)
+    except Exception as exc:
+        logger.warning("Error recording completion log on certificate view for student %s: %s", student_id, exc)
 
     # Convert to simple dict for template
     no_dues_status = {
@@ -748,12 +761,17 @@ def bulk_approve(request):
         audit_logger.info("APPROVE role=%s requested=%d approved=%d",
                           role, len(object_ids), approved)
 
-        # 🚀 Broadcast real-time approval to each student individually
+        # 🚀 Broadcast real-time approval to each student individually & trigger immediate completion check
         student_statuses = {}
         for r in pending_to_approve:
             sid = r.get("student_id")
             sid_str = str(sid)
             student_statuses[sid_str] = "Completed"
+            try:
+                record_student_no_due_completion(sid)
+            except Exception as exc:
+                logger.warning("Error recording completion log for student %s: %s", sid_str, exc)
+
             try:
                 notify_student(sid, "request_status_updated", {
                     "office": role,
@@ -1798,18 +1816,41 @@ def promote_students(request):
                     }
                 )
 
-                # Insert log
-                promotion_logs.insert_one({
+                # Check if a completion log already exists for this student, previous_year, and previous_semester
+                existing_log = promotion_logs.find_one({
                     "student_id": student_id,
-                    "previous_semester": current_sem,
-                    "previous_year": current_year,
-                    "new_semester": next_sem,
-                    "new_year": new_year,
-                    "student_type": student_type,
-                    "completion_time": now,
-                    "promotion_time": now,
-                    "no_due_cleared": no_due_cleared,
+                    "$or": [
+                        {"previous_semester": current_sem, "previous_year": current_year},
+                        {"semester": current_sem, "year": current_year},
+                    ]
                 })
+
+                if existing_log:
+                    # Update new_semester and new_year on existing log without changing previous Year/Semester/completion_time
+                    promotion_logs.update_one(
+                        {"_id": existing_log["_id"]},
+                        {"$set": {
+                            "new_semester": next_sem,
+                            "new_year": new_year,
+                            "promotion_time": existing_log.get("promotion_time") or now,
+                        }}
+                    )
+                else:
+                    # Only insert a new log if one didn't already exist
+                    promotion_logs.insert_one({
+                        "student_id": student_id,
+                        "previous_semester": current_sem,
+                        "previous_year": current_year,
+                        "semester": current_sem,
+                        "year": current_year,
+                        "new_semester": next_sem,
+                        "new_year": new_year,
+                        "student_type": student_type,
+                        "completion_time": now if no_due_cleared else None,
+                        "promotion_time": now,
+                        "no_due_cleared": no_due_cleared,
+                        "status": "Completed" if no_due_cleared else "Not Cleared",
+                    })
                 promoted_count += 1
 
                 # 🚀 Broadcast real-time promotion to the specific student

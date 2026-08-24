@@ -71,6 +71,9 @@ def ensure_indexes():
         _safe(created, promotion_logs,
               [("student_id", ASCENDING), ("promotion_time", DESCENDING)],
               name="student_promotion_time")
+        _safe(created, promotion_logs,
+              [("student_id", ASCENDING), ("previous_semester", ASCENDING), ("previous_year", ASCENDING)],
+              name="student_term_log")
 
         # ── institution_logs ────────────────────────────────────────
         _safe(created, institution_logs, [("login_time", DESCENDING)],

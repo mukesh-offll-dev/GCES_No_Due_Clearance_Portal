@@ -793,5 +793,116 @@ class WebSocketAndRealTimeTests(TestCase):
         )
         self.assertEqual(res.status_code, 403)
 
+    def test_immediate_no_due_log_creation_for_day_scholar(self):
+        """As soon as all 3 required offices for a Day Scholar are approved, completion log is created immediately with current year/sem."""
+        from authentication.utils import record_student_no_due_completion
+        from authentication.mongo import students_col, no_due_col, promotion_logs
+
+        test_id = ObjectId()
+        students_col.insert_one({
+            "_id": test_id,
+            "roll_no": "21CS099",
+            "reg_no": "830121104099",
+            "name": "TEST COMPLETION STUDENT",
+            "branch": "CSE",
+            "year": 3,
+            "semester": 6,
+            "student_type": "Day Scholar",
+        })
+
+        try:
+            # 2 out of 3 approved -> should not record yet
+            no_due_col.insert_many([
+                {"student_id": test_id, "office": "LIBRARY", "status": "APPROVED"},
+                {"student_id": test_id, "office": "COLLEGE", "status": "APPROVED"},
+                {"student_id": test_id, "office": "DEPARTMENT", "status": "PENDING"},
+            ])
+            self.assertFalse(record_student_no_due_completion(test_id))
+            self.assertEqual(promotion_logs.count_documents({"student_id": test_id}), 0)
+
+            # Approve 3rd office (DEPARTMENT)
+            no_due_col.update_one({"student_id": test_id, "office": "DEPARTMENT"}, {"$set": {"status": "APPROVED"}})
+            self.assertTrue(record_student_no_due_completion(test_id))
+
+            # Verify log was created immediately with current Year 3, Semester 6
+            log = promotion_logs.find_one({"student_id": test_id})
+            self.assertIsNotNone(log)
+            self.assertEqual(log["previous_year"], 3)
+            self.assertEqual(log["previous_semester"], 6)
+            self.assertTrue(log["no_due_cleared"])
+            self.assertEqual(log["status"], "Completed")
+
+            # Duplicate call should NOT insert another log
+            self.assertTrue(record_student_no_due_completion(test_id))
+            self.assertEqual(promotion_logs.count_documents({"student_id": test_id}), 1)
+        finally:
+            students_col.delete_one({"_id": test_id})
+            no_due_col.delete_many({"student_id": test_id})
+            promotion_logs.delete_many({"student_id": test_id})
+
+    def test_promotion_preserves_existing_completion_log(self):
+        """When promoted to Semester 7, the previous Semester 6 completion log must be preserved without duplicate."""
+        from authentication.utils import record_student_no_due_completion
+        from authentication.mongo import students_col, no_due_col, promotion_logs
+
+        test_id = ObjectId()
+        students_col.insert_one({
+            "_id": test_id,
+            "roll_no": "21CS098",
+            "reg_no": "830121104098",
+            "name": "TEST PROMOTION PRESERVE",
+            "branch": "CSE",
+            "year": 3,
+            "semester": 6,
+            "student_type": "Hosteller",
+        })
+
+        try:
+            # 4 approved offices for hosteller
+            no_due_col.insert_many([
+                {"student_id": test_id, "office": "LIBRARY", "status": "APPROVED"},
+                {"student_id": test_id, "office": "HOSTEL", "status": "APPROVED"},
+                {"student_id": test_id, "office": "COLLEGE", "status": "APPROVED"},
+                {"student_id": test_id, "office": "DEPARTMENT", "status": "APPROVED"},
+            ])
+            # Step 1: All required offices completed -> log created for Year 3, Semester 6
+            self.assertTrue(record_student_no_due_completion(test_id))
+            initial_log = promotion_logs.find_one({"student_id": test_id})
+            self.assertIsNotNone(initial_log)
+            self.assertEqual(initial_log["previous_semester"], 6)
+            self.assertEqual(initial_log["previous_year"], 3)
+            initial_completion_time = initial_log["completion_time"]
+
+            # Step 2: Later promotion happens via faculty promotion action
+            session = self.client.session
+            session["role"] = "FACULTY"
+            session["promotion_unlocked"] = True
+            session.save()
+
+            res = self.client.post(
+                reverse("promote_students"),
+                {"from_semester": "6"},
+                HTTP_REFERER="/faculty/promotion/"
+            )
+            self.assertEqual(res.status_code, 302)
+
+            # Verify student is now Year 4, Semester 7
+            updated_student = students_col.find_one({"_id": test_id})
+            self.assertEqual(updated_student["semester"], 7)
+            self.assertEqual(updated_student["year"], 4)
+
+            # Verify logs count is still 1 (no duplicate) and previous Semester 6 is preserved
+            logs = list(promotion_logs.find({"student_id": test_id}))
+            self.assertEqual(len(logs), 1)
+            self.assertEqual(logs[0]["previous_semester"], 6)
+            self.assertEqual(logs[0]["previous_year"], 3)
+            self.assertEqual(logs[0]["completion_time"], initial_completion_time)
+            self.assertTrue(logs[0]["no_due_cleared"])
+        finally:
+            students_col.delete_one({"_id": test_id})
+            no_due_col.delete_many({"student_id": test_id})
+            promotion_logs.delete_many({"student_id": test_id})
+
+
 
 
