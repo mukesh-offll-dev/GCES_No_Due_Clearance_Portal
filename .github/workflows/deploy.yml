@@ -41,6 +41,7 @@ jobs:
         run: |
           python manage.py test authentication
 
+
       - name: Trigger Deployment Webhook
         env:
           SECRET_VARIABLE: ${{ secrets.SECRET_VARIABLE || secrets.DEPLOY_WEBHOOK_TOKEN || secrets.DEPLOY_TOKEN }}
