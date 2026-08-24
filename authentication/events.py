@@ -157,3 +157,18 @@ def notify_all_offices(event_name, data=None):
         **(data or {}),
     }
     _broadcast_to_group("offices_all", payload)
+
+
+def notify_department_changed(event_name, data=None):
+    """
+    Broadcast department additions, updates, toggles, or deletions to faculty, offices, and students.
+    """
+    payload = {
+        "event": event_name,
+        "timestamp": _now_iso(),
+        **(data or {}),
+    }
+    _broadcast_to_group("faculty_group", payload)
+    _broadcast_to_group("offices_all", payload)
+    _broadcast_to_group("students_global", payload)
+

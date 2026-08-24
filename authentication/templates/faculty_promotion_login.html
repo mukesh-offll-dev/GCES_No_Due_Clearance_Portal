@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Verify Password - Student Promotion & No Due{% endblock %}
+{% block title %}Verify Access - Student Promotion & Departments{% endblock %}
 
 {% block content %}
 <main class="max-w-6xl mx-auto px-4 sm:p-6 flex flex-col items-center justify-center min-h-[60vh]">
@@ -12,9 +12,9 @@
       </svg>
     </div>
     
-    <h2 class="text-2xl font-black text-gray-800 mb-2">Verification Required</h2>
+    <h2 class="text-2xl font-black text-gray-800 mb-2">Faculty Verification</h2>
     <p class="text-sm text-gray-500 mb-6 leading-relaxed">
-      Please enter the promotion access password to view the Student Promotion & No Due page.
+      Enter the access password once to unlock Student Promotion and Department Management for this session.
     </p>
 
     <!-- Error message -->
@@ -25,18 +25,19 @@
     {% endif %}
 
     <!-- Password form -->
-    <form method="POST" action="{% url 'faculty_promotion' %}" onsubmit="return handleFormSubmit(this)" class="space-y-4">
+    <form method="POST" action="{% url 'faculty_promotion' %}{% if request.GET.tab %}?tab={{ request.GET.tab }}{% endif %}" onsubmit="return handleFormSubmit(this)" class="space-y-4">
       {% csrf_token %}
+      <input type="hidden" name="tab" value="{{ request.GET.tab|default:tab|default:'promotion' }}">
       
       <div class="flex flex-col text-left gap-1">
         <label class="text-xs font-bold text-gray-600 uppercase tracking-wider pl-1">Access Password</label>
-        <input type="password" name="promotion_password" required placeholder="Enter password"
+        <input type="password" name="promotion_password" required placeholder="Enter password" autofocus
           class="border-2 border-gray-200 rounded-full px-5 py-3 w-full bg-gray-50 focus:bg-white focus:border-[#d52b1e] transition-colors duration-200 text-sm font-semibold">
       </div>
 
       <button type="submit" 
-        class="w-full bg-[#d52b1e] hover:bg-red-800 text-white font-bold py-3 rounded-full text-sm transition-all duration-200 active:scale-95 shadow-md">
-        Verify Password
+        class="w-full bg-[#d52b1e] hover:bg-red-800 text-white font-bold py-3 rounded-full text-sm transition-all duration-200 active:scale-95 shadow-md cursor-pointer">
+        Verify &amp; Unlock
       </button>
     </form>
   </div>

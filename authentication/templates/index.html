@@ -39,12 +39,9 @@
         <select name="department"
             class="w-full border border-gray-300 rounded-full px-4 py-2.5 mb-4 text-gray-800 bg-white">
           <option value="">Select department</option>
-          <option value="CSE">CSE</option>
-          <option value="ECE">ECE</option>
-          <option value="EEE">EEE</option>
-          <option value="CIVIL">CIVIL</option>
-          <option value="MECH">MECH</option>
-          <option value="MCT">MCT</option>
+          {% for d in global_active_departments %}
+          <option value="{{ d.code }}">{{ d.code }} - {{ d.name }}</option>
+          {% endfor %}
         </select>
       </div>
 
@@ -100,10 +97,10 @@
       </button>
     </form>
 
-    {% if student_error or request.session.student_error %}
+    {% if student_error %}
     <p id="studentError"
        class="text-red-600 font-semibold text-center mt-3 text-sm bg-red-50 rounded-xl py-2 px-3">
-      {{ student_error|default:request.session.student_error }}
+      {{ student_error }}
     </p>
     {% endif %}
   </div>

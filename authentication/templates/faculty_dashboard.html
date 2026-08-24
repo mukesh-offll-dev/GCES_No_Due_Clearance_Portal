@@ -8,10 +8,12 @@
   <!-- Navigation Tabs -->
   <div class="flex gap-4 border-b-2 border-gray-200 mb-6 pb-px">
     <a href="{% url 'faculty_dashboard' %}" class="py-2.5 px-4 font-bold text-sm border-b-4 border-[#d52b1e] text-[#d52b1e] flex items-center gap-2">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
       Student Directory
     </a>
     <a href="{% url 'faculty_promotion' %}" class="py-2.5 px-4 font-semibold text-sm text-gray-500 hover:text-[#d52b1e] border-b-4 border-transparent hover:border-[#d52b1e]/50 transition flex items-center gap-2">
-      Student Promotion & No Due
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+      Student Promotion &amp; Departments
     </a>
   </div>
 
@@ -20,14 +22,11 @@
   class="flex flex-wrap gap-3 sm:gap-6 border-2 border-[#d52b1e] p-4 sm:p-6 rounded-2xl sm:rounded-3xl mb-6 items-center bg-white shadow-sm">
 
   <select name="branch" onchange="this.form.submit()"
-    class="border rounded-full px-4 py-2 w-full sm:w-44">
+    class="border rounded-full px-4 py-2 w-full sm:w-48 text-sm">
     <option value="">Select Branch</option>
-    <option value="CSE" {% if branch == "CSE" %}selected{% endif %}>CSE</option>
-    <option value="ECE" {% if branch == "ECE" %}selected{% endif %}>ECE</option>
-    <option value="EEE" {% if branch == "EEE" %}selected{% endif %}>EEE</option>
-    <option value="CIVIL" {% if branch == "CIVIL" %}selected{% endif %}>CIVIL</option>
-    <option value="MECH" {% if branch == "MECH" %}selected{% endif %}>MECH</option>
-    <option value="MCT" {% if branch == "MCT" %}selected{% endif %}>MCT</option>
+    {% for d in global_active_departments %}
+    <option value="{{ d.code }}" {% if branch == d.code %}selected{% endif %}>{{ d.code }} - {{ d.name }}</option>
+    {% endfor %}
   </select>
 
   <select name="year" onchange="this.form.submit()"
@@ -252,8 +251,9 @@
         data-sem="{{ s.semester }}"
         data-year="{{ s.year }}"
         data-type="{{ s.student_type }}"
+        data-branch="{{ s.branch }}"
         onclick="handleEditBtnClick(this)"
-        class="text-blue-600 font-semibold">
+        class="text-blue-600 font-semibold cursor-pointer">
         Edit
       </button>
 
@@ -338,7 +338,14 @@
   </label>
 </div>
 
-<input type="hidden" name="branch" value="{{ branch }}">
+<label class="block text-sm font-medium mb-1">Branch / Department</label>
+<select name="branch" id="add_branch_select" class="w-full border rounded-full px-4 py-2 mb-2 text-sm" required>
+  <option value="">Select Branch</option>
+  {% for d in global_active_departments %}
+  <option value="{{ d.code }}" {% if branch == d.code %}selected{% endif %}>{{ d.code }} - {{ d.name }}</option>
+  {% endfor %}
+</select>
+
 <input type="hidden" id="add_year_hidden" name="year" value="{{ year }}">
 <button type="button" onclick="submitAddForm(this)"
         class="bg-[#d52b1e] hover:bg-red-800 text-white w-full py-2 rounded-full font-semibold transition flex items-center justify-center gap-2">
@@ -436,7 +443,14 @@
 <h2 class="text-lg font-bold text-center mb-3">Edit Student</h2>
 
 <input type="hidden" name="student_id" id="edit_id">
-<input type="hidden" name="branch" value="{{ branch }}">
+
+<label class="block text-sm font-semibold mb-1">Branch / Department</label>
+<select id="edit_branch" name="branch" class="w-full border rounded-full px-3 py-1.5 mb-2 text-sm" required>
+  <option value="">Select Branch</option>
+  {% for d in global_all_departments %}
+  <option value="{{ d.code }}">{{ d.code }} - {{ d.name }}</option>
+  {% endfor %}
+</select>
 
 <label class="block text-sm font-semibold mb-1">Roll No</label>
 <input id="edit_roll" name="roll_no"
@@ -670,16 +684,20 @@ function submitAddForm(btn) {
 // ── Edit Modal ───────────────────────────────
 function handleEditBtnClick(btn) {
   const d = btn.dataset;
-  openEditModal(d.id, d.roll, d.reg, d.name, d.dob, d.phone, d.sem, d.year, d.type);
+  openEditModal(d.id, d.roll, d.reg, d.name, d.dob, d.phone, d.sem, d.year, d.type, d.branch);
 }
 
-function openEditModal(id, r, rg, n, d, p, sem, y, stype) {
+function openEditModal(id, r, rg, n, d, p, sem, y, stype, br) {
   edit_id.value    = id;
   edit_roll.value  = r;
   edit_reg.value   = rg;
   edit_name.value  = n;
   edit_dob.value   = d;
   edit_phone.value = p;
+
+  if (document.getElementById('edit_branch') && br) {
+    document.getElementById('edit_branch').value = br;
+  }
 
   // Set student type radio
   const studentType = stype || 'Hosteller';

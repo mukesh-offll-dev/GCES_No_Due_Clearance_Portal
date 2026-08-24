@@ -634,4 +634,164 @@ class WebSocketAndRealTimeTests(TestCase):
             self.assertEqual(response.status_code, 302)
             self.assertIn("/faculty/?branch=CSE&year=2", response.url)
 
+    # ─────────────────────────────────────────────────────────────
+    #  8. Dynamic Department Management Tests
+    # ─────────────────────────────────────────────────────────────
+    def test_default_departments_seeding(self):
+        """Default departments (CSE, ECE, EEE, MECH, CIVIL, MCT) must be seeded if empty."""
+        from authentication.departments import get_all_departments, get_active_department_codes
+        departments = get_all_departments()
+        self.assertGreaterEqual(len(departments), 6)
+        codes = get_active_department_codes()
+        self.assertIn("CSE", codes)
+        self.assertIn("ECE", codes)
+        self.assertIn("EEE", codes)
+        self.assertIn("MECH", codes)
+        self.assertIn("CIVIL", codes)
+        self.assertIn("MCT", codes)
+
+    def test_add_department_success(self):
+        """Faculty can add a new dynamic department (e.g. AI-DS)."""
+        from authentication.departments import add_department, get_department_by_code
+        from authentication.mongo import departments_col
+        departments_col.delete_many({"code": "AI-DS"})
+
+        success, result = add_department("Artificial Intelligence and Data Science", "AI-DS")
+        self.assertTrue(success)
+        self.assertEqual(result["code"], "AI-DS")
+        self.assertEqual(result["name"], "Artificial Intelligence and Data Science")
+        self.assertTrue(result["is_active"])
+
+        dept = get_department_by_code("AI-DS")
+        self.assertIsNotNone(dept)
+        self.assertEqual(dept["name"], "Artificial Intelligence and Data Science")
+        departments_col.delete_many({"code": "AI-DS"})
+
+    def test_add_duplicate_department_code_rejected(self):
+        """Duplicate department code (case-insensitive) must be rejected."""
+        from authentication.departments import add_department
+        success, error = add_department("Computer Science Duplicate", "CSE")
+        self.assertFalse(success)
+        self.assertIn("already exists", str(error).lower())
+
+        success_lower, error_lower = add_department("Computer Science Duplicate 2", "cse")
+        self.assertFalse(success_lower)
+        self.assertIn("already exists", str(error_lower).lower())
+
+    def test_add_duplicate_department_name_rejected(self):
+        """Duplicate department name (case-insensitive) must be rejected."""
+        from authentication.departments import add_department
+        success, error = add_department("computer science and engineering", "CSE-DUP")
+        self.assertFalse(success)
+        self.assertIn("already exists", str(error).lower())
+
+    def test_edit_department(self):
+        """Faculty can edit department name and code."""
+        from authentication.departments import add_department, update_department, get_department_by_id
+        from authentication.mongo import departments_col
+        departments_col.delete_many({"code": {"$in": ["BME", "BMET"]}})
+
+        success, new_dept = add_department("Bio Medical Engineering", "BME")
+        self.assertTrue(success)
+        dept_id = new_dept["id"]
+
+        # Update name and code
+        success, updated = update_department(dept_id, "Biomedical Engineering & Tech", "BMET")
+        self.assertTrue(success)
+        self.assertEqual(updated["name"], "Biomedical Engineering & Tech")
+        self.assertEqual(updated["code"], "BMET")
+
+        fetched = get_department_by_id(dept_id)
+        self.assertEqual(fetched["code"], "BMET")
+        departments_col.delete_many({"code": {"$in": ["BME", "BMET"]}})
+
+    def test_toggle_department_status(self):
+        """Faculty can toggle active/inactive status of a department."""
+        from authentication.departments import add_department, toggle_department_status, get_active_department_codes
+        from authentication.mongo import departments_col
+        departments_col.delete_many({"code": "ROBO"})
+
+        success, dept = add_department("Robotics and Automation", "ROBO")
+        self.assertTrue(success)
+        dept_id = dept["id"]
+
+        # Deactivate
+        success, updated = toggle_department_status(dept_id, is_active=False)
+        self.assertTrue(success)
+        self.assertFalse(updated["is_active"])
+        self.assertNotIn("ROBO", get_active_department_codes())
+
+        # Reactivate
+        success, updated = toggle_department_status(dept_id, is_active=True)
+        self.assertTrue(success)
+        self.assertTrue(updated["is_active"])
+        self.assertIn("ROBO", get_active_department_codes())
+        departments_col.delete_many({"code": "ROBO"})
+
+    def test_delete_department_blocked_when_students_exist(self):
+        """Deleting a department associated with students must be blocked."""
+        from authentication.departments import add_department, delete_department
+        from authentication.mongo import students_col, departments_col
+        departments_col.delete_many({"code": "CHEM"})
+
+        success, dept = add_department("Chemical Engineering", "CHEM")
+        self.assertTrue(success)
+        dept_id = dept["id"]
+
+        # Insert a student in CHEM
+        fake_id = ObjectId()
+        students_col.insert_one({
+            "_id": fake_id,
+            "roll_no": "23CH01",
+            "reg_no": "830123108001",
+            "name": "TEST CHEM STUDENT",
+            "branch": "CHEM",
+            "year": 1,
+            "semester": 1,
+        })
+
+        try:
+            success, msg = delete_department(dept_id)
+            self.assertFalse(success)
+            self.assertIn("cannot be permanently deleted", msg)
+            self.assertIn("deactivate it instead", msg)
+        finally:
+            students_col.delete_one({"_id": fake_id})
+            departments_col.delete_many({"code": "CHEM"})
+
+    def test_delete_department_allowed_when_no_students_exist(self):
+        """Deleting a department with 0 associated students must succeed."""
+        from authentication.departments import add_department, delete_department, get_department_by_id
+        from authentication.mongo import departments_col
+        departments_col.delete_many({"code": "MARINE"})
+
+        success, dept = add_department("Marine Engineering", "MARINE")
+        self.assertTrue(success)
+        dept_id = dept["id"]
+
+        success, msg = delete_department(dept_id)
+        self.assertTrue(success)
+        self.assertIn("deleted successfully", msg)
+        self.assertIsNone(get_department_by_id(dept_id))
+
+    def test_department_management_endpoints_authorization(self):
+        """Unauthenticated or locked promotion requests to department endpoints must be blocked."""
+        # Unauthenticated
+        res = self.client.post(reverse("add_department"), {"name": "Test", "code": "TST"})
+        self.assertEqual(res.status_code, 302)
+
+        # Logged in as Faculty without promotion unlocked
+        session = self.client.session
+        session["role"] = "FACULTY"
+        session["promotion_unlocked"] = False
+        session.save()
+
+        res = self.client.post(
+            reverse("add_department"),
+            {"name": "Test", "code": "TST"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest"
+        )
+        self.assertEqual(res.status_code, 403)
+
+
 

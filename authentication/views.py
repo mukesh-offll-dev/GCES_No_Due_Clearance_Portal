@@ -1,17 +1,31 @@
 from django.shortcuts import render, redirect
+from django.urls import reverse
 from django.contrib import messages
 from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
 import logging
 from .decorators import institution_login_required
 from .institution_users import INSTITUTION_USERS
-from .mongo import institution_logs , students_col , no_due_col, portal_settings
+from .mongo import institution_logs , students_col , no_due_col, portal_settings, departments_col
 from bson.errors import InvalidId
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 from django.conf import settings
 from .utils import save_receipt , reset_expired_no_dues
-from .events import notify_student, notify_all_students, notify_office, notify_faculty, notify_all_offices
+from .events import notify_student, notify_all_students, notify_office, notify_faculty, notify_all_offices, notify_department_changed
+from .departments import (
+    get_all_departments,
+    get_active_departments,
+    get_active_department_codes,
+    get_all_department_codes,
+    get_department_student_counts,
+    get_department_by_code,
+    get_department_by_id,
+    add_department,
+    update_department,
+    toggle_department_status,
+    delete_department,
+)
 import re
 import cloudinary.uploader
 from django.http import HttpResponse, JsonResponse
@@ -67,11 +81,13 @@ _STUDENT_LOOKUP = {
 }
 
 
-def _office_branch_summary(office, branches):
+def _office_branch_summary(office, branches=None):
     """
     Count PENDING requests per branch for one office in a SINGLE aggregation
     (was one aggregation per branch). Returns {branch: count} with 0 defaults.
     """
+    if branches is None:
+        branches = get_active_department_codes()
     pipeline = [
         {"$match": {"office": office, "status": "PENDING"}},
         _STUDENT_LOOKUP,
@@ -136,8 +152,17 @@ def index(request):
         # ================= DEPARTMENT LOGIN =================
         if office == "department":
             dept = INSTITUTION_USERS.get("department", {}).get(department)
+            dept_obj = get_department_by_code(department)
 
+            is_valid_dept_user = False
             if dept and dept.get("username") == username and dept.get("password") == password:
+                is_valid_dept_user = True
+            elif dept_obj and dept_obj.get("is_active"):
+                clean_dept_code = str(department).strip().lower().replace("-", "").replace("_", "")
+                if username.lower().replace("-", "").replace("_", "") == f"{clean_dept_code}admin" and password == f"{str(department).strip().lower()}@123":
+                    is_valid_dept_user = True
+
+            if is_valid_dept_user:
                 request.session["role"] = "DEPARTMENT"
                 request.session["department"] = department
 
@@ -619,14 +644,15 @@ def hostel_dashboard(request):
     year_summary = {}
     branch_summary = {}
 
+    active_branches = get_active_department_codes()
+
     if branch and year:
         requests = _office_pending_requests("HOSTEL", branch, year)
         count = len(requests)
     elif branch:
         year_summary = _office_year_summary("HOSTEL", branch)
     else:
-        branch_summary = _office_branch_summary(
-            "HOSTEL", ["CSE", "ECE", "EEE", "CIVIL", "MECH", "MCT"])
+        branch_summary = _office_branch_summary("HOSTEL", active_branches)
 
     return render(request, "hostel_dashboard.html", {
         "requests": requests,
@@ -634,7 +660,7 @@ def hostel_dashboard(request):
         "branch": branch,
         "year": year,
         "semester": semester,
-        "branches": ["CSE","ECE","EEE","CIVIL","MECH","MCT"],
+        "branches": active_branches,
         "branch_summary": branch_summary,
         "year_summary": year_summary
     })
@@ -659,14 +685,15 @@ def library_dashboard(request):
     branch_summary = {}
     year_summary = {}
 
+    active_branches = get_active_department_codes()
+
     if branch and year:
         requests = _office_pending_requests("LIBRARY", branch, year)
         count = len(requests)
     elif branch:
         year_summary = _office_year_summary("LIBRARY", branch)
     else:
-        branch_summary = _office_branch_summary(
-            "LIBRARY", ["CSE", "ECE", "EEE", "CIVIL", "MECH", "MCT"])
+        branch_summary = _office_branch_summary("LIBRARY", active_branches)
 
     return render(request, "institution_dashboard.html", {
         "office_name": "Library Office",
@@ -675,7 +702,7 @@ def library_dashboard(request):
         "year": year,
         "semester": semester,
         "count": count,
-        "branches": ["CSE","ECE","EEE","CIVIL","MECH","MCT"],
+        "branches": active_branches,
         "branch_summary": branch_summary,
         "year_summary": year_summary
     })
@@ -874,14 +901,15 @@ def college_dashboard(request):
     branch_summary = {}
     year_summary = {}
 
+    active_branches = get_active_department_codes()
+
     if branch and year:
         requests = _office_pending_requests("COLLEGE", branch, year)
         count = len(requests)
     elif branch:
         year_summary = _office_year_summary("COLLEGE", branch)
     else:
-        branch_summary = _office_branch_summary(
-            "COLLEGE", ["CSE", "ECE", "EEE", "CIVIL", "MECH", "MCT"])
+        branch_summary = _office_branch_summary("COLLEGE", active_branches)
 
     return render(request, "institution_dashboard.html", {
         "office_name": "College Office",
@@ -890,7 +918,7 @@ def college_dashboard(request):
         "year": year,
         "semester": semester,
         "count": count,
-        "branches": ["CSE","ECE","EEE","CIVIL","MECH","MCT"],
+        "branches": active_branches,
         "branch_summary": branch_summary,
         "year_summary": year_summary
     })
@@ -1216,13 +1244,18 @@ def faculty_dashboard(request):
 
         count = len(students)
 
+    departments = get_all_departments(active_only=False)
+    active_departments = get_active_departments()
+
     return render(request, "faculty_dashboard.html", {
         "students": students,
         "count": count,
         "branch": branch,
         "year": year,
         "add_error": add_error,
-        "add_success": add_success
+        "add_success": add_success,
+        "departments": departments,
+        "active_departments": active_departments,
     })
 
 
@@ -1472,17 +1505,24 @@ def faculty_promotion_page(request):
         return redirect("index")
 
     # Handle password verification
+    tab = request.GET.get("tab", "").strip().lower()
+
     if request.method == "POST":
         password = request.POST.get("promotion_password", "").strip()
+        tab_post = request.POST.get("tab", "").strip().lower()
+        target_tab = tab_post or tab or "promotion"
         if password == "gces8301":
             request.session["promotion_unlocked"] = True
-            return redirect("faculty_promotion")
+            redirect_url = reverse("faculty_promotion")
+            if target_tab and target_tab != "promotion":
+                redirect_url += f"?tab={target_tab}"
+            return redirect(redirect_url)
         else:
-            return render(request, "faculty_promotion_login.html", {"error": True})
+            return render(request, "faculty_promotion_login.html", {"error": True, "tab": target_tab})
 
     # Render login page if session is locked
     if not request.session.get("promotion_unlocked"):
-        return render(request, "faculty_promotion_login.html")
+        return render(request, "faculty_promotion_login.html", {"tab": tab})
 
     # Sync toggle expiration on load
     check_no_due_access_status()
@@ -1527,6 +1567,13 @@ def faculty_promotion_page(request):
             if auto_disable_at > now_utc:
                 remaining_seconds = int((auto_disable_at - now_utc).total_seconds())
 
+    departments = get_all_departments(active_only=False)
+    student_counts = get_department_student_counts()
+    for d in departments:
+        d["student_count"] = student_counts.get(d["code"], 0)
+
+    active_tab = request.GET.get("tab", "promotion").strip().lower()
+
     return render(request, "faculty_promotion.html", {
         "sem8_count": sem8_count,
         "global_sem8_count": global_sem8_count,
@@ -1537,6 +1584,9 @@ def faculty_promotion_page(request):
         "auto_disable_at_iso": auto_disable_at_iso,
         "duration_days": duration_days,
         "remaining_seconds": remaining_seconds,
+        "departments": departments,
+        "student_counts": student_counts,
+        "active_tab": active_tab,
     })
 
 
@@ -1832,6 +1882,166 @@ def remove_sem8_students(request):
 
     return redirect("faculty_promotion")
 
+
+# ==============================================================================
+#  DYNAMIC DEPARTMENT MANAGEMENT VIEWS (Faculty Advisor -> Student Promotion)
+# ==============================================================================
+
+@institution_login_required
+def faculty_departments_api(request):
+    """Returns JSON list of all departments with live student enrollment counts."""
+    if request.session.get("role") != "FACULTY":
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    departments = get_all_departments(active_only=False)
+    student_counts = get_department_student_counts()
+    for d in departments:
+        d["student_count"] = student_counts.get(d["code"], 0)
+
+    return JsonResponse({
+        "success": True,
+        "departments": departments,
+        "student_counts": student_counts
+    })
+
+
+@institution_login_required
+def add_department_view(request):
+    """Faculty endpoint to add a new department dynamically."""
+    if request.session.get("role") != "FACULTY":
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    if not request.session.get("promotion_unlocked"):
+        wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
+        if wants_json:
+            return JsonResponse({"error": "Access denied. Promotion password required."}, status=403)
+        messages.error(request, "Access denied. Please verify password first.")
+        return redirect("faculty_promotion")
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        code = request.POST.get("code", "").strip()
+        is_active = request.POST.get("is_active", "true") in ("true", "1", "True", True)
+
+        success, result = add_department(name, code, is_active=is_active)
+
+        wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
+
+        if success:
+            if wants_json:
+                return JsonResponse({"success": True, "department": result})
+            messages.success(request, f"Department '{result.get('code')}' added successfully! ✅")
+        else:
+            if wants_json:
+                return JsonResponse({"success": False, "error": result}, status=400)
+            messages.error(request, f"Failed to add department: {result} ❌")
+
+    return redirect("/faculty/promotion/?tab=departments")
+
+
+@institution_login_required
+def edit_department_view(request):
+    """Faculty endpoint to update department name and code."""
+    if request.session.get("role") != "FACULTY":
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    if not request.session.get("promotion_unlocked"):
+        wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
+        if wants_json:
+            return JsonResponse({"error": "Access denied. Promotion password required."}, status=403)
+        messages.error(request, "Access denied. Please verify password first.")
+        return redirect("faculty_promotion")
+
+    if request.method == "POST":
+        dept_id = request.POST.get("department_id", "").strip()
+        name = request.POST.get("name", "").strip()
+        code = request.POST.get("code", "").strip()
+        is_active_raw = request.POST.get("is_active")
+        is_active = is_active_raw in ("true", "1", "True", True) if is_active_raw is not None else None
+
+        success, result = update_department(dept_id, name, code, is_active=is_active)
+
+        wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
+
+        if success:
+            if wants_json:
+                return JsonResponse({"success": True, "department": result})
+            messages.success(request, f"Department '{result.get('code')}' updated successfully! ✅")
+        else:
+            if wants_json:
+                return JsonResponse({"success": False, "error": result}, status=400)
+            messages.error(request, f"Failed to update department: {result} ❌")
+
+    return redirect("/faculty/promotion/?tab=departments")
+
+
+@institution_login_required
+def toggle_department_view(request):
+    """Faculty endpoint to toggle a department's active/inactive status."""
+    if request.session.get("role") != "FACULTY":
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    if not request.session.get("promotion_unlocked"):
+        wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
+        if wants_json:
+            return JsonResponse({"error": "Access denied. Promotion password required."}, status=403)
+        messages.error(request, "Access denied. Please verify password first.")
+        return redirect("faculty_promotion")
+
+    if request.method == "POST":
+        dept_id = request.POST.get("department_id", "").strip()
+        is_active_raw = request.POST.get("is_active")
+        is_active = None
+        if is_active_raw is not None and str(is_active_raw).strip() != "":
+            is_active = str(is_active_raw).strip().lower() in ("true", "1", "yes")
+
+        success, result = toggle_department_status(dept_id, is_active=is_active)
+
+        wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
+
+        if success:
+            status_label = "Activated" if result.get("is_active") else "Deactivated"
+            if wants_json:
+                return JsonResponse({"success": True, "department": result, "status_label": status_label})
+            messages.success(request, f"Department '{result.get('code')}' has been {status_label.lower()} successfully! ✅")
+        else:
+            if wants_json:
+                return JsonResponse({"success": False, "error": result}, status=400)
+            messages.error(request, f"Failed to toggle status: {result} ❌")
+
+    return redirect("/faculty/promotion/?tab=departments")
+
+
+@institution_login_required
+def delete_department_view(request):
+    """Faculty endpoint to safely delete a department only when 0 students exist."""
+    if request.session.get("role") != "FACULTY":
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    if not request.session.get("promotion_unlocked"):
+        wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
+        if wants_json:
+            return JsonResponse({"error": "Access denied. Promotion password required."}, status=403)
+        messages.error(request, "Access denied. Please verify password first.")
+        return redirect("faculty_promotion")
+
+    if request.method == "POST":
+        dept_id = request.POST.get("department_id", "").strip()
+
+        success, message = delete_department(dept_id)
+
+        wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
+
+        if success:
+            if wants_json:
+                return JsonResponse({"success": True, "message": message, "department_id": dept_id})
+            messages.success(request, f"{message} ✅")
+        else:
+            if wants_json:
+                return JsonResponse({"success": False, "error": message, "cannot_delete": True}, status=400)
+            messages.warning(request, f"{message} ⚠️")
+
+    return redirect("/faculty/promotion/?tab=departments")
 
 
 @institution_login_required

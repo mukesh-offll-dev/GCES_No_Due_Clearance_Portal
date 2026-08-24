@@ -7,12 +7,31 @@
   <!-- Navigation Tabs -->
   <div class="flex gap-4 border-b-2 border-gray-200 mb-6 pb-px">
     <a href="{% url 'faculty_dashboard' %}" class="py-2.5 px-4 font-semibold text-sm text-gray-500 hover:text-[#d52b1e] border-b-4 border-transparent hover:border-[#d52b1e]/50 transition flex items-center gap-2">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
       Student Directory
     </a>
-    <a href="{% url 'faculty_promotion' %}" class="py-2.5 px-4 font-bold text-sm border-b-4 border-[#d52b1e] text-[#d52b1e] flex items-center gap-2">
-      Student Promotion & No Due
+    <a href="{% url 'faculty_promotion' %}" class="py-2.5 px-4 font-bold text-sm border-b-4 border-[#d52b1e] text-[#d52b1e] flex items-center gap-2 transition">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+      Student Promotion &amp; Departments
     </a>
   </div>
+
+  <!-- Sub-Tab Segment Switcher -->
+  <div class="bg-gray-100 p-1.5 rounded-2xl flex items-center gap-2 max-w-xl mx-auto mb-6 shadow-inner border border-gray-200">
+    <button type="button" onclick="switchFacultyTab('promotion')" id="tab_btn_promotion"
+      class="flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 bg-white text-[#d52b1e] shadow-sm cursor-pointer">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+      <span>Student Promotion &amp; No Due</span>
+    </button>
+    <button type="button" onclick="switchFacultyTab('departments')" id="tab_btn_departments"
+      class="flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 text-gray-600 hover:text-gray-900 cursor-pointer">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+      <span>Department Management</span>
+    </button>
+  </div>
+
+  <!-- ================= PROMOTION PANEL ================= -->
+  <div id="panel_promotion" class="space-y-6">
 
   <!-- Messages Alert -->
   {% for message in messages %}
@@ -302,6 +321,151 @@
 
     </div>
   </div>
+  </div>
+
+  <!-- ================= DEPARTMENT MANAGEMENT PANEL ================= -->
+  <div id="panel_departments" class="hidden space-y-6">
+    
+    <!-- Top Action Card -->
+    <div class="bg-white border-2 border-gray-200 rounded-3xl p-6 sm:p-8 shadow-sm">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6 mb-6">
+        <div>
+          <h2 class="text-xl font-extrabold text-gray-800 flex items-center gap-2">
+            <span class="w-3 h-6 bg-[#d52b1e] rounded-full inline-block"></span>
+            Department &amp; Branch Management
+          </h2>
+          <p class="text-xs sm:text-sm text-gray-500 mt-1">
+            Centralized dynamic department configuration. Active departments automatically sync with Student Add/Edit forms, Directory filters, and Clearance Reports.
+          </p>
+        </div>
+        <button type="button" onclick="openAddDeptModal()"
+          class="bg-[#d52b1e] hover:bg-red-800 text-white font-bold px-6 py-3 rounded-full text-xs sm:text-sm transition-all duration-200 active:scale-95 shadow-md flex items-center justify-center gap-2 shrink-0 cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+          </svg>
+          <span>Add Department</span>
+        </button>
+      </div>
+
+      <!-- Live Search & Summary Bar -->
+      <div class="flex flex-col sm:flex-row gap-4 items-center justify-between mb-6">
+        <div class="relative w-full sm:w-80">
+          <input type="text" id="dept_search_input" oninput="filterDepartmentsTable()"
+            placeholder="Search by name or code..."
+            class="w-full pl-10 pr-4 py-2.5 rounded-full border-2 border-gray-200 focus:border-[#d52b1e] focus:outline-none text-xs font-semibold text-gray-800 placeholder-gray-400 bg-gray-50/50">
+          <svg class="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-start sm:justify-end text-xs">
+          <span class="bg-gray-100 text-gray-700 font-bold px-3.5 py-1.5 rounded-full border border-gray-200">
+            Total: <span id="dept_count_total" class="text-gray-900">{{ departments|length }}</span>
+          </span>
+          <span class="bg-green-50 text-green-700 font-bold px-3.5 py-1.5 rounded-full border border-green-200">
+            Active: <span id="dept_count_active">-</span>
+          </span>
+          <span class="bg-yellow-50 text-yellow-800 font-bold px-3.5 py-1.5 rounded-full border border-yellow-200">
+            Inactive: <span id="dept_count_inactive">-</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Departments Interactive Table -->
+      <div class="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm">
+        <table class="min-w-full divide-y divide-gray-200 text-left text-xs sm:text-sm" id="dept_table">
+          <thead class="bg-gray-50 text-gray-700 uppercase font-bold text-[11px] tracking-wider">
+            <tr>
+              <th class="px-6 py-4">Department Name</th>
+              <th class="px-6 py-4 text-center">Code</th>
+              <th class="px-6 py-4 text-center">Enrolled Students</th>
+              <th class="px-6 py-4 text-center">Status</th>
+              <th class="px-6 py-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100 bg-white" id="dept_table_body">
+            {% for d in departments %}
+            <tr id="dept_row_{{ d.id }}" class="hover:bg-gray-50/70 transition dept-row" data-id="{{ d.id }}" data-code="{{ d.code }}" data-name="{{ d.name }}" data-active="{{ d.is_active|yesno:'true,false' }}">
+              <td class="px-6 py-4">
+                <div id="dept_name_{{ d.id }}" class="font-bold text-gray-900 text-sm">{{ d.name }}</div>
+                <div id="dept_code_label_{{ d.id }}" class="text-[11px] text-gray-400">Code identifier: {{ d.code }}</div>
+              </td>
+              <td class="px-6 py-4 text-center">
+                <span id="dept_code_badge_{{ d.id }}" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                  {{ d.code }}
+                </span>
+              </td>
+              <td class="px-6 py-4 text-center">
+                <span id="dept_student_count_{{ d.id }}" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold {% if d.student_count > 0 %}bg-amber-50 text-amber-800 border border-amber-200{% else %}bg-gray-50 text-gray-500 border border-gray-200{% endif %}">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                  <span>{{ d.student_count }} Students</span>
+                </span>
+              </td>
+              <td class="px-6 py-4 text-center">
+                <div id="dept_status_container_{{ d.id }}">
+                  {% if d.is_active %}
+                  <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200">
+                    <span class="w-2 h-2 bg-green-600 rounded-full animate-pulse"></span>
+                    Active
+                  </span>
+                  {% else %}
+                  <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200">
+                    <span class="w-2 h-2 bg-gray-400 rounded-full"></span>
+                    Inactive
+                  </span>
+                  {% endif %}
+                </div>
+              </td>
+              <td class="px-6 py-4 text-right">
+                <div class="inline-flex items-center gap-2">
+                  <!-- Edit Button -->
+                  <button type="button" id="edit_btn_{{ d.id }}"
+                    onclick="openEditDeptModal('{{ d.id }}', '{{ d.name|escapejs }}', '{{ d.code|escapejs }}', {{ d.is_active|yesno:'true,false' }})"
+                    class="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition border border-indigo-100 hover:border-indigo-300 cursor-pointer" title="Edit Department">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                  </button>
+
+                  <!-- Toggle Active Status Button -->
+                  <button type="button" id="toggle_btn_{{ d.id }}"
+                    onclick="handleToggleDept(this, '{{ d.id }}')"
+                    class="p-2 {% if d.is_active %}text-amber-600 hover:bg-amber-50 border-amber-100 hover:border-amber-300{% else %}text-green-600 hover:bg-green-50 border-green-100 hover:border-green-300{% endif %} rounded-xl transition border cursor-pointer"
+                    title="{% if d.is_active %}Deactivate Department{% else %}Activate Department{% endif %}">
+                    <span class="toggle-icon-wrap">
+                      {% if d.is_active %}
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                      {% else %}
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                      {% endif %}
+                    </span>
+                    <svg class="toggle-spinner hidden animate-spin w-4 h-4 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                    </svg>
+                  </button>
+
+                  <!-- Delete Button -->
+                  <button type="button" id="delete_btn_{{ d.id }}"
+                    onclick="handleDeleteDeptClick('{{ d.id }}', '{{ d.code|escapejs }}', '{{ d.name|escapejs }}', {{ d.student_count }})"
+                    class="p-2 text-red-600 hover:bg-red-50 rounded-xl transition border border-red-100 hover:border-red-300 cursor-pointer" title="Delete Department">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr id="empty_dept_row">
+              <td colspan="5" class="px-6 py-12 text-center text-gray-500 font-medium">
+                No departments found. Click "+ Add Department" to create one.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+  </div>
 
 </main>
 
@@ -431,6 +595,183 @@
     </div>
   </form>
 </div>
+
+<!-- ================= ADD DEPARTMENT MODAL ================= -->
+<div id="addDeptModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
+  <form id="addDeptForm" method="POST" action="{% url 'add_department' %}" 
+    class="bg-white border-4 border-[#d52b1e] rounded-3xl p-6 w-full max-w-md shadow-2xl">
+    {% csrf_token %}
+
+    <div class="flex items-center justify-between border-b pb-3 mb-5">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 bg-red-50 text-[#d52b1e] rounded-xl flex items-center justify-center font-bold">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+        </div>
+        <h3 class="text-lg font-extrabold text-gray-900">Add New Department</h3>
+      </div>
+      <button type="button" onclick="closeAddDeptModal()" class="text-gray-400 hover:text-gray-600 font-bold text-lg">✕</button>
+    </div>
+
+    <div class="space-y-4 mb-6">
+      <div>
+        <label class="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Department Name <span class="text-red-500">*</span></label>
+        <input type="text" name="name" id="add_dept_name" required
+          placeholder="e.g. Artificial Intelligence and Data Science"
+          class="w-full border-2 border-gray-200 focus:border-[#d52b1e] focus:outline-none rounded-full px-4 py-2.5 text-xs font-semibold text-gray-800">
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Department Code <span class="text-red-500">*</span></label>
+        <input type="text" name="code" id="add_dept_code" required
+          placeholder="e.g. AI-DS"
+          class="w-full border-2 border-gray-200 focus:border-[#d52b1e] focus:outline-none rounded-full px-4 py-2.5 text-xs font-bold text-gray-800 uppercase">
+        <p class="text-[11px] text-gray-400 mt-1">Unique short code used in student registration &amp; reports.</p>
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Initial Status</label>
+        <div class="flex gap-4">
+          <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-700">
+            <input type="radio" name="is_active" value="true" checked class="w-4 h-4 accent-[#d52b1e]">
+            <span>Active</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-700">
+            <input type="radio" name="is_active" value="false" class="w-4 h-4 accent-gray-500">
+            <span>Inactive</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <p id="add_dept_error_msg" class="hidden text-red-600 font-bold mb-4 text-xs bg-red-50 p-2.5 rounded-xl border border-red-200"></p>
+
+    <div class="flex gap-3 justify-end pt-2 border-t">
+      <button type="button" onclick="closeAddDeptModal()" class="px-5 py-2.5 rounded-full border-2 border-gray-200 font-semibold text-xs text-gray-600 hover:bg-gray-50 transition cursor-pointer">
+        Cancel
+      </button>
+      <button type="submit" onclick="submitAddDept(this, event)" class="bg-[#d52b1e] hover:bg-red-800 text-white font-bold px-6 py-2.5 rounded-full text-xs transition-all active:scale-95 shadow-md flex items-center justify-center gap-2 cursor-pointer">
+        <span>Save Department</span>
+        <svg class="hidden animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- ================= EDIT DEPARTMENT MODAL ================= -->
+<div id="editDeptModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
+  <form id="editDeptForm" method="POST" action="{% url 'edit_department' %}" 
+    class="bg-white border-4 border-indigo-600 rounded-3xl p-6 w-full max-w-md shadow-2xl">
+    {% csrf_token %}
+    <input type="hidden" name="department_id" id="edit_dept_id">
+
+    <div class="flex items-center justify-between border-b pb-3 mb-5">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center font-bold">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+        </div>
+        <h3 class="text-lg font-extrabold text-gray-900">Edit Department</h3>
+      </div>
+      <button type="button" onclick="closeEditDeptModal()" class="text-gray-400 hover:text-gray-600 font-bold text-lg">✕</button>
+    </div>
+
+    <div class="space-y-4 mb-6">
+      <div>
+        <label class="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Department Name <span class="text-red-500">*</span></label>
+        <input type="text" name="name" id="edit_dept_name" required
+          class="w-full border-2 border-gray-200 focus:border-indigo-600 focus:outline-none rounded-full px-4 py-2.5 text-xs font-semibold text-gray-800">
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Department Code <span class="text-red-500">*</span></label>
+        <input type="text" name="code" id="edit_dept_code" required
+          class="w-full border-2 border-gray-200 focus:border-indigo-600 focus:outline-none rounded-full px-4 py-2.5 text-xs font-bold text-gray-800 uppercase">
+        <p class="text-[11px] text-gray-400 mt-1">Existing students will safely maintain their association.</p>
+      </div>
+    </div>
+
+    <p id="edit_dept_error_msg" class="hidden text-red-600 font-bold mb-4 text-xs bg-red-50 p-2.5 rounded-xl border border-red-200"></p>
+
+    <div class="flex gap-3 justify-end pt-2 border-t">
+      <button type="button" onclick="closeEditDeptModal()" class="px-5 py-2.5 rounded-full border-2 border-gray-200 font-semibold text-xs text-gray-600 hover:bg-gray-50 transition cursor-pointer">
+        Cancel
+      </button>
+      <button type="submit" onclick="submitEditDept(this, event)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2.5 rounded-full text-xs transition-all active:scale-95 shadow-md flex items-center justify-center gap-2 cursor-pointer">
+        <span>Update Department</span>
+        <svg class="hidden animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- ================= CANNOT DELETE DEPARTMENT MODAL (SAFEGUARD) ================= -->
+<div id="cannotDeleteDeptModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
+  <div class="bg-white border-4 border-amber-500 rounded-3xl p-6 w-full max-w-md shadow-2xl text-center">
+    <div class="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
+      <svg class="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+      </svg>
+    </div>
+    <h3 class="text-xl font-extrabold text-gray-900 mb-2">Cannot Delete Department</h3>
+    <p class="text-xs sm:text-sm text-gray-600 mb-6 leading-relaxed" id="cannot_delete_msg">
+      This department is currently associated with students or historical records and cannot be permanently deleted. You can deactivate it instead.
+    </p>
+    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+      <input type="hidden" id="cannot_delete_toggle_id">
+      <button type="button" onclick="submitDeactivateInstead(this)" class="bg-amber-600 hover:bg-amber-700 text-white px-6 py-2.5 rounded-full font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2">
+        <span>Deactivate Department Instead</span>
+        <svg class="hidden animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </button>
+      <button type="button" onclick="closeDeleteDeptModals()" class="border-2 border-gray-200 hover:bg-gray-50 px-6 py-2.5 rounded-full font-semibold text-xs text-gray-600 transition cursor-pointer">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= CONFIRM DELETE DEPARTMENT MODAL ================= -->
+<div id="confirmDeleteDeptModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
+  <form id="confirmDeleteDeptForm" method="POST" action="{% url 'delete_department' %}" 
+    class="bg-white border-4 border-red-600 rounded-3xl p-6 w-full max-w-md shadow-2xl text-center">
+    {% csrf_token %}
+    <input type="hidden" name="department_id" id="confirm_delete_dept_id">
+    
+    <div class="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+      <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+      </svg>
+    </div>
+
+    <h3 class="text-xl font-extrabold text-gray-900 mb-2">Delete Department</h3>
+    <p class="text-xs sm:text-sm text-gray-600 mb-6 leading-relaxed" id="confirm_delete_dept_msg">
+      Are you sure you want to permanently delete this department? Since no students are enrolled, this department will be removed.
+    </p>
+
+    <div class="flex gap-3 justify-center">
+      <button type="submit" onclick="submitDeleteDept(this, event)" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-full font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2">
+        <span>Yes, Delete</span>
+        <svg class="hidden animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </button>
+      <button type="button" onclick="closeDeleteDeptModals()" class="border-2 border-gray-200 hover:bg-gray-50 px-6 py-2.5 rounded-full font-semibold text-xs text-gray-600 transition cursor-pointer">
+        Cancel
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- ================= FLOATING TOAST NOTIFICATION CONTAINER ================= -->
+<div id="portal_toast_container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
 {{ sem_counts|json_script:"semCountsData" }}
 
@@ -792,8 +1133,439 @@
     }
   }
 
+  // ================= FLOATING TOAST NOTIFICATION HELPER =================
+  function showPortalToast(message, type = 'success') {
+    const container = document.getElementById("portal_toast_container");
+    if (!container) return;
+
+    const toast = document.createElement("div");
+    toast.className = `pointer-events-auto flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl border text-xs sm:text-sm font-bold transition-all duration-300 transform translate-y-4 opacity-0 ${
+      type === 'success' ? 'bg-emerald-900 text-white border-emerald-700' :
+      type === 'error' ? 'bg-red-900 text-white border-red-700' :
+      type === 'warning' ? 'bg-amber-900 text-white border-amber-700' :
+      'bg-gray-900 text-white border-gray-700'
+    }`;
+
+    const iconSvg = type === 'success' ? `
+      <svg class="w-5 h-5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+    ` : type === 'error' ? `
+      <svg class="w-5 h-5 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+    ` : `
+      <svg class="w-5 h-5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+    `;
+
+    toast.innerHTML = `
+      ${iconSvg}
+      <span class="flex-1">${message}</span>
+      <button type="button" onclick="this.parentElement.remove()" class="text-white/60 hover:text-white font-bold ml-2">✕</button>
+    `;
+
+    container.appendChild(toast);
+    requestAnimationFrame(() => {
+      toast.classList.remove('translate-y-4', 'opacity-0');
+    });
+
+    setTimeout(() => {
+      toast.classList.add('opacity-0', 'translate-y-2');
+      setTimeout(() => toast.remove(), 300);
+    }, 3800);
+  }
+
+  // ================= DEPARTMENT MANAGEMENT SCRIPTS =================
+  function switchFacultyTab(tabName) {
+    const promoBtn = document.getElementById("tab_btn_promotion");
+    const deptBtn = document.getElementById("tab_btn_departments");
+    const promoPanel = document.getElementById("panel_promotion");
+    const deptPanel = document.getElementById("panel_departments");
+
+    if (tabName === "departments") {
+      deptBtn.className = "flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 bg-white text-[#d52b1e] shadow-sm cursor-pointer";
+      promoBtn.className = "flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 text-gray-600 hover:text-gray-900 cursor-pointer";
+      deptPanel.classList.remove("hidden");
+      promoPanel.classList.add("hidden");
+      updateDeptSummaryCounts();
+
+      try { localStorage.setItem('faculty_active_tab', 'departments'); } catch(e){}
+      const url = new URL(window.location);
+      url.searchParams.set('tab', 'departments');
+      window.history.replaceState({}, '', url);
+    } else {
+      promoBtn.className = "flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 bg-white text-[#d52b1e] shadow-sm cursor-pointer";
+      deptBtn.className = "flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 text-gray-600 hover:text-gray-900 cursor-pointer";
+      promoPanel.classList.remove("hidden");
+      deptPanel.classList.add("hidden");
+
+      try { localStorage.setItem('faculty_active_tab', 'promotion'); } catch(e){}
+      const url = new URL(window.location);
+      url.searchParams.set('tab', 'promotion');
+      window.history.replaceState({}, '', url);
+    }
+  }
+
+  function updateDeptSummaryCounts() {
+    const rows = document.querySelectorAll(".dept-row");
+    let total = 0;
+    let active = 0;
+    let inactive = 0;
+    rows.forEach(r => {
+      if (r.id !== "empty_dept_row" && r.style.display !== "none") {
+        total++;
+        if (r.dataset.active === "true") active++;
+        else inactive++;
+      }
+    });
+    const elTot = document.getElementById("dept_count_total");
+    const elAct = document.getElementById("dept_count_active");
+    const elInact = document.getElementById("dept_count_inactive");
+    if (elTot) elTot.textContent = total;
+    if (elAct) elAct.textContent = active;
+    if (elInact) elInact.textContent = inactive;
+  }
+
+  function filterDepartmentsTable() {
+    const query = (document.getElementById("dept_search_input")?.value || "").toLowerCase().trim();
+    const rows = document.querySelectorAll(".dept-row");
+    let visibleCount = 0;
+
+    rows.forEach(r => {
+      if (r.id === "empty_dept_row") return;
+      const code = (r.dataset.code || "").toLowerCase();
+      const name = (r.dataset.name || "").toLowerCase();
+      if (code.includes(query) || name.includes(query)) {
+        r.style.display = "";
+        visibleCount++;
+      } else {
+        r.style.display = "none";
+      }
+    });
+    updateDeptSummaryCounts();
+  }
+
+  function openAddDeptModal() {
+    const err = document.getElementById("add_dept_error_msg");
+    if (err) err.classList.add("hidden");
+    document.getElementById("add_dept_name").value = "";
+    document.getElementById("add_dept_code").value = "";
+    document.getElementById("addDeptModal").classList.remove("hidden");
+    setTimeout(() => document.getElementById("add_dept_name")?.focus(), 50);
+  }
+
+  function closeAddDeptModal() {
+    document.getElementById("addDeptModal").classList.add("hidden");
+  }
+
+  function openEditDeptModal(id, name, code, isActive) {
+    const err = document.getElementById("edit_dept_error_msg");
+    if (err) err.classList.add("hidden");
+    document.getElementById("edit_dept_id").value = id;
+    document.getElementById("edit_dept_name").value = name;
+    document.getElementById("edit_dept_code").value = code;
+    document.getElementById("editDeptModal").classList.remove("hidden");
+    setTimeout(() => document.getElementById("edit_dept_name")?.focus(), 50);
+  }
+
+  function closeEditDeptModal() {
+    document.getElementById("editDeptModal").classList.add("hidden");
+  }
+
+  function handleDeleteDeptClick(id, code, name, studentCount) {
+    if (Number(studentCount) > 0) {
+      document.getElementById("cannot_delete_toggle_id").value = id;
+      document.getElementById("cannot_delete_msg").innerHTML = `
+        Department <strong>"${code} - ${name}"</strong> is currently associated with <strong>${studentCount} student(s)</strong> or historical records and cannot be permanently deleted.
+        <br><br>
+        You can safely deactivate it instead so that it no longer appears in new student options while preserving existing data.
+      `;
+      document.getElementById("cannotDeleteDeptModal").classList.remove("hidden");
+    } else {
+      document.getElementById("confirm_delete_dept_id").value = id;
+      document.getElementById("confirm_delete_dept_msg").innerHTML = `
+        Are you sure you want to permanently delete department <strong>"${code} - ${name}"</strong>?
+        <br><br>
+        Since 0 students are enrolled, this department will be safely removed.
+      `;
+      document.getElementById("confirmDeleteDeptModal").classList.remove("hidden");
+    }
+  }
+
+  function closeDeleteDeptModals() {
+    document.getElementById("cannotDeleteDeptModal")?.classList.add("hidden");
+    document.getElementById("confirmDeleteDeptModal")?.classList.add("hidden");
+  }
+
+  async function submitAddDept(btn, event) {
+    if (event) event.preventDefault();
+    const form = document.getElementById("addDeptForm");
+    const name = document.getElementById("add_dept_name").value.trim();
+    const code = document.getElementById("add_dept_code").value.trim().toUpperCase();
+    const is_active = form.querySelector('input[name="is_active"]:checked')?.value || "true";
+    const errorEl = document.getElementById("add_dept_error_msg");
+
+    if (!name || !code) {
+      errorEl.textContent = "Please provide both Department Name and Department Code.";
+      errorEl.classList.remove("hidden");
+      return;
+    }
+
+    btn.disabled = true;
+    btn.querySelector('span').textContent = 'Saving...';
+    btn.querySelector('svg').classList.remove('hidden');
+
+    try {
+      const formData = new FormData(form);
+      const res = await fetch("{% url 'add_department' %}", {
+        method: "POST",
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        closeAddDeptModal();
+        showPortalToast(`Department "${data.department.code}" added successfully! ✅`, "success");
+        setTimeout(() => location.reload(), 600);
+      } else {
+        errorEl.textContent = data.error || "Failed to add department.";
+        errorEl.classList.remove("hidden");
+      }
+    } catch (e) {
+      form.submit();
+    } finally {
+      btn.disabled = false;
+      btn.querySelector('span').textContent = 'Save Department';
+      btn.querySelector('svg').classList.add('hidden');
+    }
+  }
+
+  async function submitEditDept(btn, event) {
+    if (event) event.preventDefault();
+    const form = document.getElementById("editDeptForm");
+    const id = document.getElementById("edit_dept_id").value.trim();
+    const name = document.getElementById("edit_dept_name").value.trim();
+    const code = document.getElementById("edit_dept_code").value.trim().toUpperCase();
+    const errorEl = document.getElementById("edit_dept_error_msg");
+
+    if (!name || !code) {
+      errorEl.textContent = "Please provide both Department Name and Department Code.";
+      errorEl.classList.remove("hidden");
+      return;
+    }
+
+    btn.disabled = true;
+    btn.querySelector('span').textContent = 'Updating...';
+    btn.querySelector('svg').classList.remove('hidden');
+
+    try {
+      const formData = new FormData(form);
+      const res = await fetch("{% url 'edit_department' %}", {
+        method: "POST",
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const d = data.department;
+        // In-place update DOM row
+        const row = document.getElementById(`dept_row_${d.id}`);
+        if (row) {
+          row.dataset.name = d.name;
+          row.dataset.code = d.code;
+          const nameEl = document.getElementById(`dept_name_${d.id}`);
+          if (nameEl) nameEl.textContent = d.name;
+          const codeBadge = document.getElementById(`dept_code_badge_${d.id}`);
+          if (codeBadge) codeBadge.textContent = d.code;
+          const codeLabel = document.getElementById(`dept_code_label_${d.id}`);
+          if (codeLabel) codeLabel.textContent = `Code identifier: ${d.code}`;
+          const editBtn = document.getElementById(`edit_btn_${d.id}`);
+          if (editBtn) {
+            editBtn.setAttribute('onclick', `openEditDeptModal('${d.id}', '${d.name.replace(/'/g, "\\'")}', '${d.code.replace(/'/g, "\\'")}', ${d.is_active})`);
+          }
+        }
+        closeEditDeptModal();
+        showPortalToast(`Department "${d.code}" updated successfully! ✅`, "success");
+      } else {
+        errorEl.textContent = data.error || "Failed to update department.";
+        errorEl.classList.remove("hidden");
+      }
+    } catch (e) {
+      form.submit();
+    } finally {
+      btn.disabled = false;
+      btn.querySelector('span').textContent = 'Update Department';
+      btn.querySelector('svg').classList.add('hidden');
+    }
+  }
+
+  async function handleToggleDept(btn, deptId, explicitStatus = null) {
+    if (!deptId) return;
+
+    const spinner = btn.querySelector('.toggle-spinner');
+    const iconWrap = btn.querySelector('.toggle-icon-wrap');
+    if (spinner && iconWrap) {
+      spinner.classList.remove('hidden');
+      iconWrap.classList.add('hidden');
+    }
+    btn.disabled = true;
+
+    try {
+      const formData = new FormData();
+      formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+      formData.append('department_id', deptId);
+      if (explicitStatus !== null) {
+        formData.append('is_active', String(explicitStatus));
+      }
+
+      const res = await fetch("{% url 'toggle_department' %}", {
+        method: "POST",
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const d = data.department;
+        const row = document.getElementById(`dept_row_${d.id}`);
+        if (row) {
+          row.dataset.active = d.is_active ? "true" : "false";
+
+          // Update Status Badge
+          const statusContainer = document.getElementById(`dept_status_container_${d.id}`);
+          if (statusContainer) {
+            if (d.is_active) {
+              statusContainer.innerHTML = `
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200">
+                  <span class="w-2 h-2 bg-green-600 rounded-full animate-pulse"></span>
+                  Active
+                </span>
+              `;
+            } else {
+              statusContainer.innerHTML = `
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200">
+                  <span class="w-2 h-2 bg-gray-400 rounded-full"></span>
+                  Inactive
+                </span>
+              `;
+            }
+          }
+
+          // Update Toggle Button icon & classes
+          const toggleBtn = document.getElementById(`toggle_btn_${d.id}`);
+          if (toggleBtn) {
+            if (d.is_active) {
+              toggleBtn.className = "p-2 text-amber-600 hover:bg-amber-50 border-amber-100 hover:border-amber-300 rounded-xl transition border cursor-pointer";
+              toggleBtn.title = "Deactivate Department";
+              const wrap = toggleBtn.querySelector('.toggle-icon-wrap');
+              if (wrap) {
+                wrap.innerHTML = `
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                `;
+              }
+            } else {
+              toggleBtn.className = "p-2 text-green-600 hover:bg-green-50 border-green-100 hover:border-green-300 rounded-xl transition border cursor-pointer";
+              toggleBtn.title = "Activate Department";
+              const wrap = toggleBtn.querySelector('.toggle-icon-wrap');
+              if (wrap) {
+                wrap.innerHTML = `
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                `;
+              }
+            }
+          }
+        }
+        updateDeptSummaryCounts();
+        showPortalToast(`Department "${d.code}" ${data.status_label ? data.status_label.toLowerCase() : 'updated'} successfully! ✅`, "success");
+      } else {
+        showPortalToast(data.error || "Failed to toggle status.", "error");
+      }
+    } catch (e) {
+      showPortalToast("Network error. Please try again.", "error");
+    } finally {
+      if (spinner && iconWrap) {
+        spinner.classList.add('hidden');
+        iconWrap.classList.remove('hidden');
+      }
+      btn.disabled = false;
+    }
+  }
+
+  function submitDeactivateInstead(btn) {
+    const deptId = document.getElementById("cannot_delete_toggle_id")?.value;
+    if (deptId) {
+      closeDeleteDeptModals();
+      const toggleBtn = document.getElementById(`toggle_btn_${deptId}`);
+      handleToggleDept(toggleBtn || btn, deptId, false);
+    }
+  }
+
+  async function submitDeleteDept(btn, event) {
+    if (event) event.preventDefault();
+    const deptId = document.getElementById("confirm_delete_dept_id")?.value;
+    if (!deptId) return;
+
+    btn.disabled = true;
+    btn.querySelector('span').textContent = 'Deleting...';
+    btn.querySelector('svg').classList.remove('hidden');
+
+    try {
+      const formData = new FormData();
+      formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+      formData.append('department_id', deptId);
+
+      const res = await fetch("{% url 'delete_department' %}", {
+        method: "POST",
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        closeDeleteDeptModals();
+        const row = document.getElementById(`dept_row_${deptId}`);
+        if (row) {
+          row.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+          setTimeout(() => {
+            row.remove();
+            updateDeptSummaryCounts();
+            const remaining = document.querySelectorAll(".dept-row");
+            if (remaining.length === 0) {
+              const tbody = document.getElementById("dept_table_body");
+              if (tbody) {
+                tbody.innerHTML = `
+                  <tr id="empty_dept_row">
+                    <td colspan="5" class="px-6 py-12 text-center text-gray-500 font-medium">
+                      No departments found. Click "+ Add Department" to create one.
+                    </td>
+                  </tr>
+                `;
+              }
+            }
+          }, 300);
+        }
+        showPortalToast(data.message || "Department deleted successfully! ✅", "success");
+      } else {
+        closeDeleteDeptModals();
+        showPortalToast(data.error || "Could not delete department.", "error");
+      }
+    } catch (e) {
+      document.getElementById("confirmDeleteDeptForm")?.submit();
+    } finally {
+      btn.disabled = false;
+      btn.querySelector('span').textContent = 'Yes, Delete';
+      btn.querySelector('svg').classList.add('hidden');
+    }
+  }
+
   // Initialize UI components on load
   updateFullPromotionUI();
+  updateDeptSummaryCounts();
+
+  // Check URL param or local storage for initial tab
+  const URL_TAB = new URLSearchParams(window.location.search).get('tab');
+  const SAVED_TAB = (function(){ try { return localStorage.getItem('faculty_active_tab'); }catch(e){ return null; } })();
+  const INITIAL_TAB = (URL_TAB || "{{ active_tab }}" || SAVED_TAB || "promotion").toLowerCase();
+
+  if (INITIAL_TAB === "departments") {
+    switchFacultyTab("departments");
+  } else {
+    switchFacultyTab("promotion");
+  }
 
   // ── Real-Time Live Updates via WebSocket ──
   document.addEventListener("DOMContentLoaded", function() {
@@ -809,6 +1581,18 @@
       });
       PortalWS.on('student_roster_updated', function() {
         PortalWS.softReloadMain();
+      });
+      PortalWS.on('department_added', function() {
+        showPortalToast("New department added in the system.", "info");
+      });
+      PortalWS.on('department_updated', function() {
+        showPortalToast("Department details updated.", "info");
+      });
+      PortalWS.on('department_toggled', function() {
+        showPortalToast("Department status toggled.", "info");
+      });
+      PortalWS.on('department_deleted', function() {
+        showPortalToast("Department removed from the system.", "info");
       });
       PortalWS.onSync(function() {
         PortalWS.softReloadMain();

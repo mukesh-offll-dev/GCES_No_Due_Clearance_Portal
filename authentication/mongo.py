@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 from pymongo import MongoClient
+import certifi
 
 logger = logging.getLogger("nodue.mongo")
 
@@ -57,6 +58,10 @@ env_tls = os.environ.get("MONGO_TLS", "").lower() in ("true", "1", "yes")
 if is_srv or has_tls_param or env_tls:
     mongo_kwargs["tls"] = True
     mongo_kwargs["tlsAllowInvalidCertificates"] = True
+    try:
+        mongo_kwargs["tlsCAFile"] = certifi.where()
+    except Exception:
+        pass
 
 try:
     if MONGO_URI:
@@ -76,6 +81,7 @@ no_due_col       = db["no_due_requests"]
 students_col     = db["students"]
 promotion_logs   = db["promotion_logs"]
 portal_settings  = db["portal_settings"]
+departments_col  = db["departments"]
 
 
 def ping():

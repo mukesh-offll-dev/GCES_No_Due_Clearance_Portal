@@ -18,7 +18,7 @@
           <label class="block text-sm font-bold text-gray-700 mb-1.5">Report Type</label>
           <select id="reportTypeSelect" onchange="toggleReportFilters()" class="w-full border rounded-full px-4 py-2 text-sm">
             <option value="year">Year Wise Report</option>
-            {% if request.session.role != "DEPARTMENT" %}
+            {% if current_user_role != "DEPARTMENT" %}
             <option value="branch">Branch Wise Report</option>
             <option value="year_branch">Year + Branch Wise Report</option>
             {% else %}
@@ -37,16 +37,13 @@
           </select>
         </div>
 
-        {% if request.session.role != "DEPARTMENT" %}
+        {% if current_user_role != "DEPARTMENT" %}
         <div id="reportBranchGroup" class="hidden">
           <label class="block text-sm font-bold text-gray-700 mb-1.5">Select Branch</label>
           <select id="reportBranchSelect" class="w-full border rounded-full px-4 py-2 text-sm">
-            <option value="CSE">CSE</option>
-            <option value="ECE">ECE</option>
-            <option value="EEE">EEE</option>
-            <option value="CIVIL">CIVIL</option>
-            <option value="MECH">MECH</option>
-            <option value="MCT">MCT</option>
+            {% for d in global_active_departments %}
+            <option value="{{ d.code }}">{{ d.code }} - {{ d.name }}</option>
+            {% endfor %}
           </select>
         </div>
         {% endif %}

@@ -44,7 +44,7 @@
       </div>
 
       <!-- Logout (show only if logged in) -->
-      {% if request.session.role or request.session.student_id %}
+      {% if current_user_role or current_student_id %}
       <a href="{% url 'logout' %}"
         class="flex-shrink-0 border-2 border-white text-white text-sm sm:text-base px-3 sm:px-5 py-1.5 sm:py-2 rounded-full font-semibold hover:bg-white hover:text-[#d52b1e] transition whitespace-nowrap">
         Log out

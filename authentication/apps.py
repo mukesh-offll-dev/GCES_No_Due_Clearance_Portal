@@ -52,6 +52,11 @@ class AuthenticationConfig(AppConfig):
                 ensure_indexes()
             except Exception as exc:
                 logger.warning("Index initialization skipped: %s", exc)
+            try:
+                from .departments import ensure_default_departments
+                ensure_default_departments()
+            except Exception as exc:
+                logger.warning("Department seeding skipped: %s", exc)
 
         threading.Thread(target=_bg_ensure_indexes, name="nodue-index-init", daemon=True).start()
 

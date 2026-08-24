@@ -16,6 +16,7 @@ from .mongo import (
     no_due_col,
     promotion_logs,
     institution_logs,
+    departments_col,
 )
 
 logger = logging.getLogger("nodue.mongo")
@@ -29,6 +30,14 @@ def ensure_indexes():
     """
     created = []
     try:
+        # ── departments ─────────────────────────────────────────────
+        _safe(created, departments_col, [("code", ASCENDING)],
+              name="dept_code_unique", unique=True)
+        _safe(created, departments_col, [("is_active", ASCENDING)],
+              name="dept_is_active")
+        _safe(created, departments_col, [("name", ASCENDING)],
+              name="dept_name")
+
         # ── students ────────────────────────────────────────────────
         # student_login: {reg_no, dob};  add_student/import dup check: {reg_no}|{roll_no}
         # reg_no must be unique (login key + dup guard).
