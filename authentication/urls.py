@@ -5,7 +5,7 @@ from .views import (
     department_dashboard, hostel_dashboard, bulk_approve, reject_request, send_no_due_request,
     retry_request, update_student_profile, no_due_certificate, download_student_template,
     import_students_excel, office_student_status_api, office_report_preview_api,
-    office_report_pdf_view, faculty_promotion_page, promote_students, remove_sem8_students,
+    office_report_pdf_view, faculty_report_pdf_view, faculty_promotion_page, promote_students, remove_sem8_students,
     toggle_no_due_access, update_75_scheme, faculty_departments_api, add_department_view,
     edit_department_view, toggle_department_view, delete_department_view
 )
@@ -52,6 +52,7 @@ urlpatterns = [
     path("faculty/departments/edit/", edit_department_view, name="edit_department"),
     path("faculty/departments/toggle/", toggle_department_view, name="toggle_department"),
     path("faculty/departments/delete/", delete_department_view, name="delete_department"),
+    path("faculty/report/pdf/", faculty_report_pdf_view, name="faculty_report_pdf"),
     path("office/student-status/", office_student_status_api, name="student_status_api"),
     path("office/report/preview/", office_report_preview_api, name="report_preview_api"),
     path("office/report/pdf/", office_report_pdf_view, name="report_pdf_view"),

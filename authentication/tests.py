@@ -903,6 +903,45 @@ class WebSocketAndRealTimeTests(TestCase):
             no_due_col.delete_many({"student_id": test_id})
             promotion_logs.delete_many({"student_id": test_id})
 
+    def test_faculty_report_pdf_view_authorization(self):
+        """Non-faculty users cannot generate faculty PDF reports."""
+        res = self.client.get(reverse("faculty_report_pdf"), {"branch": "CSE", "year": "3"})
+        self.assertEqual(res.status_code, 302)
+
+    def test_faculty_report_pdf_view_success(self):
+        """Faculty can generate and download clearance PDF report for selected Branch and Year."""
+        from authentication.mongo import students_col, no_due_col
+        test_id = ObjectId()
+        students_col.insert_one({
+            "_id": test_id,
+            "roll_no": "22CS050",
+            "reg_no": "830122104050",
+            "name": "REPORT TEST STUDENT",
+            "branch": "CSE",
+            "year": 3,
+            "semester": 5,
+            "student_type": "Day Scholar",
+        })
+
+        try:
+            session = self.client.session
+            session["role"] = "FACULTY"
+            session.save()
+
+            # Missing params -> 400
+            bad_res = self.client.get(reverse("faculty_report_pdf"), {"branch": "CSE"})
+            self.assertEqual(bad_res.status_code, 400)
+
+            # Valid branch + year -> 200 PDF
+            res = self.client.get(reverse("faculty_report_pdf"), {"branch": "CSE", "year": "3"})
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res["Content-Type"], "application/pdf")
+            self.assertTrue(res.content.startswith(b"%PDF"))
+        finally:
+            students_col.delete_one({"_id": test_id})
+            no_due_col.delete_many({"student_id": test_id})
+
+
 
 
 
