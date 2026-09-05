@@ -163,7 +163,9 @@
       });
     }
   </script>
+  {% if current_user_role %}
   <script src="{% static 'js/portal_ws.js' %}"></script>
+  {% endif %}
 </body>
 
 </html>

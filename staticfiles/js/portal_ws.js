@@ -163,6 +163,13 @@
         PortalWS.stopHeartbeat();
         PortalWS.dispatch('ws:disconnected', { code: event.code });
 
+        // Do not attempt reconnection if connection was rejected due to lack of authentication
+        if (event.code === 4401 || event.code === 4001 || event.code === 4003) {
+          warn('Authentication required or session expired (code ' + event.code + '). Halting reconnect.');
+          isExplicitlyClosed = true;
+          return;
+        }
+
         if (!isExplicitlyClosed) {
           PortalWS.scheduleReconnect();
         }

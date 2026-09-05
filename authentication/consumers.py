@@ -61,6 +61,7 @@ class PortalConsumer(AsyncJsonWebsocketConsumer):
                 "[WS] Rejecting connection — unauthenticated or unknown role=%s",
                 self.role,
             )
+            await self.accept()
             await self.close(code=4401)
             return
 
@@ -68,6 +69,7 @@ class PortalConsumer(AsyncJsonWebsocketConsumer):
         if self.role == "STUDENT":
             if not self.student_id:
                 logger.warning("[WS] STUDENT connection rejected — no student_id in session.")
+                await self.accept()
                 await self.close(code=4401)
                 return
             student_group = _clean_group_name(f"student_{self.student_id}")
