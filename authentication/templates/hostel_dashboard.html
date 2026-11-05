@@ -182,14 +182,14 @@
 
     {% for r in requests %}
     <div
-      class="request-card rounded-xl border border-slate-200 bg-white p-4 sm:p-5 mb-3 last:mb-0 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 transition hover:border-slate-300 hover:shadow-sm {% if r.attempts_used >= 2 %}border-l-4 border-l-orange-400{% endif %}"
+      class="request-card rounded-xl border border-slate-200 bg-white p-4 sm:p-5 mb-3 last:mb-0 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 transition hover:border-slate-300 hover:shadow-sm {% if r.attempts_used >= 1 %}border-l-4 border-l-orange-400{% endif %}"
       data-id="{{ r.id }}"
       data-reg="{{ r.student.reg_no }}"
       data-name="{{ r.student.name|lower }}"
       data-display-name="{{ r.student.name }}"
       data-sem="{{ r.student.semester }}"
       data-ref="{{ r.last_payment_id|default:'' }}"
-      data-attempts="{{ r.attempts_used|default:1 }}"
+      data-attempts="{{ r.attempts_used|default:0 }}"
       data-is75="{% if r.student.is_75_scheme %}1{% endif %}"
       data-receipt="{% if r.receipt_url and 'http' in r.receipt_url and not r.student.is_75_scheme %}{{ r.receipt_url }}{% endif %}"
       data-kind="{% if r.receipt_url and 'http' in r.receipt_url and not r.student.is_75_scheme %}{% if '.pdf' in r.receipt_url|lower %}pdf{% else %}image{% endif %}{% endif %}">
@@ -237,7 +237,7 @@
             <span class="text-slate-500">· Submitted {{ r.created_at|date:"d M, h:i A" }}</span>
             {% endif %}
 
-            {% if r.attempts_used >= 2 %}
+            {% if r.attempts_used >= 1 %}
             <span class="badge badge-orange" title="Rejecting this request starts a 24-hour cooldown for the student">Attempt 2 of 2 · Final</span>
             {% else %}
             <span class="badge badge-neutral">Attempt 1 of 2</span>
@@ -528,7 +528,7 @@
     document.getElementById("reviewRef").textContent = d.ref || "—";
     document.getElementById("copyRefBtn").classList.toggle("hidden", !d.ref || d.is75 === "1");
 
-    const finalAttempt = Number(d.attempts) >= 2;
+    const finalAttempt = Number(d.attempts) >= 1;
     const attemptEl = document.getElementById("reviewAttempt");
     attemptEl.textContent = finalAttempt ? "2 of 2 (final attempt)" : "1 of 2";
     attemptEl.className = "font-semibold " + (finalAttempt ? "text-orange-700" : "text-gray-900");
@@ -602,7 +602,7 @@
     const d = card.dataset;
     document.getElementById("rejectReqId").value = d.id;
     document.getElementById("rejectWho").textContent = `${d.displayName || ""} (${d.reg})`;
-    const finalAttempt = Number(d.attempts) >= 2;
+    const finalAttempt = Number(d.attempts) >= 1;
     document.getElementById("rejectFinalWarn").classList.toggle("hidden", !finalAttempt);
     document.getElementById("rejectRetryInfo").classList.toggle("hidden", finalAttempt);
     document.getElementById("rejectReason").value = "";

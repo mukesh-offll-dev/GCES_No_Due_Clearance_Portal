@@ -615,7 +615,9 @@ def student_dashboard(request):
 
     try:
         existing = {
-            d.get("office"): d
+            # Clear this student's own elapsed cooldowns immediately (the global
+            # sweep is throttled), so the page never shows an ended cooldown.
+            d.get("office"): _clear_elapsed_cooldown(d)
             for d in no_due_col.find({"student_id": student_id})
             if d.get("office")
         }
@@ -810,10 +812,21 @@ def send_hostel_request(request):
 
         reset_expired_no_dues(no_due_col)
 
+        hostel_student = students_col.find_one({"_id": student_id}, {"student_type": 1})
+        if hostel_student and hostel_student.get("student_type") == "Day Scholar":
+            return _student_request_error(request, "Day Scholars do not need Hostel clearance.")
+
         existing_req = no_due_col.find_one({
             "student_id": student_id,
             "office": "HOSTEL"
         })
+
+        if existing_req:
+            existing_req = _clear_elapsed_cooldown(existing_req)
+            if existing_req.get("status") == "PENDING":
+                return _student_request_already_pending(request, existing_req)
+            if existing_req.get("status") == "APPROVED":
+                return _student_request_error(request, "Hostel Office has already approved your request.")
 
         if existing_req:
             cooldown_expiry = existing_req.get("cooldown_expiry")
@@ -862,8 +875,9 @@ def send_hostel_request(request):
             receipt_url = None
             cloudinary_public_id = None
 
-        current_attempts = existing_req.get("attempts_used", 0) if existing_req else 0
-        new_attempts = min(2, current_attempts + 1)
+        # attempts_used counts office REJECTIONS only — sending (or a request
+        # expiring) never uses an attempt. See ATTEMPTS_MODEL.
+        new_attempts = existing_req.get("attempts_used", 0) if existing_req else 0
 
         set_data = {
             "student_id": student_id,
@@ -871,6 +885,7 @@ def send_hostel_request(request):
             "last_payment_id": "7.5 Scheme" if is_75 else request.POST.get("payment_id"),
             "status": "PENDING",
             "attempts_used": new_attempts,
+            "attempts_model": ATTEMPTS_MODEL,
             "created_at": datetime.now()
         }
         if receipt_url:
@@ -878,12 +893,24 @@ def send_hostel_request(request):
         if cloudinary_public_id:
             set_data["cloudinary_public_id"] = cloudinary_public_id
 
-        hostel_filter = {"student_id": student_id, "office": "HOSTEL"}
-        try:
-            no_due_col.update_one(hostel_filter, {"$set": set_data}, upsert=True)
-        except DuplicateKeyError:
-            # Concurrent submit created the doc first — apply our update to it.
-            no_due_col.update_one(hostel_filter, {"$set": set_data})
+        conflict = False
+        if existing_req:
+            result = no_due_col.update_one(_versioned_filter(existing_req), {"$set": set_data})
+            conflict = result.matched_count == 0
+        else:
+            try:
+                no_due_col.insert_one(set_data)
+            except DuplicateKeyError:
+                conflict = True
+        if conflict:
+            # Lost a race with a concurrent submit: drop the receipt we just uploaded.
+            if cloudinary_public_id:
+                for rtype in ("raw", "image"):
+                    try:
+                        cloudinary.uploader.destroy(cloudinary_public_id, resource_type=rtype)
+                    except Exception:
+                        pass
+            return _resolve_concurrent_send(request, student_id, "HOSTEL")
         audit_logger.info("NO_DUE_REQUEST office=HOSTEL student=%s attempt=%d",
                           student_id, new_attempts)
 
@@ -1028,6 +1055,8 @@ def bulk_approve(request):
         except (InvalidId, TypeError):
             pass  # ignore malformed ids instead of 500-ing
 
+    object_ids = _scope_ids_to_department(request, role, object_ids)
+
     approved = 0
     if object_ids:
         # Pre-fetch requests to know which students are being approved
@@ -1110,6 +1139,8 @@ def reject_request(request):
             except (InvalidId, TypeError):
                 pass
 
+        object_ids = _scope_ids_to_department(request, role, object_ids)
+
         # 🔥 If hostel + file exists → delete from Cloudinary
         # Scope by office==role AND status==PENDING (idempotent, cross-office safe).
         requests_to_reject = list(no_due_col.find(
@@ -1138,12 +1169,18 @@ def reject_request(request):
                     except Exception:
                         pass
 
-            attempts_used = req.get("attempts_used", 1)
+            # This rejection uses one attempt. Requests saved before the
+            # rejection-based model already counted their send, so don't add again.
+            prior = req.get("attempts_used", 0) or 0
+            attempts_used = prior + 1 if req.get("attempts_model") == ATTEMPTS_MODEL else max(1, prior)
+            attempts_used = min(2, attempts_used)
             update_payload = {
                 "status": "REJECTED",
                 "reject_reason": reason,
                 "receipt_url": None,
                 "cloudinary_public_id": None,
+                "attempts_used": attempts_used,
+                "attempts_model": ATTEMPTS_MODEL,
                 "updated_at": now_naive
             }
 
@@ -1273,6 +1310,91 @@ def department_dashboard(request):
     })
 
 
+# ================= STUDENT REQUEST HELPERS =================
+# attempts_used = number of times an office has REJECTED the request (max 2).
+# The 2nd rejection starts the 24h cooldown. Documents written under this rule
+# carry attempts_model = 2; older documents counted every send instead.
+ATTEMPTS_MODEL = 2
+
+# Offices a student may request through the generic endpoint. HOSTEL is
+# excluded on purpose: it must go through send_hostel_request (receipt upload,
+# Day Scholar check).
+_STUDENT_REQUEST_OFFICES = {"LIBRARY", "COLLEGE", "DEPARTMENT"}
+
+
+def _wants_json(request):
+    return request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.POST.get("format") == "json"
+
+
+def _student_request_error(request, err, status=400):
+    if _wants_json(request):
+        return JsonResponse({"success": False, "error": err}, status=status)
+    messages.error(request, err)
+    return redirect("student_dashboard")
+
+
+def _student_request_already_pending(request, doc):
+    """Idempotent answer for a duplicate send (double click / two tabs): no attempt is used."""
+    if _wants_json(request):
+        return JsonResponse({"success": True, "status": "PENDING",
+                             "attempts_used": doc.get("attempts_used", 1), "already_pending": True})
+    return redirect("student_dashboard")
+
+
+def _clear_elapsed_cooldown(doc):
+    """
+    If this request's 24h cooldown has already passed, reset it right now
+    (attempts back to 0, NOT_SENT) instead of waiting for the throttled sweep.
+    Returns the up-to-date document.
+    """
+    expiry = doc.get("cooldown_expiry") if doc else None
+    if not expiry:
+        return doc
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) < expiry:
+        return doc
+    no_due_col.update_one(
+        {"_id": doc["_id"], "cooldown_expiry": doc["cooldown_expiry"]},
+        {"$set": {"attempts_used": 0, "status": "NOT_SENT", "reject_reason": None, "updated_at": datetime.now()},
+         "$unset": {"cooldown_expiry": "", "second_rejection_at": ""}},
+    )
+    return no_due_col.find_one({"_id": doc["_id"]}) or doc
+
+
+def _resolve_concurrent_send(request, student_id, office):
+    """Another request changed this office's document while we were working."""
+    current = no_due_col.find_one({"student_id": student_id, "office": office}) or {}
+    if current.get("status") == "PENDING":
+        return _student_request_already_pending(request, current)
+    return _student_request_error(request, "Your request status changed. Please refresh and try again.", status=409)
+
+
+def _versioned_filter(doc):
+    """Match the document only if it is still exactly as we read it (optimistic concurrency)."""
+    flt = {"_id": doc["_id"], "status": doc.get("status")}
+    if "attempts_used" in doc:
+        flt["attempts_used"] = doc["attempts_used"]
+    else:
+        flt["attempts_used"] = {"$exists": False}
+    return flt
+
+
+def _scope_ids_to_department(request, role, object_ids):
+    """A Department login may only act on its own department's students."""
+    if role != "DEPARTMENT" or not object_ids:
+        return object_ids
+    dept = request.session.get("department")
+    reqs = list(no_due_col.find({"_id": {"$in": object_ids}}, {"student_id": 1}))
+    own = {s["_id"] for s in students_col.find(
+        {"_id": {"$in": [r.get("student_id") for r in reqs]}, "branch": dept}, {"_id": 1})}
+    allowed = [r["_id"] for r in reqs if r.get("student_id") in own]
+    if len(allowed) != len(object_ids):
+        audit_logger.warning("DEPARTMENT %s tried to act on %d request(s) outside its department",
+                             dept, len(object_ids) - len(allowed))
+    return allowed
+
+
 @institution_login_required
 def send_no_due_request(request):
     if request.session.get("role") != "STUDENT":
@@ -1302,12 +1424,25 @@ def send_no_due_request(request):
                 return JsonResponse({"success": False, "error": "Invalid session"}, status=401)
             return redirect("index")
 
+        office = office.upper()
+        if office not in _STUDENT_REQUEST_OFFICES:
+            if office == "HOSTEL":
+                return _student_request_error(request, "Please send the Hostel request using the Hostel form.")
+            return _student_request_error(request, "Invalid office.")
+
         reset_expired_no_dues(no_due_col)
 
         existing_req = no_due_col.find_one({
             "student_id": student_id,
             "office": office
         })
+
+        if existing_req:
+            existing_req = _clear_elapsed_cooldown(existing_req)
+            if existing_req.get("status") == "PENDING":
+                return _student_request_already_pending(request, existing_req)
+            if existing_req.get("status") == "APPROVED":
+                return _student_request_error(request, f"{office.title()} Office has already approved your request.")
 
         if existing_req:
             cooldown_expiry = existing_req.get("cooldown_expiry")
@@ -1328,14 +1463,16 @@ def send_no_due_request(request):
                 messages.error(request, err)
                 return redirect("student_dashboard")
 
-        current_attempts = existing_req.get("attempts_used", 0) if existing_req else 0
-        new_attempts = min(2, current_attempts + 1)
+        # attempts_used counts office REJECTIONS only — sending (or a request
+        # expiring) never uses an attempt. See ATTEMPTS_MODEL.
+        new_attempts = existing_req.get("attempts_used", 0) if existing_req else 0
 
         data = {
             "student_id": student_id,
             "office": office,
             "status": "PENDING",
             "attempts_used": new_attempts,
+            "attempts_model": ATTEMPTS_MODEL,
             "created_at": datetime.now()
         }
 
@@ -1346,12 +1483,17 @@ def send_no_due_request(request):
             data["last_payment_id"] = request.POST.get("payment_id")
 
         # 🔁 UPDATE if exists, else INSERT
-        office_filter = {"student_id": data["student_id"], "office": office}
-        try:
-            no_due_col.update_one(office_filter, {"$set": data}, upsert=True)
-        except DuplicateKeyError:
-            # Concurrent submit created the doc first — apply our update to it.
-            no_due_col.update_one(office_filter, {"$set": data})
+        if existing_req:
+            # Only move the document we actually checked (no double-counted attempts on races).
+            result = no_due_col.update_one(_versioned_filter(existing_req), {"$set": data})
+            if result.matched_count == 0:
+                return _resolve_concurrent_send(request, student_id, office)
+        else:
+            try:
+                no_due_col.insert_one(data)
+            except DuplicateKeyError:
+                # A concurrent submit created it first.
+                return _resolve_concurrent_send(request, student_id, office)
         audit_logger.info("NO_DUE_REQUEST office=%s student=%s attempt=%d",
                           office, student_id, new_attempts)
 
@@ -1420,6 +1562,15 @@ def retry_request(request):
             "office": office,
             "status": "REJECTED"
         })
+        if existing_req:
+            existing_req = _clear_elapsed_cooldown(existing_req)
+            if existing_req.get("status") != "REJECTED":
+                existing_req = None   # cooldown just ended → already NOT_SENT, nothing to retry
+
+        if not existing_req and _wants_json(request):
+            current = no_due_col.find_one({"student_id": student_id, "office": office}) or {}
+            return JsonResponse({"success": True, "status": current.get("status", "NOT_SENT"),
+                                 "attempts_used": current.get("attempts_used", 0)})
 
         if existing_req:
             cooldown_expiry = existing_req.get("cooldown_expiry")

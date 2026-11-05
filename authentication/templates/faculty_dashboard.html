@@ -306,6 +306,7 @@
 {% endif %}
 </form>
 
+{{ students|json_script:"students-data" }}
 </main>
 
 <!-- ================= ADD MODAL ================= -->
@@ -643,17 +644,18 @@
   </div>
 </div>
 
-{{ students|json_script:"students-data" }}
-
 <script>
-  const STUDENTS = JSON.parse(
-    document.getElementById("students-data").textContent
-  );
-
-  const STUDENTS_NO_DUE = {};
-  STUDENTS.forEach(s => {
-    STUDENTS_NO_DUE[s.id] = s.no_dues || {};
-  });
+  // Student data lives inside <main> (#students-data) so a live update
+  // (PortalWS.softReloadMain) brings fresh data; reload it then.
+  let STUDENTS = [];
+  let STUDENTS_NO_DUE = {};
+  function loadStudentData() {
+    const el = document.getElementById("students-data");
+    STUDENTS = el ? JSON.parse(el.textContent) : [];
+    STUDENTS_NO_DUE = {};
+    STUDENTS.forEach(s => { STUDENTS_NO_DUE[s.id] = s.no_dues || {}; });
+  }
+  loadStudentData();
 </script>
 <script>
 
@@ -922,7 +924,7 @@ function submitDelete(btn){
 
 
 
-window.addEventListener("load", () => {
+function sortStudentRows() {
   const list = document.getElementById("studentList");
   if (!list) return;
 
@@ -935,7 +937,8 @@ window.addEventListener("load", () => {
   });
 
   cards.forEach(card => list.appendChild(card));
-});
+}
+window.addEventListener("load", sortStudentRows);
 
 
 
@@ -996,12 +999,13 @@ function closeNoDueModal() {
 // ═══════════════════════════════════════════
 //  STUDENT SEARCH FILTER
 // ═══════════════════════════════════════════
-window.addEventListener("load", () => {
-  const searchInput = document.getElementById("studentSearchInput");
-  if (!searchInput) return;
+// Delegated on document so it keeps working after a live update replaces <main>.
+document.addEventListener("input", e => {
+  if (e.target && e.target.id === "studentSearchInput") applyStudentSearch(e.target.value);
+});
 
-  searchInput.addEventListener("input", function() {
-    const query = this.value.toLowerCase().trim();
+function applyStudentSearch(raw) {
+    const query = (raw || "").toLowerCase().trim();
     const cards = document.querySelectorAll(".student-card");
     let visibleCount = 0;
 
@@ -1023,8 +1027,7 @@ window.addEventListener("load", () => {
       countSpan.textContent = visibleCount;
     }
     syncSelectAll();
-  });
-});
+}
 
 // ═══════════════════════════════════════════
 //  7.5 SCHEME MODAL FUNCTIONS & SEMESTER FILTER
@@ -1078,7 +1081,14 @@ function updateProfileStats() {
 }
 updateProfileStats();
 // Re-run after PortalWS.softReloadMain() swaps <main>
-window.__reinitPage = function () { updateProfileStats(); };
+window.__reinitPage = function () {
+  loadStudentData();
+  sortStudentRows();
+  updateProfileStats();
+  const box = document.getElementById("studentSearchInput");
+  if (box && box.value) applyStudentSearch(box.value);
+  if (typeof syncSelectAll === "function") syncSelectAll();
+};
 
 // ── Real-Time Live Updates via WebSocket ──
 document.addEventListener("DOMContentLoaded", function() {

@@ -1433,3 +1433,170 @@ class HostelSSOTests(TestCase):
         # still just the Hostel role: other dashboards bounce back
         self.assertEqual(c.get("/library/").status_code, 302)
         self.assertEqual(c.get("/faculty/").status_code, 302)
+
+
+class ClearanceRequestRulesTests(TestCase):
+    """Regression tests for bugs found by the concurrent end-to-end run."""
+
+    PREFIX = "99998810"
+
+    def setUp(self):
+        from datetime import datetime, timedelta, timezone
+        from authentication.mongo import db
+        self.db = db
+        self._cleanup()
+        cfg = db.portal_settings.find_one({"_id": "global_config"}) or {}
+        self._saved_cfg = {k: cfg.get(k) for k in ("no_due_access_enabled", "auto_disable_at")}
+        db.portal_settings.update_one({"_id": "global_config"}, {"$set": {
+            "no_due_access_enabled": True,
+            "auto_disable_at": datetime.now(timezone.utc) + timedelta(hours=1)}}, upsert=True)
+        self.cse = self._student("0001", "CSE", "Hosteller")
+        self.day = self._student("0002", "CSE", "Day Scholar")
+        self.ece = self._student("0003", "ECE", "Day Scholar")
+
+    def tearDown(self):
+        self._cleanup()
+        self.db.portal_settings.update_one({"_id": "global_config"}, {"$set": self._saved_cfg})
+
+    def _cleanup(self):
+        ids = [s["_id"] for s in self.db.students.find({"reg_no": {"$regex": f"^{self.PREFIX}"}}, {"_id": 1})]
+        self.db.no_due_requests.delete_many({"student_id": {"$in": ids}})
+        self.db.students.delete_many({"_id": {"$in": ids}})
+
+    def _student(self, suffix, branch, stype):
+        return self.db.students.insert_one({
+            "reg_no": self.PREFIX + suffix, "name": "RULE TEST", "branch": branch, "year": 4, "semester": 7,
+            "student_type": stype, "is_75_scheme": False, "profile_completed": True,
+            "password_hash": make_password("x")}).inserted_id
+
+    def _client(self, **sess):
+        c = Client()
+        s = c.session
+        for k, v in sess.items():
+            s[k] = v
+        s.save()
+        from django.conf import settings
+        c.cookies[settings.SESSION_COOKIE_NAME] = s.session_key
+        return c
+
+    def _as_student(self, sid):
+        return self._client(role="STUDENT", student_id=str(sid))
+
+    def _send(self, c, office):
+        return c.post("/student/send/", {"office": office, "format": "json"}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+
+    def _doc(self, sid, office):
+        return self.db.no_due_requests.find_one({"student_id": sid, "office": office})
+
+    def test_unknown_office_rejected(self):
+        r = self._send(self._as_student(self.cse), "PRINCIPAL")
+        self.assertEqual(r.status_code, 400)
+        self.assertIsNone(self._doc(self.cse, "PRINCIPAL"))
+
+    def test_hostel_not_accepted_on_generic_endpoint(self):
+        r = self._send(self._as_student(self.cse), "HOSTEL")
+        self.assertEqual(r.status_code, 400)
+        self.assertIsNone(self._doc(self.cse, "HOSTEL"))
+
+    def test_day_scholar_cannot_send_hostel(self):
+        c = self._as_student(self.day)
+        r = c.post("/student/hostel/send/", {"format": "json"}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(r.status_code, 400)
+        self.assertIsNone(self._doc(self.day, "HOSTEL"))
+
+    def test_duplicate_send_does_not_burn_an_attempt(self):
+        c = self._as_student(self.cse)
+        self.assertEqual(self._send(c, "LIBRARY").status_code, 200)
+        r = self._send(c, "LIBRARY")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json().get("already_pending"))
+        self.assertEqual(self._doc(self.cse, "LIBRARY")["attempts_used"], 0)   # sending never uses an attempt
+
+    def test_approved_request_cannot_be_resent(self):
+        c = self._as_student(self.cse)
+        self._send(c, "LIBRARY")
+        self.db.no_due_requests.update_one({"student_id": self.cse, "office": "LIBRARY"}, {"$set": {"status": "APPROVED"}})
+        r = self._send(c, "LIBRARY")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self._doc(self.cse, "LIBRARY")["status"], "APPROVED")
+
+    def test_department_cannot_act_on_other_departments_students(self):
+        self._send(self._as_student(self.ece), "DEPARTMENT")
+        req_id = str(self._doc(self.ece, "DEPARTMENT")["_id"])
+        cse_dept = self._client(role="DEPARTMENT", department="CSE")
+        cse_dept.post("/approve/", {"request_ids": [req_id]})
+        self.assertEqual(self._doc(self.ece, "DEPARTMENT")["status"], "PENDING")
+        cse_dept.post("/reject/", {"req_id": req_id, "reason": "x"})
+        self.assertEqual(self._doc(self.ece, "DEPARTMENT")["status"], "PENDING")
+        ece_dept = self._client(role="DEPARTMENT", department="ECE")
+        ece_dept.post("/approve/", {"request_ids": [req_id]})
+        self.assertEqual(self._doc(self.ece, "DEPARTMENT")["status"], "APPROVED")
+
+    def test_send_allowed_right_after_cooldown_ends(self):
+        from datetime import datetime, timedelta, timezone
+        self.db.no_due_requests.insert_one({
+            "student_id": self.cse, "office": "COLLEGE", "status": "REJECTED", "attempts_used": 2,
+            "cooldown_expiry": datetime.now(timezone.utc) - timedelta(seconds=5), "created_at": datetime.now()})
+        r = self._send(self._as_student(self.cse), "COLLEGE")
+        self.assertEqual(r.status_code, 200, r.content[:200])
+        d = self._doc(self.cse, "COLLEGE")
+        self.assertEqual((d["status"], d["attempts_used"]), ("PENDING", 0))
+        self.assertNotIn("cooldown_expiry", d)
+
+    def test_send_blocked_during_active_cooldown(self):
+        from datetime import datetime, timedelta, timezone
+        self.db.no_due_requests.insert_one({
+            "student_id": self.cse, "office": "COLLEGE", "status": "REJECTED", "attempts_used": 2,
+            "cooldown_expiry": datetime.now(timezone.utc) + timedelta(hours=5), "created_at": datetime.now()})
+        r = self._send(self._as_student(self.cse), "COLLEGE")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self._doc(self.cse, "COLLEGE")["status"], "REJECTED")
+
+    # ── attempts count office rejections only ──
+    def _reject(self, office_role, sid, office):
+        req_id = str(self._doc(sid, office)["_id"])
+        self._client(role=office_role).post("/reject/", {"req_id": req_id, "reason": "test"})
+        return self._doc(sid, office)
+
+    def test_rejections_use_attempts_and_second_starts_cooldown(self):
+        c = self._as_student(self.cse)
+        self._send(c, "LIBRARY")
+        self.assertEqual(self._doc(self.cse, "LIBRARY")["attempts_used"], 0)
+        d = self._reject("LIBRARY", self.cse, "LIBRARY")
+        self.assertEqual((d["status"], d["attempts_used"]), ("REJECTED", 1))
+        self.assertNotIn("cooldown_expiry", d)
+        c.post("/student/retry/", {"office": "LIBRARY", "format": "json"}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self._send(c, "LIBRARY")
+        self.assertEqual(self._doc(self.cse, "LIBRARY")["attempts_used"], 1)   # resend: still 1
+        d = self._reject("LIBRARY", self.cse, "LIBRARY")
+        self.assertEqual((d["status"], d["attempts_used"]), ("REJECTED", 2))
+        self.assertIsNotNone(d.get("cooldown_expiry"))
+
+    def test_expiry_after_two_days_does_not_use_an_attempt(self):
+        from datetime import datetime, timedelta
+        from authentication.maintenance import PENDING_TTL, _expire_stale_pending
+        self.assertEqual(PENDING_TTL, timedelta(days=2))
+        c = self._as_student(self.cse)
+        self._send(c, "LIBRARY")
+        self._reject("LIBRARY", self.cse, "LIBRARY")                        # 1 rejection
+        c.post("/student/retry/", {"office": "LIBRARY", "format": "json"}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self._send(c, "LIBRARY")
+        self.db.no_due_requests.update_one({"student_id": self.cse, "office": "LIBRARY"},
+                                           {"$set": {"created_at": datetime.now() - timedelta(days=1, hours=23)}})
+        _expire_stale_pending()
+        self.assertEqual(self._doc(self.cse, "LIBRARY")["status"], "PENDING")   # < 2 days: untouched
+        self.db.no_due_requests.update_one({"student_id": self.cse, "office": "LIBRARY"},
+                                           {"$set": {"created_at": datetime.now() - timedelta(days=2, minutes=1)}})
+        _expire_stale_pending()
+        d = self._doc(self.cse, "LIBRARY")
+        self.assertEqual((d["status"], d["attempts_used"]), ("NOT_SENT", 1))   # attempt count unchanged
+        self.assertEqual(self._send(c, "LIBRARY").status_code, 200)             # can send again
+
+    def test_old_model_pending_doc_is_not_double_counted(self):
+        from datetime import datetime
+        # Saved before this change: the send itself was counted (attempts_used=1, no attempts_model).
+        self.db.no_due_requests.insert_one({"student_id": self.cse, "office": "COLLEGE", "status": "PENDING",
+                                            "attempts_used": 1, "created_at": datetime.now()})
+        d = self._reject("COLLEGE", self.cse, "COLLEGE")
+        self.assertEqual(d["attempts_used"], 1)          # first rejection, not 2
+        self.assertNotIn("cooldown_expiry", d)

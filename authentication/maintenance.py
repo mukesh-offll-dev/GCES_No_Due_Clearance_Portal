@@ -27,7 +27,7 @@ from .mongo import no_due_col, portal_settings
 logger = logging.getLogger("nodue.maintenance")
 
 # How stale a PENDING request may get before it reverts to NOT_SENT.
-PENDING_TTL = timedelta(days=1)
+PENDING_TTL = timedelta(days=2)   # a request the office never answers expires after 2 days
 # Cloudinary deletes are batched per cycle to bound runtime.
 MAX_CLOUDINARY_DELETES_PER_CYCLE = 200
 
@@ -160,8 +160,9 @@ def _delete_cloudinary(public_id):
 
 def _expire_stale_pending():
     """
-    Revert PENDING requests older than PENDING_TTL back to NOT_SENT, decrement
-    their attempts, and clean up any HOSTEL receipts. Bounded per cycle.
+    Revert PENDING requests older than PENDING_TTL (2 days) back to NOT_SENT so
+    the student can send again, and clean up any HOSTEL receipts. Expiry does
+    NOT use an attempt — attempts count office rejections only. Bounded per cycle.
     """
     now = datetime.now()
     cutoff = now - PENDING_TTL
@@ -169,7 +170,7 @@ def _expire_stale_pending():
     try:
         cursor = list(no_due_col.find(
             {"status": "PENDING", "created_at": {"$lte": cutoff}},
-            {"office": 1, "student_id": 1, "attempts_used": 1, "cloudinary_public_id": 1},
+            {"office": 1, "student_id": 1, "attempts_used": 1, "attempts_model": 1, "cloudinary_public_id": 1},
         ).limit(1000))
     except PyMongoError as exc:
         logger.error("_expire_stale_pending query failed: %s", exc)
@@ -182,13 +183,15 @@ def _expire_stale_pending():
                 _delete_cloudinary(req.get("cloudinary_public_id"))
                 deletes += 1
 
-            current = req.get("attempts_used", 1)
-            new_attempts = max(0, current - 1)
+            current = req.get("attempts_used", 0) or 0
+            # Old-model documents counted the send itself → give that back once.
+            new_attempts = current if req.get("attempts_model") == 2 else max(0, current - 1)
             no_due_col.update_one(
                 {"_id": req["_id"], "status": "PENDING"},  # re-check: don't stomp a just-approved req
                 {"$set": {
                     "status": "NOT_SENT",
                     "attempts_used": new_attempts,
+                    "attempts_model": 2,
                     "receipt_url": None,
                     "cloudinary_public_id": None,
                     "updated_at": now,
