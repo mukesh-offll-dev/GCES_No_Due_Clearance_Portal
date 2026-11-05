@@ -1,10 +1,20 @@
+# Secrets / env
 .env
+.venv
+
+# Python
 __pycache__/
 *.pyc
+
+# Local databases / logs
 db.sqlite3*
 *.log
-.venv
-*.md
-.*.pp
-*.te
+
+# Uploaded files (receipts live on Cloudinary)
+media/
+
+# Tooling
 .playwright-mcp/
+
+# Claude Code local settings
+.claude/settings.local.json
