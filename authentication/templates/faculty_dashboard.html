@@ -20,15 +20,25 @@
 
     <div class="flex flex-wrap items-center gap-2">
       {% if branch and year %}
-      <a href="{% url 'faculty_report_pdf' %}?branch={{ branch }}&year={{ year }}"
-         target="_blank"
-         title="Generate and Download PDF Clearance Report for {{ branch }} - Year {{ year }}"
+      {% if count %}
+      <a href="{% url 'faculty_report_pdf' %}?branch={{ branch|urlencode }}&year={{ year|urlencode }}"
+         id="facultyReportBtn" onclick="startReportDownload(this)"
+         title="Download the PDF clearance report for {{ branch }} · Year {{ year }} ({{ count }} student{{ count|pluralize }})"
          class="btn btn-secondary">
-        <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="report-icon w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+        </svg>
+        <span class="report-label">Generate Report</span>
+      </a>
+      {% else %}
+      <span class="btn btn-secondary opacity-50 cursor-not-allowed" aria-disabled="true"
+            title="No students in {{ branch }} · Year {{ year }} yet — add students to generate a report">
+        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
         </svg>
         Generate Report
-      </a>
+      </span>
+      {% endif %}
 
       <button type="button" onclick="openSchemeModal()" class="btn btn-secondary">
         <svg class="w-4 h-4 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1067,6 +1077,22 @@ function toggleSelectAllScheme(checked) {
 // ═══════════════════════════════════════════
 //  PROFILE SUMMARY STATS (Completed / Pending)
 // ═══════════════════════════════════════════
+// Report download: the PDF arrives as an attachment, so the page stays put.
+// Show a short "Preparing…" state so a slow download doesn't look like nothing happened.
+function startReportDownload(link) {
+  if (link.dataset.busy === "1") return false;
+  link.dataset.busy = "1";
+  const label = link.querySelector(".report-label");
+  if (label) label.textContent = "Preparing report…";
+  link.classList.add("opacity-70", "pointer-events-none");
+  setTimeout(() => {
+    if (label) label.textContent = "Generate Report";
+    link.classList.remove("opacity-70", "pointer-events-none");
+    link.dataset.busy = "";
+  }, 4000);
+  return true;
+}
+
 function updateProfileStats() {
   const rows = document.querySelectorAll("#studentList .student-card");
   let completed = 0, pending = 0;

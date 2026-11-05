@@ -51,11 +51,9 @@ def fast_cooldown_reset(throttle_seconds=0, force=False):
         # Find expiring cooldowns to broadcast live unlock to students
         expired_docs = list(no_due_col.find(
             {
-                "cooldown_expiry": {"$exists": True, "$ne": None},
-                "$or": [
-                    {"cooldown_expiry": {"$lte": now_utc}},
-                    {"cooldown_expiry": {"$lte": now_naive}},
-                ],
+                # cooldown_expiry is always stored in UTC (reject_request). Comparing
+                # against local time as well (IST = UTC+5:30) ended cooldowns 5½ h early.
+                "cooldown_expiry": {"$exists": True, "$ne": None, "$lte": now_utc},
             },
             {"student_id": 1, "office": 1}
         ))
@@ -63,11 +61,7 @@ def fast_cooldown_reset(throttle_seconds=0, force=False):
         if expired_docs:
             no_due_col.update_many(
                 {
-                    "cooldown_expiry": {"$exists": True, "$ne": None},
-                    "$or": [
-                        {"cooldown_expiry": {"$lte": now_utc}},
-                        {"cooldown_expiry": {"$lte": now_naive}},
-                    ],
+                    "cooldown_expiry": {"$exists": True, "$ne": None, "$lte": now_utc},
                 },
                 {
                     "$set": {
@@ -250,6 +244,12 @@ def run_maintenance_cycle(lock_ttl_seconds=50):
     try:
         fast_cooldown_reset(force=True)
         _check_auto_disable_access()
+        try:
+            # Undo any promotion a killed/crashed worker left half-done (only once its lock expired).
+            from .promotion import recover_interrupted_runs
+            recover_interrupted_runs()
+        except Exception as exc:
+            logger.error("Promotion recovery check failed: %s", exc)
         reverted = _expire_stale_pending()
         if reverted:
             logger.info("Maintenance cycle: reverted %d stale PENDING requests", reverted)

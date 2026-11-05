@@ -184,9 +184,72 @@
           <p id="full_promo_alert_subtext" class="text-xs leading-relaxed"></p>
         </div>
 
+        {% if promotion_data_issues %}
+        <!-- Existing data that breaks "one semester per Department + Year" -->
+        <div class="alert alert-warning flex-col items-start gap-1" role="status">
+          <p class="font-semibold">Some classes have students in more than one semester</p>
+          <ul class="text-xs space-y-2 w-full">
+            {% for issue in promotion_data_issues %}
+            <li class="flex flex-wrap items-center gap-2">
+              <span class="flex-1 min-w-[12rem]">{{ issue.message }}</span>
+              {% for sem, n in issue.semesters %}
+              <form method="POST" action="{% url 'fix_cohort' %}"
+                    onsubmit="return confirm('Move every {{ issue.branch }} Year {{ issue.year }} student into Semester {{ sem }}? You can undo this under Last promotion.') && (disableSubmitButtons(this) || true)">
+                {% csrf_token %}
+                <input type="hidden" name="branch" value="{{ issue.branch }}">
+                <input type="hidden" name="year" value="{{ issue.year }}">
+                <input type="hidden" name="semester" value="{{ sem }}">
+                <button class="btn btn-secondary btn-sm">Set all to Semester {{ sem }}</button>
+              </form>
+              {% endfor %}
+            </li>
+            {% endfor %}
+          </ul>
+          <p class="text-xs">Pick the semester the class is really in. Promotions that touch these classes stay
+            blocked until each class has one semester.</p>
+        </div>
+        {% endif %}
+
+        {% if last_promotion %}
+        <!-- Last promotion + Undo (restores from the promotion journal) -->
+        <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="section-title">Last promotion</h3>
+            {% if last_promotion.status == "completed" %}
+            <span class="badge badge-success">Completed</span>
+            {% else %}
+            <span class="badge badge-warning">Interrupted — undo recommended</span>
+            {% endif %}
+          </div>
+          <p class="text-sm text-slate-600">
+            {% if last_promotion.mode == "semester" %}Semester {{ last_promotion.from_sem }} → {{ last_promotion.from_sem|add:1 }}{% if last_promotion.branch %} ({{ last_promotion.branch }}){% else %} (all departments){% endif %}{% elif last_promotion.mode == "fix" %}Class fix: {{ last_promotion.branch }} Year {{ last_promotion.year }} → Semester {{ last_promotion.to_sem }}{% else %}Full promotion (Semesters 1–7){% endif %}
+            · {{ last_promotion.started_at|date:"d M Y, h:i A" }}
+            · {{ last_promotion.promoted|default:last_promotion.item_count }} student(s)
+          </p>
+          {% if last_promotion.undo_blockers %}
+          <p class="alert alert-info text-xs">Undo is no longer available: students have already sent
+            {{ last_promotion.undo_blockers }} request{{ last_promotion.undo_blockers|pluralize }} for the new semester,
+            and undoing would discard them. Correct individual students with Edit instead.</p>
+          {% else %}
+          <form method="POST" action="{% url 'rollback_promotion' %}" class="flex flex-col sm:flex-row gap-2"
+                onsubmit="return confirmUndoPromotion(this)">
+            {% csrf_token %}
+            <input type="hidden" name="run_id" value="{{ last_promotion.id }}">
+            <label class="sr-only" for="undo_confirm_text">Type UNDO to confirm</label>
+            <input id="undo_confirm_text" name="confirm_text" class="input sm:w-40" placeholder="Type UNDO" autocomplete="off">
+            <button type="submit" class="btn btn-outline-danger">Undo this promotion</button>
+          </form>
+          <p class="help-text">Puts every student from this promotion back in their previous semester and year and restores
+            their no-due requests as they were. Available until a student sends a request for the new semester.</p>
+          {% endif %}
+        </div>
+        {% endif %}
+
         <!-- Main Promotion Button Form -->
         <form id="promotionForm" method="POST" action="{% url 'promote_students' %}">
           {% csrf_token %}
+          <input type="hidden" name="promotion_mode" value="full">
+          <input type="hidden" name="counts_snapshot" value="{{ promotion_counts_snapshot }}">
           <button id="promote_submit_btn" type="button" onclick="confirmPromotion()"
             class="btn btn-primary btn-lg w-full">
             Promote Students
@@ -213,6 +276,8 @@
 
             <form id="semwiseForm" method="POST" action="{% url 'promote_students' %}" class="space-y-4">
               {% csrf_token %}
+              <input type="hidden" name="promotion_mode" value="semester">
+              <input type="hidden" name="counts_snapshot" value="{{ promotion_counts_snapshot }}">
               <div>
                 <label class="label" for="semwise_select">Select Semester to Promote From</label>
                 <select id="semwise_select" name="from_sem" required onchange="handleSemwiseSelectChange()"
@@ -226,6 +291,14 @@
                   <option value="6">Semester 6 (→ Semester 7, Year +1)</option>
                   <option value="7">Semester 7 (→ Semester 8)</option>
                 </select>
+              </div>
+              <div>
+                <label class="label" for="semwise_branch">Department</label>
+                <select id="semwise_branch" name="promote_branch" onchange="handleSemwiseSelectChange()" class="select">
+                  <option value="">All departments</option>
+                  {% for b in promo_branches %}<option value="{{ b }}">{{ b }} only</option>{% endfor %}
+                </select>
+                <p class="help-text">Choose one department to promote only that department's students.</p>
               </div>
 
               <!-- Dynamic Sem-wise Warning / Preview -->
@@ -325,6 +398,49 @@
       </div>
 
     </div>
+  </div>
+
+  <!-- ================= ARCHIVE (deleted / Semester 8 students) ================= -->
+  <div id="archive" class="card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">Archived students</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Students removed with Semester 8 removal or Delete are kept here and can be restored.</p>
+      </div>
+      <span class="badge badge-neutral">{{ archived_list|length }}{% if archived_list|length == 200 %}+{% endif %}</span>
+    </div>
+    {% if archived_list %}
+    <form method="POST" action="{% url 'restore_archived' %}"
+          onsubmit="if (!this.querySelector('input[name=archive_ids]:checked')) { return false; } return confirm('Restore the selected students with their no-due records and history?') && (disableSubmitButtons(this) || true)">
+      {% csrf_token %}
+      <div class="overflow-x-auto max-h-96">
+        <table class="table">
+          <thead><tr>
+            <th class="w-10"><input type="checkbox" aria-label="Select all archived" class="h-4 w-4 accent-brand-600"
+                 onchange="this.closest('table').querySelectorAll('input[name=archive_ids]').forEach(c => c.checked = this.checked)"></th>
+            <th>Register No</th><th>Name</th><th>Class</th><th>Reason</th><th>Archived</th>
+          </tr></thead>
+          <tbody>
+            {% for a in archived_list %}
+            <tr>
+              <td><input type="checkbox" name="archive_ids" value="{{ a.id }}" class="h-4 w-4 accent-brand-600" aria-label="Select {{ a.reg_no }}"></td>
+              <td class="font-medium text-slate-900 whitespace-nowrap">{{ a.reg_no }}</td>
+              <td>{{ a.name|default:"—" }}</td>
+              <td class="whitespace-nowrap">{{ a.branch }} · Year {{ a.year }} · Sem {{ a.semester }}</td>
+              <td class="whitespace-nowrap">{{ a.reason }}</td>
+              <td class="whitespace-nowrap text-slate-500">{{ a.archived_at|date:"d M Y, h:i A" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="px-5 py-4 border-t border-slate-200 flex justify-end">
+        <button class="btn btn-secondary">Restore selected</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="empty-state py-8"><p class="font-medium">No archived students.</p></div>
+    {% endif %}
   </div>
   </div>
 
@@ -778,6 +894,7 @@
 <div id="portal_toast_container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
 {{ sem_counts|json_script:"semCountsData" }}
+{{ promotion_checks|json_script:"promotionChecksData" }}
 
 <script>
   // Setup standard semester counts injected from Django context
@@ -786,8 +903,27 @@
   const GLOBAL_SEM8_COUNT = Number("{{ global_sem8_count|default:0 }}");
   let activePromotionFormId = "promotionForm";
 
-  // Simulate Full Promotion to check dynamic status
+  // The server computes every promotion check (per department); the page only displays them.
+  const PROMOTION_CHECKS = JSON.parse(document.getElementById("promotionChecksData") ? document.getElementById("promotionChecksData").textContent : "{}");
+
+  function confirmUndoPromotion(form) {
+    const box = form.querySelector('input[name="confirm_text"]');
+    if ((box.value || "").trim().toUpperCase() !== "UNDO") {
+      box.focus();
+      box.classList.add("border-red-500");
+      return false;
+    }
+    disableSubmitButtons(form);
+    return true;
+  }
+
   function checkFullPromotionStatus() {
+    const c = PROMOTION_CHECKS.full;
+    if (c) {
+      if (c.ok) return { blocked: false };
+      return { blocked: true, type: GLOBAL_SEM8_COUNT > 0 ? 'sem8' : 'merge', message: c.message };
+    }
+    // Fallback (older page data): local simulation
     const counts = { ...SEM_COUNTS };
     
     // 1. Check Semester 8 students
@@ -906,22 +1042,30 @@
     const fromSem = parseInt(val);
     const targetSem = fromSem + 1;
     const isEvenToOdd = [2, 4, 6].includes(fromSem);
-    const studentCount = SEM_COUNTS[fromSem] || 0;
+    const branchSel = document.getElementById("semwise_branch");
+    const branch = branchSel ? branchSel.value : "";
+    const checkKey = branch ? `${fromSem}|${branch}` : String(fromSem);
+    const studentCount = (PROMOTION_CHECKS[checkKey] || {}).count ?? (SEM_COUNTS[fromSem] || 0);
     const targetCount = SEM_COUNTS[targetSem] || 0;
 
     // Update labels
     document.getElementById("lbl_semwise_from").textContent = "Semester " + fromSem;
     document.getElementById("lbl_semwise_to").textContent = "Semester " + targetSem;
     document.getElementById("lbl_semwise_year").textContent = isEvenToOdd ? "Yes (+1 Academic Year)" : "No (Same Academic Year)";
-    document.getElementById("lbl_semwise_count").textContent = studentCount + " students";
+    document.getElementById("lbl_semwise_count").textContent = studentCount + " students" + (branch ? ` (${branch})` : " (all departments)");
 
     previewBox.classList.remove("hidden");
 
     let isBlocked = false;
     let errorMsg = "";
+    const serverCheck = PROMOTION_CHECKS[checkKey] || (branch ? { ok: false, message: `No students in Semester ${fromSem} in ${branch}.` } : null);
 
-    // Check year transition (even to odd) and Semester 8 students
-    if (isEvenToOdd && GLOBAL_SEM8_COUNT > 0) {
+    if (serverCheck) {
+      isBlocked = !serverCheck.ok;
+      errorMsg = serverCheck.message;
+    }
+    // Fallback (older page data): local rules
+    else if (isEvenToOdd && GLOBAL_SEM8_COUNT > 0) {
       isBlocked = true;
       errorMsg = "Please remove Semester 8 students before promoting students to the next academic year.";
     } 
@@ -948,7 +1092,7 @@
     document.getElementById("confirm_modal_text").innerHTML = `
       You are about to promote all students in the system (Semesters 1-7) to the next academic semester.
       <br><br>
-      <span class="text-brand-700 font-semibold">CRITICAL:</span> This action will reset ALL no-due requests to "Incomplete" (NOT_SENT) so they can verify dues for the new semester. This cannot be undone.
+      <span class="text-brand-700 font-semibold">CRITICAL:</span> This action will reset ALL no-due requests to "Incomplete" (NOT_SENT) so they can verify dues for the new semester. You can undo it afterwards until students start sending requests for the new semester.
     `;
     document.getElementById("promoModal").classList.remove("hidden");
   }
@@ -957,10 +1101,12 @@
     activePromotionFormId = "semwiseForm";
     const fromSem = document.getElementById("semwise_select").value;
     const targetSem = parseInt(fromSem) + 1;
+    const branchSel = document.getElementById("semwise_branch");
+    const scope = branchSel && branchSel.value ? `${branchSel.value} students` : "students in all departments";
     document.getElementById("confirm_modal_text").innerHTML = `
-      You are about to promote all students in <strong>Semester ${fromSem}</strong> to <strong>Semester ${targetSem}</strong>.
+      You are about to promote ${scope} in <strong>Semester ${fromSem}</strong> to <strong>Semester ${targetSem}</strong>.
       <br><br>
-      <span class="text-brand-700 font-semibold">CRITICAL:</span> This action will reset no-due requests to "Incomplete" (NOT_SENT) for the promoted students. This cannot be undone.
+      <span class="text-brand-700 font-semibold">CRITICAL:</span> This action will reset no-due requests to "Incomplete" (NOT_SENT) for the promoted students. You can undo it afterwards until students start sending requests for the new semester.
     `;
     document.getElementById("promoModal").classList.remove("hidden");
   }

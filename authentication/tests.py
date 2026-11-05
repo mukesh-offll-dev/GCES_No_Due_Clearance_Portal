@@ -32,7 +32,6 @@ class AuthenticationAndSecurityTests(TestCase):
             reverse("hostel_dashboard"),
             reverse("college_dashboard"),
             reverse("department_dashboard"),
-            reverse("no_due_certificate"),
             reverse("faculty_promotion"),
         ]
         for url in protected_urls:
@@ -905,6 +904,10 @@ class WebSocketAndRealTimeTests(TestCase):
             self.assertEqual(logs[0]["completion_time"], initial_completion_time)
             self.assertTrue(logs[0]["no_due_cleared"])
         finally:
+            from authentication.promotion import promotion_runs, promotion_run_items
+            run_ids = promotion_run_items.distinct("run_id", {"student_id": test_id})
+            promotion_run_items.delete_many({"run_id": {"$in": run_ids}})
+            promotion_runs.delete_many({"_id": {"$in": run_ids}})
             students_col.delete_one({"_id": test_id})
             no_due_col.delete_many({"student_id": test_id})
             promotion_logs.delete_many({"student_id": test_id})
@@ -934,9 +937,16 @@ class WebSocketAndRealTimeTests(TestCase):
             session["role"] = "FACULTY"
             session.save()
 
-            # Missing params -> 400
+            # Missing params -> back to the directory with a message (no bare text page)
             bad_res = self.client.get(reverse("faculty_report_pdf"), {"branch": "CSE"})
-            self.assertEqual(bad_res.status_code, 400)
+            self.assertEqual(bad_res.status_code, 302)
+            self.assertTrue(bad_res.url.startswith(reverse("faculty_dashboard")))
+
+            # Empty class -> back to that class's directory with a clear warning
+            empty = self.client.get(reverse("faculty_report_pdf"), {"branch": "CSE", "year": "1"}, follow=True)
+            self.assertEqual(empty.redirect_chain[0][1], 302)
+            self.assertIn("branch=CSE", empty.redirect_chain[0][0])
+            self.assertContains(empty, "no students in CSE")
 
             # Valid branch + year -> 200 PDF
             res = self.client.get(reverse("faculty_report_pdf"), {"branch": "CSE", "year": "3"})
@@ -1600,3 +1610,511 @@ class ClearanceRequestRulesTests(TestCase):
         d = self._reject("COLLEGE", self.cse, "COLLEGE")
         self.assertEqual(d["attempts_used"], 1)          # first rejection, not 2
         self.assertNotIn("cooldown_expiry", d)
+
+    def test_cooldown_sweep_uses_utc_not_local_time(self):
+        from datetime import datetime, timedelta, timezone
+        from authentication.maintenance import fast_cooldown_reset
+        self.db.no_due_requests.insert_one({
+            "student_id": self.cse, "office": "LIBRARY", "status": "REJECTED", "attempts_used": 2,
+            "cooldown_expiry": datetime.now(timezone.utc) + timedelta(hours=3), "created_at": datetime.now()})
+        fast_cooldown_reset(force=True)
+        d = self._doc(self.cse, "LIBRARY")
+        self.assertEqual((d["status"], d["attempts_used"]), ("REJECTED", 2))   # 3 h left: still locked
+        self.assertIn("cooldown_expiry", d)
+        self.db.no_due_requests.update_one({"_id": d["_id"]}, {"$set": {
+            "cooldown_expiry": datetime.now(timezone.utc) - timedelta(seconds=1)}})
+        fast_cooldown_reset(force=True)
+        d = self._doc(self.cse, "LIBRARY")
+        self.assertEqual((d["status"], d["attempts_used"]), ("NOT_SENT", 0))
+
+
+class PromotionTests(TestCase):
+    """Semester promotion engine (authentication/promotion.py) and the promote view."""
+
+    PREFIX = "99998820"
+
+    def setUp(self):
+        from datetime import datetime
+        from authentication.mongo import db
+        self.db = db
+        self._t0 = datetime.now()
+        self._cleanup()
+        # Promotion acts on EVERY student, so only run against a database holding test data alone.
+        if self.db.students.count_documents({}) > 0:
+            self.skipTest("local MongoDB has non-test students; promotion tests need an empty students collection")
+        self.db.portal_settings.update_one({"_id": "global_config"}, {"$set": {"promotion_in_progress": False},
+                                           "$unset": {"promotion_lock_until": ""}}, upsert=True)
+        self.n = 0
+        from authentication import promotion
+        self._grace = promotion.WRITE_GRACE_SECONDS
+        promotion.WRITE_GRACE_SECONDS = 0
+
+    def tearDown(self):
+        from authentication import promotion
+        promotion.WRITE_GRACE_SECONDS = getattr(self, "_grace", promotion.WRITE_GRACE_SECONDS)
+        self._cleanup()
+        self.db.portal_settings.update_one({"_id": "global_config"}, {"$set": {"promotion_in_progress": False},
+                                           "$unset": {"promotion_lock_until": ""}})
+
+    def _cleanup(self):
+        ids = [s["_id"] for s in self.db.students.find({"reg_no": {"$regex": f"^{self.PREFIX}"}}, {"_id": 1})]
+        self.db.no_due_requests.delete_many({"student_id": {"$in": ids}})
+        self.db.promotion_logs.delete_many({"student_id": {"$in": ids}})
+        self.db.students.delete_many({"_id": {"$in": ids}})
+        run_ids = self.db.promotion_run_items.distinct("run_id", {"student_id": {"$in": ids}}) if ids else []
+        self.db.promotion_run_items.delete_many({"student_id": {"$in": ids}})
+        self.db.promotion_runs.delete_many({"_id": {"$in": run_ids}})
+        # runs created by this class's tests (students may already be gone)
+        t0 = getattr(self, "_t0", None)
+        if t0 is not None:
+            stale = self.db.promotion_runs.distinct("_id", {"started_at": {"$gte": t0}})
+            self.db.promotion_run_items.delete_many({"run_id": {"$in": stale}})
+            self.db.promotion_runs.delete_many({"_id": {"$in": stale}})
+        self.db.archived_students.delete_many({"student.reg_no": {"$regex": f"^{self.PREFIX}"}})
+
+    def _add(self, sem, year=None, stype="Day Scholar", approved=(), branch="CSE"):
+        self.n += 1
+        sid = self.db.students.insert_one({
+            "reg_no": f"{self.PREFIX}{self.n:04d}", "name": "PROMO TEST", "branch": branch,
+            "semester": sem, "year": year if year is not None else (sem + 1) // 2,
+            "student_type": stype, "is_75_scheme": False, "profile_completed": True}).inserted_id
+        for office in approved:
+            self.db.no_due_requests.insert_one({"student_id": sid, "office": office, "status": "APPROVED",
+                                                "attempts_used": 0, "attempts_model": 2})
+        return sid
+
+    def _sem(self, sid):
+        d = self.db.students.find_one({"_id": sid})
+        return d["semester"], d["year"]
+
+    def _faculty(self):
+        c = Client()
+        s = c.session
+        s["role"] = "FACULTY"
+        s["promotion_unlocked"] = True
+        s.save()
+        from django.conf import settings
+        c.cookies[settings.SESSION_COOKIE_NAME] = s.session_key
+        return c
+
+    # ── the reported bug ──
+    def test_semester_wise_form_promotes_only_that_semester(self):
+        a, b, c3 = self._add(1), self._add(3), self._add(5)
+        r = self._faculty().post("/faculty/promote/", {"promotion_mode": "semester", "from_sem": "3"})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self._sem(a), (1, 1))
+        self.assertEqual(self._sem(b), (4, 2))
+        self.assertEqual(self._sem(c3), (5, 3))
+
+    def test_semester_mode_without_semester_does_not_fall_back_to_full(self):
+        a = self._add(1)
+        self._faculty().post("/faculty/promote/", {"promotion_mode": "semester", "from_sem": ""})
+        self.assertEqual(self._sem(a), (1, 1))
+
+    # ── rules ──
+    def test_semester_wise_blocked_when_target_has_students(self):
+        from authentication.promotion import run_promotion
+        a, b = self._add(3), self._add(4)
+        r = run_promotion(from_sem=3)
+        self.assertFalse(r["ok"])
+        self.assertIn("merge", r["message"])
+        self.assertEqual((self._sem(a), self._sem(b)), ((3, 2), (4, 2)))
+
+    def test_new_academic_year_needs_semester_8_removed(self):
+        from authentication.promotion import run_promotion
+        s2, s8 = self._add(2), self._add(8)
+        self.assertFalse(run_promotion(from_sem=2)["ok"])        # 2→3 starts a new year
+        self.assertEqual(self._sem(s2), (2, 1))
+        s5 = self._add(5)
+        self.assertTrue(run_promotion(from_sem=5)["ok"])         # 5→6 same year: allowed
+        self.assertEqual(self._sem(s5), (6, 3))
+        self.assertFalse(run_promotion()["ok"])                  # full promotion blocked by Sem 8
+        self.assertEqual(self._sem(s8), (8, 4))
+
+    def test_full_promotion_moves_every_semester_exactly_once(self):
+        from authentication.promotion import run_promotion
+        # Valid data: one semester per Department + Year (CSE odd semesters, ECE even ones).
+        ids = {sem: self._add(sem, branch="CSE" if sem % 2 else "ECE") for sem in range(1, 8)}
+        r = run_promotion()
+        self.assertTrue(r["ok"], r["message"])
+        self.assertEqual(r["promoted"], 7)
+        for sem, sid in ids.items():
+            self.assertEqual(self._sem(sid), (sem + 1, (sem + 2) // 2))
+
+    def test_year_is_derived_from_semester(self):
+        from authentication.promotion import run_promotion
+        sid = self._add(4, year=1)          # wrong stored year
+        run_promotion(from_sem=4)
+        self.assertEqual(self._sem(sid), (5, 3))
+
+    def test_no_dues_reset_only_for_promoted_and_history_logged(self):
+        from authentication.promotion import run_promotion
+        moved = self._add(3, approved=("LIBRARY", "COLLEGE", "DEPARTMENT"))
+        stay = self._add(1, approved=("LIBRARY",))
+        run_promotion(from_sem=3)
+        self.assertEqual(self.db.no_due_requests.count_documents({"student_id": moved, "status": "NOT_SENT"}), 3)
+        self.assertEqual(self.db.no_due_requests.count_documents({"student_id": stay, "status": "APPROVED"}), 1)
+        log = self.db.promotion_logs.find_one({"student_id": moved})
+        self.assertTrue(log and log["no_due_cleared"])
+        self.assertEqual((log["previous_semester"], log["new_semester"]), (3, 4))
+
+    def test_running_twice_does_not_double_promote(self):
+        from authentication.promotion import run_promotion
+        sid = self._add(3)
+        self.assertTrue(run_promotion(from_sem=3)["ok"])
+        self.assertFalse(run_promotion(from_sem=3)["ok"])
+        self.assertEqual(self._sem(sid), (4, 2))
+
+    def test_stale_page_snapshot_blocks_promotion(self):
+        from authentication.promotion import counts_snapshot, run_promotion
+        a = self._add(1)
+        snap = counts_snapshot()
+        self._add(1)                         # roster changed after the page loaded
+        r = run_promotion(expected_snapshot=snap)
+        self.assertFalse(r["ok"])
+        self.assertEqual(self._sem(a), (1, 1))
+
+    def test_view_rejects_stale_snapshot(self):
+        a = self._add(1)
+        self._faculty().post("/faculty/promote/", {"promotion_mode": "full", "counts_snapshot": "CSE:1:9"})
+        self.assertEqual(self._sem(a), (1, 1))
+
+    def test_active_lock_blocks_but_stale_lock_is_recovered(self):
+        from datetime import datetime, timedelta, timezone
+        from authentication.promotion import run_promotion
+        sid = self._add(1)
+        self.db.portal_settings.update_one({"_id": "global_config"}, {"$set": {
+            "promotion_in_progress": True, "promotion_lock_until": datetime.now(timezone.utc) + timedelta(minutes=5)}})
+        self.assertFalse(run_promotion()["ok"])
+        self.assertEqual(self._sem(sid), (1, 1))
+        self.db.portal_settings.update_one({"_id": "global_config"}, {"$set": {
+            "promotion_lock_until": datetime.now(timezone.utc) - timedelta(minutes=1)}})
+        self.assertTrue(run_promotion()["ok"])
+        self.assertEqual(self._sem(sid), (2, 1))
+        cfg = self.db.portal_settings.find_one({"_id": "global_config"})
+        self.assertFalse(cfg.get("promotion_in_progress"))
+
+    def test_promotion_requires_unlocked_faculty(self):
+        a = self._add(1)
+        c = Client()
+        s = c.session
+        s["role"] = "FACULTY"
+        s.save()
+        from django.conf import settings
+        c.cookies[settings.SESSION_COOKIE_NAME] = s.session_key
+        c.post("/faculty/promote/", {"promotion_mode": "full"})
+        self.assertEqual(self._sem(a), (1, 1))
+
+    # ── one semester per Department + Year: promotion ──
+    def test_other_departments_do_not_block_semester_wise(self):
+        from authentication.promotion import run_promotion
+        cse3, ece4 = self._add(3, branch="CSE"), self._add(4, branch="ECE")
+        r = run_promotion(from_sem=3)
+        self.assertTrue(r["ok"], r["message"])
+        self.assertEqual(self._sem(cse3), (4, 2))
+        self.assertEqual(self._sem(ece4), (4, 2))
+
+    def test_year_boundary_merge_blocked(self):
+        from authentication.promotion import run_promotion
+        y1, y2 = self._add(2), self._add(4)          # CSE Year 1 (Sem 2) and CSE Year 2 (Sem 4)
+        r = run_promotion(from_sem=2)                # Sem 2 → 3 would join Year 2, which has Sem 4
+        self.assertFalse(r["ok"])
+        self.assertIn("merge", r["message"])
+        self.assertEqual((self._sem(y1), self._sem(y2)), ((2, 1), (4, 2)))
+
+    def test_full_promotion_blocked_when_it_would_mix_semesters(self):
+        from authentication.promotion import run_promotion
+        a, b = self._add(2), self._add(3)            # CSE Year 1 Sem 2, CSE Year 2 Sem 3
+        r = run_promotion()                          # → CSE Year 2 would hold Sem 3 and Sem 4
+        self.assertFalse(r["ok"])
+        self.assertIn("would end up with students in", r["message"])
+        self.assertEqual((self._sem(a), self._sem(b)), ((2, 1), (3, 2)))
+
+    def test_promotion_checks_match_engine(self):
+        from authentication.promotion import promotion_checks
+        self._add(3, branch="CSE")
+        self._add(4, branch="CSE")
+        checks = promotion_checks()
+        self.assertFalse(checks["3"]["ok"])
+        self.assertTrue(checks["full"]["ok"])
+
+    # ── undo / atomicity ──
+    def test_undo_restores_semester_year_dues_and_history(self):
+        from authentication.promotion import run_promotion, rollback_last_run
+        sid = self._add(3, approved=("LIBRARY", "COLLEGE", "DEPARTMENT"))
+        r = run_promotion(from_sem=3)
+        self.assertTrue(r["ok"])
+        self.assertEqual(self._sem(sid), (4, 2))
+        self.assertEqual(self.db.no_due_requests.count_documents({"student_id": sid, "status": "APPROVED"}), 0)
+        u = rollback_last_run(r["run_id"])
+        self.assertTrue(u["ok"], u["message"])
+        self.assertEqual(self._sem(sid), (3, 2))
+        self.assertEqual(self.db.no_due_requests.count_documents({"student_id": sid, "status": "APPROVED"}), 3)
+        self.assertEqual(self.db.promotion_logs.count_documents({"student_id": sid}), 0)
+        self.assertEqual(self.db.promotion_runs.find_one({"_id": r["run_id"]})["status"], "rolled_back")
+
+    def test_only_latest_promotion_can_be_undone(self):
+        from authentication.promotion import run_promotion, rollback_last_run
+        sid = self._add(1)
+        first = run_promotion(from_sem=1)
+        second = run_promotion(from_sem=2)
+        self.assertTrue(first["ok"] and second["ok"])
+        self.assertFalse(rollback_last_run(first["run_id"])["ok"])
+        self.assertTrue(rollback_last_run(second["run_id"])["ok"])
+        self.assertEqual(self._sem(sid), (2, 1))
+        self.assertTrue(rollback_last_run(first["run_id"])["ok"])   # now it is the latest
+        self.assertEqual(self._sem(sid), (1, 1))
+
+    def test_undo_skips_students_changed_after_promotion(self):
+        from authentication.promotion import run_promotion, rollback_last_run
+        a, b = self._add(3), self._add(3)
+        r = run_promotion(from_sem=3)
+        self.db.students.update_one({"_id": b}, {"$set": {"semester": 6, "year": 3}})   # edited afterwards
+        u = rollback_last_run(r["run_id"])
+        self.assertEqual((u["restored"], u["skipped"]), (1, 1))
+        self.assertEqual(self._sem(a), (3, 2))
+        self.assertEqual(self._sem(b), (6, 3))
+
+    def test_failure_mid_promotion_is_undone_automatically(self):
+        from unittest import mock
+        from authentication import promotion
+        ids = [self._add(sem, branch="CSE" if sem % 2 else "ECE") for sem in (1, 2, 3, 4, 5)]
+        before = [self._sem(i) for i in ids]
+        real_apply = promotion._apply
+
+        def crash(items, semesters, now, run_id, session=None):
+            real_apply(items, semesters[:2], now, run_id, session=session)   # half the work…
+            raise RuntimeError("simulated crash")
+
+        with mock.patch.object(promotion, "_apply", side_effect=crash), \
+             mock.patch.object(promotion, "transactions_supported", return_value=False):
+            r = promotion.run_promotion()
+        self.assertFalse(r["ok"])
+        self.assertEqual([self._sem(i) for i in ids], before)          # …all undone
+        self.assertFalse(self.db.portal_settings.find_one({"_id": "global_config"}).get("promotion_in_progress"))
+
+    def test_concurrent_promotions_only_one_runs(self):
+        import threading
+        from authentication.promotion import run_promotion
+        sid = self._add(1)
+        results = []
+        barrier = threading.Barrier(4)
+
+        def go():
+            barrier.wait()
+            results.append(run_promotion(from_sem=1))
+        threads = [threading.Thread(target=go) for _ in range(4)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        self.assertEqual(sum(1 for r in results if r["ok"]), 1)
+        self.assertEqual(self._sem(sid), (2, 1))
+
+    def test_undo_view_requires_confirmation(self):
+        from authentication.promotion import run_promotion
+        sid = self._add(3)
+        r = run_promotion(from_sem=3)
+        c = self._faculty()
+        c.post("/faculty/promotion/undo/", {"run_id": str(r["run_id"]), "confirm_text": "no"})
+        self.assertEqual(self._sem(sid), (4, 2))
+        c.post("/faculty/promotion/undo/", {"run_id": str(r["run_id"]), "confirm_text": "UNDO"})
+        self.assertEqual(self._sem(sid), (3, 2))
+
+    # ── one semester per Department + Year: roster paths ──
+    def test_add_and_bulk_add_must_match_active_semester(self):
+        self._add(3)                                  # CSE Year 2 is in Semester 3
+        c = self._faculty()
+        c.post("/faculty/add-student/", {"reg_no": f"{self.PREFIX}9001", "branch": "CSE", "year": "2", "semester": "4"})
+        self.assertIsNone(self.db.students.find_one({"reg_no": f"{self.PREFIX}9001"}))
+        c.post("/faculty/add-student/", {"reg_no": f"{self.PREFIX}9002", "branch": "CSE", "year": "2", "semester": "3"})
+        self.assertIsNotNone(self.db.students.find_one({"reg_no": f"{self.PREFIX}9002"}))
+        c.post("/faculty/bulk-add/", {"start_reg_no": f"{self.PREFIX}9010", "end_reg_no": f"{self.PREFIX}9012",
+                                      "branch": "CSE", "year": "2", "semester": "4"})
+        self.assertEqual(self.db.students.count_documents({"reg_no": {"$regex": f"^{self.PREFIX}901"}}), 0)
+        c.post("/faculty/add-student/", {"reg_no": f"{self.PREFIX}9003", "branch": "ECE", "year": "2", "semester": "4"})
+        self.assertIsNotNone(self.db.students.find_one({"reg_no": f"{self.PREFIX}9003"}))   # other department: fine
+
+    def test_edit_cannot_mix_semesters_and_validates_pair(self):
+        a, b = self._add(3), self._add(3)
+        c = self._faculty()
+        base = {"student_id": str(b), "reg_no": f"{self.PREFIX}0002", "name": "X", "branch": "CSE", "student_type": "Day Scholar"}
+        c.post("/faculty/edit/", {**base, "year": "2", "semester": "4"})       # would mix CSE Year 2
+        self.assertEqual(self._sem(b), (3, 2))
+        c.post("/faculty/edit/", {**base, "year": "2", "semester": "7"})       # invalid pair
+        self.assertEqual(self._sem(b), (3, 2))
+        c.post("/faculty/edit/", {**base, "branch": "ECE", "year": "2", "semester": "4"})   # move to ECE: ok
+        d = self.db.students.find_one({"_id": b})
+        self.assertEqual((d["branch"], d["semester"], d["year"]), ("ECE", 4, 2))
+
+    def test_roster_changes_refused_while_promotion_runs(self):
+        from datetime import datetime, timedelta, timezone
+        self.db.portal_settings.update_one({"_id": "global_config"}, {"$set": {
+            "promotion_in_progress": True, "promotion_lock_until": datetime.now(timezone.utc) + timedelta(minutes=5)}})
+        self._faculty().post("/faculty/add-student/", {"reg_no": f"{self.PREFIX}9100", "branch": "CSE", "year": "1", "semester": "1"})
+        self.assertIsNone(self.db.students.find_one({"reg_no": f"{self.PREFIX}9100"}))
+
+    def test_semester8_removal_and_delete_archive_students(self):
+        s8 = self._add(8)
+        other = self._add(1)
+        c = self._faculty()
+        c.post("/faculty/remove-sem8/")
+        self.assertIsNone(self.db.students.find_one({"_id": s8}))
+        self.assertIsNotNone(self.db.archived_students.find_one({"student._id": s8, "reason": "semester_8_removal"}))
+        c.post("/faculty/delete/", {"student_ids": [str(other)], "branch": "CSE", "year": "1"})
+        self.assertIsNone(self.db.students.find_one({"_id": other}))
+        self.assertIsNotNone(self.db.archived_students.find_one({"student._id": other, "reason": "deleted_by_faculty"}))
+        self.db.archived_students.delete_many({"student._id": {"$in": [s8, other]}})
+
+    # ── risk 1: process killed mid-promotion → automatic recovery ──
+    def test_killed_mid_promotion_is_recovered_automatically(self):
+        from unittest import mock
+        from authentication import promotion
+        from authentication.maintenance import run_maintenance_cycle
+        ids = [self._add(sem, branch="CSE" if sem % 2 else "ECE") for sem in (1, 2, 3, 4, 5)]
+        before = [self._sem(i) for i in ids]
+        real_apply = promotion._apply
+
+        class Killed(BaseException):
+            """Like SIGKILL: bypasses every `except Exception`."""
+
+        def killed(items, semesters, now, run_id, session=None):
+            real_apply(items, [x for x in semesters if x in (5, 4)], now, run_id, session=session)
+            raise Killed()
+
+        with mock.patch.object(promotion, "_apply", side_effect=killed), \
+             mock.patch.object(promotion, "transactions_supported", return_value=False):
+            with self.assertRaises(Killed):
+                promotion.run_promotion()
+        self.assertNotEqual([self._sem(i) for i in ids], before)                 # half-promoted…
+        self.assertEqual(self.db.promotion_runs.count_documents({"status": "in_progress"}), 1)
+        self.db.portal_settings.delete_one({"_id": "maintenance_lock"})
+        run_maintenance_cycle()                                                   # …next maintenance tick
+        self.assertEqual([self._sem(i) for i in ids], before)                    # …fully undone
+        self.assertEqual(self.db.promotion_runs.count_documents({"status": "auto_recovered"}), 1)
+
+    def test_live_promotion_is_not_touched_by_recovery(self):
+        from authentication.promotion import acquire_lock, release_lock, recover_interrupted_runs
+        from bson import ObjectId
+        from datetime import datetime
+        self.db.promotion_runs.insert_one({"_id": ObjectId(), "status": "in_progress", "started_at": datetime.now()})
+        self.assertTrue(acquire_lock())                       # a promotion is genuinely running
+        try:
+            self.assertEqual(recover_interrupted_runs(), 0)
+            self.assertEqual(self.db.promotion_runs.count_documents({"status": "in_progress"}), 1)
+        finally:
+            release_lock()
+
+    # ── risk 2: roster write slips into a promotion → promotion undoes itself ──
+    def test_concurrent_write_during_promotion_undoes_it(self):
+        from unittest import mock
+        from authentication import promotion
+        a = self._add(3)
+        real_apply = promotion._apply
+
+        def apply_then_sneak_in(*args, **kwargs):
+            out = real_apply(*args, **kwargs)
+            self._add(3)                                      # someone adds a Semester 3 student meanwhile
+            return out
+
+        with mock.patch.object(promotion, "_apply", side_effect=apply_then_sneak_in):
+            r = promotion.run_promotion(from_sem=3)
+        self.assertFalse(r["ok"])
+        self.assertIn("undone automatically", r["message"])
+        self.assertEqual(self._sem(a), (3, 2))
+        self.assertEqual(self.db.promotion_runs.count_documents({"status": "auto_undone"}), 1)
+
+    def test_concurrent_adds_with_different_semesters_never_mix_a_class(self):
+        import threading
+        c1, c2 = self._faculty(), self._faculty()
+        barrier = threading.Barrier(2)
+
+        def add(client, suffix, sem):
+            barrier.wait()
+            client.post("/faculty/add-student/", {"reg_no": f"{self.PREFIX}95{suffix}", "branch": "CSE",
+                                                  "year": "2", "semester": sem})
+        for round_no in range(5):
+            self._cleanup()
+            t1 = threading.Thread(target=add, args=(c1, f"{round_no}1", "3"))
+            t2 = threading.Thread(target=add, args=(c2, f"{round_no}2", "4"))
+            t1.start(); t2.start(); t1.join(); t2.join()
+            sems = set(self.db.students.distinct("semester", {"branch": "CSE", "reg_no": {"$regex": f"^{self.PREFIX}"}}))
+            self.assertLessEqual(len(sems), 1, f"round {round_no}: CSE Year 2 has {sems}")
+
+    # ── risk 4: undo never discards new-semester requests ──
+    def test_undo_refused_after_students_send_requests(self):
+        from datetime import datetime, timedelta
+        from authentication.promotion import rollback_last_run, run_promotion
+        sid = self._add(3)
+        r = run_promotion(from_sem=3)
+        self.db.no_due_requests.update_one({"student_id": sid, "office": "LIBRARY"}, {"$set": {
+            "status": "PENDING", "created_at": datetime.now() + timedelta(seconds=1)}}, upsert=True)
+        u = rollback_last_run(r["run_id"])
+        self.assertFalse(u["ok"])
+        self.assertIn("no longer possible", u["message"])
+        self.assertEqual(self._sem(sid), (4, 2))
+
+    # ── risk 3: repair a mixed class (undoable) ──
+    def test_fix_mixed_class_and_undo(self):
+        from authentication.promotion import cohort_issues, fix_cohort, rollback_last_run
+        a, b, c = self._add(3), self._add(3), self._add(4)
+        self.assertEqual(len(cohort_issues()), 1)
+        r = fix_cohort("CSE", 2, 3)
+        self.assertTrue(r["ok"], r["message"])
+        self.assertEqual([self._sem(x) for x in (a, b, c)], [(3, 2)] * 3)
+        self.assertEqual(cohort_issues(), [])
+        self.assertTrue(rollback_last_run(r["run_id"])["ok"])
+        self.assertEqual(self._sem(c), (4, 2))
+
+    def test_fix_view(self):
+        a, b = self._add(3), self._add(4)
+        self._faculty().post("/faculty/promotion/fix-class/", {"branch": "CSE", "year": "2", "semester": "4"})
+        self.assertEqual([self._sem(a), self._sem(b)], [(4, 2), (4, 2)])
+
+    # ── risk 5: archive restore ──
+    def test_restore_archived_student(self):
+        sid = self._add(1, approved=("LIBRARY",))
+        c = self._faculty()
+        c.post("/faculty/delete/", {"student_ids": [str(sid)], "branch": "CSE", "year": "1"})
+        self.assertIsNone(self.db.students.find_one({"_id": sid}))
+        arch = self.db.archived_students.find_one({"student._id": sid})
+        c.post("/faculty/promotion/restore/", {"archive_ids": [str(arch["_id"])]})
+        self.assertEqual(self._sem(sid), (1, 1))
+        self.assertEqual(self.db.no_due_requests.count_documents({"student_id": sid, "status": "APPROVED"}), 1)
+        self.assertIsNone(self.db.archived_students.find_one({"_id": arch["_id"]}))
+
+    def test_restore_skips_conflicts(self):
+        from authentication.promotion import archive_students, restore_archived
+        sid = self._add(1)
+        reg = self.db.students.find_one({"_id": sid})["reg_no"]
+        archive_students([sid], reason="deleted_by_faculty")
+        self.db.students.delete_one({"_id": sid})
+        self.db.students.insert_one({"reg_no": reg, "branch": "CSE", "semester": 1, "year": 1})   # reg reused
+        arch = self.db.archived_students.find_one({"student._id": sid})
+        r = restore_archived([str(arch["_id"])])
+        self.assertEqual(r["restored"], 0)
+        self.assertIn("already exists", r["message"])
+        self.assertIsNotNone(self.db.archived_students.find_one({"_id": arch["_id"]}))   # kept for later
+
+    # ── risk 6: per-department semester-wise promotion ──
+    def test_semester_wise_for_one_department(self):
+        from authentication.promotion import run_promotion
+        cse, ece = self._add(3, branch="CSE"), self._add(3, branch="ECE")
+        r = run_promotion(from_sem=3, branch="CSE")
+        self.assertTrue(r["ok"], r["message"])
+        self.assertEqual(self._sem(cse), (4, 2))
+        self.assertEqual(self._sem(ece), (3, 2))
+
+    def test_department_sem8_rule_is_per_department(self):
+        from authentication.promotion import run_promotion
+        cse2, ece8 = self._add(2, branch="CSE"), self._add(8, branch="ECE")
+        self.assertFalse(run_promotion(from_sem=2)["ok"])                  # all departments: Sem 8 blocks
+        self.assertEqual(self._sem(cse2), (2, 1))
+        self.assertTrue(run_promotion(from_sem=2, branch="CSE")["ok"])   # CSE only: ECE's Sem 8 doesn't matter
+        self.assertEqual(self._sem(cse2), (3, 2))
+
+    def test_department_promotion_via_view_and_requires_semester(self):
+        cse, ece = self._add(5, branch="CSE"), self._add(5, branch="ECE")
+        c = self._faculty()
+        c.post("/faculty/promote/", {"promotion_mode": "semester", "from_sem": "", "promote_branch": "CSE"})
+        self.assertEqual(self._sem(cse), (5, 3))
+        c.post("/faculty/promote/", {"promotion_mode": "semester", "from_sem": "5", "promote_branch": "CSE"})
+        self.assertEqual((self._sem(cse), self._sem(ece)), ((6, 3), (5, 3)))

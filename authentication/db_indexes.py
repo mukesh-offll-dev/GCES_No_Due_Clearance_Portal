@@ -68,7 +68,7 @@ def ensure_indexes():
               name="status_created_at")
         _safe(created, no_due_col, [("cooldown_expiry", ASCENDING)],
               name="cooldown_expiry", sparse=True)
-        # student_dashboard / certificate lookups by student_id alone.
+        # student_dashboard lookups by student_id alone.
         _safe(created, no_due_col, [("student_id", ASCENDING)], name="student_id")
 
         # ── promotion_logs ──────────────────────────────────────────
@@ -87,6 +87,11 @@ def ensure_indexes():
         # TTL index: MongoDB deletes each session once expire_date passes.
         _safe(created, db["django_sessions"], [("expire_date", ASCENDING)],
               name="session_expiry_ttl", expireAfterSeconds=0)
+
+        # ── promotion journal (see promotion.py) ─────────────────────
+        _safe(created, db["promotion_runs"], [("started_at", DESCENDING)], name="started_at")
+        _safe(created, db["promotion_run_items"], [("run_id", ASCENDING)], name="run_id")
+        _safe(created, db["archived_students"], [("archived_at", DESCENDING)], name="archived_at")
 
         # ── sso_nonces (one-time Hostel SSO tokens, see sso.py) ─────
         _safe(created, db["sso_nonces"], [("expire_at", ASCENDING)],

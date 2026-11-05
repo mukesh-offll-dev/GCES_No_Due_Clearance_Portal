@@ -3,12 +3,12 @@ from .views import (
     index, library_dashboard, logout_view, faculty_dashboard, add_student, delete_students,
     edit_student, student_login, student_dashboard, send_hostel_request, college_dashboard,
     department_dashboard, hostel_dashboard, bulk_approve, reject_request, send_no_due_request,
-    retry_request, update_student_profile, no_due_certificate, download_student_template,
+    retry_request, update_student_profile, download_student_template,
     import_students_excel, office_student_status_api, office_report_preview_api,
     office_report_pdf_view, faculty_report_pdf_view, faculty_promotion_page, promote_students, remove_sem8_students,
     toggle_no_due_access, update_75_scheme, faculty_departments_api, add_department_view,
     edit_department_view, toggle_department_view, delete_department_view,
-    student_profile_setup, bulk_add_students
+    student_profile_setup, bulk_add_students, rollback_promotion, fix_cohort_view, restore_archived_view
 )
 from .sso import hostel_sso_login
 
@@ -35,7 +35,6 @@ urlpatterns = [
     path("student/send/", send_no_due_request, name="send_no_due"),
     path("student/retry/", retry_request, name="retry_request"),
     path("student/profile/update/", update_student_profile, name="update_student_profile"),
-    path("student/no-due/certificate/", no_due_certificate, name="no_due_certificate"),
 
     path("logout/", logout_view, name="logout"),
     path("sso/hostel/", hostel_sso_login, name="hostel_sso_login"),  # Hostel Admin App SSO
@@ -50,6 +49,9 @@ urlpatterns = [
     path("faculty/promotion/", faculty_promotion_page, name="faculty_promotion"),
     path("faculty/promote/", promote_students, name="promote_students"),
     path("faculty/remove-sem8/", remove_sem8_students, name="remove_sem8_students"),
+    path("faculty/promotion/undo/", rollback_promotion, name="rollback_promotion"),
+    path("faculty/promotion/fix-class/", fix_cohort_view, name="fix_cohort"),
+    path("faculty/promotion/restore/", restore_archived_view, name="restore_archived"),
     path("faculty/toggle-no-due-access/", toggle_no_due_access, name="toggle_no_due_access"),
     path("faculty/update-75-scheme/", update_75_scheme, name="update_75_scheme"),
     path("faculty/departments/api/", faculty_departments_api, name="faculty_departments_api"),

@@ -91,22 +91,18 @@
     </details>
   </section>
 
-  <!-- CERTIFICATE (shown once every office has approved) -->
-  <div id="cert-download-container" class="{% if not all_approved %}hidden{% endif %}">
-    <div class="card border-emerald-200 bg-emerald-50 p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+  <!-- ALL CLEARED (shown once every office has approved) -->
+  <div id="clearance-complete-banner" class="{% if not all_approved %}hidden{% endif %}">
+    <div class="card border-emerald-200 bg-emerald-50 p-5 flex items-center gap-4">
       <div class="flex items-center gap-3 flex-1">
         <div class="h-10 w-10 shrink-0 rounded-full bg-emerald-600 text-white flex items-center justify-center">
           <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
         </div>
         <div>
           <p class="font-semibold text-emerald-900">All offices cleared!</p>
-          <p class="text-sm text-emerald-800">Your No Due certificate is ready.</p>
+          <p class="text-sm text-emerald-800">Your No Due clearance is complete for this semester.</p>
         </div>
       </div>
-      <a href="{% url 'no_due_certificate' %}" class="btn btn-success btn-lg w-full sm:w-auto">
-        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
-        Download Certificate
-      </a>
     </div>
   </div>
 
@@ -878,7 +874,7 @@
           allStatuses.forEach(el => {
             if (!el.textContent.includes('Completed')) allDone = false;
           });
-          const certBox = document.getElementById('cert-download-container');
+          const certBox = document.getElementById('clearance-complete-banner');
           if (certBox) {
             if (allDone) certBox.classList.remove('hidden');
             else certBox.classList.add('hidden');
@@ -887,10 +883,10 @@
           statusContainer.innerHTML = `
             ${pendingBadgeHtml()}
           `;
-          const certBox = document.getElementById('cert-download-container');
+          const certBox = document.getElementById('clearance-complete-banner');
           if (certBox) certBox.classList.add('hidden');
         } else if (data.status === 'REJECTED') {
-          const certBox = document.getElementById('cert-download-container');
+          const certBox = document.getElementById('clearance-complete-banner');
           if (certBox) certBox.classList.add('hidden');
 
           let reasonHtml = data.reject_reason ? `<p class="text-sm text-slate-600 mt-1.5">Reason: ${escapeHtml(data.reject_reason)}</p>` : '';
@@ -941,7 +937,7 @@
           `;
           startCooldownTimers();
         } else if (data.status === 'NOT_SENT') {
-          const certBox = document.getElementById('cert-download-container');
+          const certBox = document.getElementById('clearance-complete-banner');
           if (certBox) certBox.classList.add('hidden');
 
           let attemptNotice = (data.attempts_used === 1) ? '<p class="text-xs text-amber-700 font-semibold mb-1.5 sm:text-right">You have only 1 attempt remaining.</p>' : '';
@@ -1064,7 +1060,7 @@
           const yearEl = document.getElementById('student-year-val');
           if (yearEl) yearEl.textContent = data.new_year;
         }
-        const certBox = document.getElementById('cert-download-container');
+        const certBox = document.getElementById('clearance-complete-banner');
         if (certBox) certBox.classList.add('hidden');
 
         // Reset all office rows in place

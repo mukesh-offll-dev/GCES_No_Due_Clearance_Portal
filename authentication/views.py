@@ -83,6 +83,13 @@ def _faculty_redirect(branch, year):
     return redirect(f"{reverse('faculty_dashboard')}?{query}")
 
 
+def _int_or_none(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _validate_cohort(branch, year, semester):
     """
     Validate department / year / semester for a NEW student.
@@ -711,75 +718,30 @@ def update_student_profile(request):
             return redirect("index")
 
         try:
+            from .promotion import check_cohort_semester
+            sid = ObjectId(student_id_raw)
+            me = students_col.find_one({"_id": sid}, {"branch": 1, "year": 1, "semester": 1}) or {}
+            if (str(me.get("year")), str(me.get("semester"))) != (year, semester):
+                error = check_cohort_semester(me.get("branch", ""), int(year), int(semester), exclude_ids=[sid])
+                if error:
+                    messages.error(request, error)
+                    return redirect("student_dashboard")
             students_col.update_one(
-                {"_id": ObjectId(student_id_raw)},
+                {"_id": sid},
                 {"$set": {
                     "year": int(year),
                     "semester": int(semester)
                 }}
             )
+            from .promotion import verify_cohort_after_write
+            error = verify_cohort_after_write(me.get("branch", ""), int(year))
+            if error:
+                students_col.update_one({"_id": sid}, {"$set": {"year": me.get("year"), "semester": me.get("semester")}})
+                messages.error(request, error)
         except Exception as exc:
             logger.error("Failed to update student profile: %s", exc)
 
     return redirect("student_dashboard")
-
-
-@institution_login_required
-def no_due_certificate(request):
-    if request.session.get("role") != "STUDENT":
-        return redirect("index")
-
-    student_id_raw = request.session.get("student_id")
-    if not student_id_raw:
-        request.session.flush()
-        return redirect("index")
-
-    try:
-        student_id = ObjectId(student_id_raw)
-        student = students_col.find_one({"_id": student_id})
-    except Exception:
-        request.session.flush()
-        return redirect("index")
-
-    if not student:
-        request.session.flush()
-        return redirect("index")
-
-    # Fetch all approved no-dues
-    try:
-        dues = list(no_due_col.find({
-            "student_id": student_id,
-            "status": "APPROVED"
-        }))
-    except Exception as exc:
-        logger.error("Failed to fetch approved dues for certificate: %s", exc)
-        dues = []
-
-    # 🔐 Safety check
-    student_type = student.get("student_type", "Hosteller")
-    required_count = 3 if student_type == "Day Scholar" else 4
-    if len(dues) < required_count:
-        return redirect("student_dashboard")
-
-    # Record completion log immediately if not already recorded
-    try:
-        record_student_no_due_completion(student_id)
-    except Exception as exc:
-        logger.warning("Error recording completion log on certificate view for student %s: %s", student_id, exc)
-
-    # Convert to simple dict for template
-    no_dues_status = {
-        "LIBRARY": "Completed",
-        "COLLEGE": "Completed",
-        "DEPARTMENT": "Completed"
-    }
-    if student_type == "Hosteller":
-        no_dues_status["HOSTEL"] = "Completed"
-
-    return render(request, "no_due_certificate.html", {
-        "student": student,
-        "no_dues": no_dues_status
-    })
 
 
 @institution_login_required
@@ -1796,6 +1758,9 @@ def add_student(request):
         return _faculty_redirect(branch, year)
 
     year_int, semester_int, error = _validate_cohort(branch, year, semester)
+    if not error:
+        from .promotion import check_cohort_semester
+        error = check_cohort_semester(branch, year_int, semester_int)   # one semester per Department + Year
     if error:
         request.session["add_error"] = error
         return _faculty_redirect(branch, year)
@@ -1806,9 +1771,15 @@ def add_student(request):
             request.session["add_error"] = f"Student with Register Number {reg_no} already exists"
             return _faculty_redirect(branch, year)
 
-        students_col.insert_one(_new_student_doc(
+        inserted_id = students_col.insert_one(_new_student_doc(
             reg_no, branch, year_int, semester_int, datetime.now(timezone.utc)
-        ))
+        )).inserted_id
+        from .promotion import verify_cohort_after_write
+        error = verify_cohort_after_write(branch, year_int)      # second check closes the race window
+        if error:
+            students_col.delete_one({"_id": inserted_id})
+            request.session["add_error"] = error
+            return _faculty_redirect(branch, year)
     except DuplicateKeyError:
         # Lost a race with a concurrent add — the unique index caught it.
         request.session["add_error"] = f"Student with Register Number {reg_no} already exists"
@@ -1864,6 +1835,9 @@ def bulk_add_students(request):
         return _faculty_redirect(branch, year)
 
     year_int, semester_int, error = _validate_cohort(branch, year, semester)
+    if not error:
+        from .promotion import check_cohort_semester
+        error = check_cohort_semester(branch, year_int, semester_int)   # one semester per Department + Year
     if error:
         messages.error(request, f"{error} ❌")
         return _faculty_redirect(branch, year)
@@ -1910,6 +1884,15 @@ def bulk_add_students(request):
             messages.error(request, "Bulk add failed ❌ Database connection error. Please try again.")
             return _faculty_redirect(branch, year)
 
+    if inserted:
+        from .promotion import verify_cohort_after_write
+        error = verify_cohort_after_write(branch, year_int)      # second check closes the race window
+        if error:
+            new_regs = [d["reg_no"] for d in to_insert]
+            students_col.delete_many({"reg_no": {"$in": new_regs}, "created_at": now, "profile_completed": False})
+            messages.error(request, f"{error} ❌")
+            return _faculty_redirect(branch, year)
+
     summary = f"Bulk Add Completed ✅ Added: {inserted}, Skipped (already exist): {len(skipped)}"
     if failed:
         summary += f", Failed: {failed}"
@@ -1948,8 +1931,14 @@ def delete_students(request):
             except (InvalidId, TypeError):
                 pass   # ignore empty / invalid ids
 
+        from .promotion import promotion_running, archive_students
+        if valid_object_ids and promotion_running():
+            messages.error(request, "A semester promotion is running right now. Please try again in a minute.")
+            valid_object_ids = []
+
         if valid_object_ids:
             try:
+                archive_students(valid_object_ids, reason="deleted_by_faculty")   # recoverable copy
                 students_col.delete_many({
                     "_id": {"$in": valid_object_ids}
                 })
@@ -1989,14 +1978,38 @@ def edit_student(request):
         sem_val_raw = request.POST.get("semester", "").strip()
 
         try:
-            year_val = int(year_val_raw) if year_val_raw.isdigit() else 1
-            sem_val = int(sem_val_raw) if sem_val_raw.isdigit() else 1
+            from .promotion import check_cohort_semester
+            sid = ObjectId(student_id)
+            current = students_col.find_one({"_id": sid}) or {}
+            if not current:
+                request.session["add_error"] = "That student no longer exists."
+                return redirect(f"/faculty/?branch={branch}&year={year}")
+
+            # Year + semester must be a valid pair (no silent fallback to Year 1 / Semester 1).
+            new_branch = branch if branch in get_active_department_codes() else current.get("branch", "")
+            year_int, sem_int, error = _validate_cohort(new_branch, year_val_raw, sem_val_raw)
+            if error:
+                request.session["add_error"] = error
+                return redirect(f"/faculty/?branch={current.get('branch', branch)}&year={current.get('year', year)}")
+            # Changing class or semester must keep one semester per Department + Year.
+            if (new_branch, year_int, sem_int) != (current.get("branch"), _int_or_none(current.get("year")),
+                                                   _int_or_none(current.get("semester"))):
+                error = check_cohort_semester(new_branch, year_int, sem_int, exclude_ids=[sid])
+                if error:
+                    request.session["add_error"] = error
+                    return redirect(f"/faculty/?branch={current.get('branch', branch)}&year={current.get('year', year)}")
+            year_val, sem_val = year_int, sem_int
+
+            reg_no_val = request.POST.get("reg_no", "").strip()
+            if not _is_valid_reg_no(reg_no_val):
+                reg_no_val = current.get("reg_no", "")
 
             roll_no_val = request.POST.get("roll_no", "").strip().upper()
             update = {"$set": {
-                "reg_no": request.POST.get("reg_no", "").strip(),
+                "reg_no": reg_no_val,
                 "name": request.POST.get("name", "").strip().upper(),
                 "dob": request.POST.get("dob", "").strip(),
+                "branch": new_branch,
                 "year": year_val,
                 "phone": request.POST.get("phone", "").strip(),
                 "semester": sem_val,
@@ -2009,7 +2022,17 @@ def edit_student(request):
                 # absent (not "") so the partial unique index ignores it.
                 update["$unset"] = {"roll_no": ""}
 
-            students_col.update_one({"_id": ObjectId(student_id)}, update)
+            students_col.update_one({"_id": sid}, update)
+            if (new_branch, year_int, sem_int) != (current.get("branch"), _int_or_none(current.get("year")),
+                                                   _int_or_none(current.get("semester"))):
+                from .promotion import verify_cohort_after_write
+                error = verify_cohort_after_write(new_branch, year_int)
+                if error:
+                    students_col.update_one({"_id": sid}, {"$set": {
+                        "branch": current.get("branch"), "year": current.get("year"),
+                        "semester": current.get("semester")}})
+                    request.session["add_error"] = error
+                    return redirect(f"/faculty/?branch={current.get('branch', branch)}&year={current.get('year', year)}")
             try:
                 notify_student(student_id, "student_profile_updated", {
                     "roll_no": request.POST.get("roll_no", "").strip().upper(),
@@ -2057,11 +2080,23 @@ def faculty_promotion_page(request):
     # Sync toggle expiration on load
     check_no_due_access_status()
 
-    sem8_count = students_col.count_documents({"semester": 8})
-
-    sem_counts = {}
-    for sem in range(1, 9):
-        sem_counts[sem] = students_col.count_documents({"semester": sem})
+    from .promotion import (branch_semester_counts, semester_counts, counts_snapshot,
+                            promotion_checks, cohort_issues, last_run, promotion_run_items)
+    promo_groups = branch_semester_counts()          # same data the promotion engine checks
+    sem_counts = semester_counts(promo_groups)
+    sem8_count = sem_counts.get(8, 0)
+    promotion_counts_snapshot = counts_snapshot(promo_groups)
+    promotion_check_results = promotion_checks(promo_groups)
+    promotion_data_issues = cohort_issues(promo_groups)
+    last_promotion = last_run()
+    if last_promotion:
+        from .promotion import undo_blockers
+        last_promotion["id"] = str(last_promotion["_id"])
+        last_promotion["item_count"] = promotion_run_items.count_documents({"run_id": last_promotion["_id"]})
+        last_promotion["undo_blockers"] = undo_blockers(last_promotion)
+    from .promotion import list_archived
+    archived_list = list_archived()
+    promo_branches = sorted({b for (b, _) in promo_groups if b})
 
     global_sem8_count = sem8_count
 
@@ -2108,6 +2143,12 @@ def faculty_promotion_page(request):
         "sem8_count": sem8_count,
         "global_sem8_count": global_sem8_count,
         "sem_counts": sem_counts,
+        "promotion_counts_snapshot": promotion_counts_snapshot,
+        "promotion_checks": promotion_check_results,
+        "promotion_data_issues": promotion_data_issues,
+        "last_promotion": last_promotion,
+        "archived_list": archived_list,
+        "promo_branches": promo_branches,
         "no_due_access_enabled": no_due_access_enabled,
         "enabled_at_str": enabled_at_str,
         "auto_disable_at_str": auto_disable_at_str,
@@ -2228,177 +2269,147 @@ def promote_students(request):
         messages.error(request, "Access denied. Please verify password first.")
         return redirect("faculty_promotion")
 
-    if request.method == "POST":
-        # Ensure config document exists
-        portal_settings.update_one(
-            {"_id": "global_config"},
-            {"$setOnInsert": {"promotion_in_progress": False}},
-            upsert=True
-        )
+    if request.method != "POST":
+        return redirect("faculty_promotion")
 
-        # Acquire lock to prevent duplicate concurrent promotions
-        lock_acquired = portal_settings.find_one_and_update(
-            {"_id": "global_config", "promotion_in_progress": {"$ne": True}},
-            {"$set": {"promotion_in_progress": True}}
-        )
-        if not lock_acquired:
-            audit_logger.warning("PROMOTION blocked: another run in progress")
-            messages.error(request, "A promotion operation is already in progress. Please wait.")
-            return redirect("faculty_promotion")
+    from .promotion import run_promotion
 
-        try:
-            from_sem_raw = request.POST.get("from_semester")
-            from_sem = int(from_sem_raw) if from_sem_raw and from_sem_raw.isdigit() else None
+    # Semester-wise form posts `from_sem`; accept the older `from_semester` name too.
+    raw = (request.POST.get("from_sem") or request.POST.get("from_semester") or "").strip()
+    if raw and not raw.isdigit():
+        messages.error(request, "Semester must be between 1 and 7.")
+        return redirect("faculty_promotion")
+    from_sem = int(raw) if raw else None
+    mode = (request.POST.get("promotion_mode") or "").strip()
+    if mode == "semester" and from_sem is None:
+        # Never fall back to a full promotion when a single semester was intended.
+        messages.error(request, "Choose the semester to promote.")
+        return redirect("faculty_promotion")
 
-            if from_sem is not None:
-                if not (1 <= from_sem <= 7):
-                    messages.error(request, "Semester must be between 1 and 7.")
-                    return redirect("faculty_promotion")
-                students = list(students_col.find({"semester": from_sem}))
-                if not students:
-                    messages.warning(request, f"No students in Semester {from_sem} found for promotion.")
-                    return redirect("faculty_promotion")
-            else:
-                students = list(students_col.find({"semester": {"$in": [1, 2, 3, 4, 5, 6, 7]}}))
-                if not students:
-                    messages.warning(request, "No students in Semesters 1 to 7 found for promotion.")
-                    return redirect("faculty_promotion")
+    branch = (request.POST.get("promote_branch") or "").strip() or None
+    if branch and from_sem is None:
+        messages.error(request, "Choose the semester to promote for that department.")
+        return redirect("faculty_promotion")
+    snapshot = request.POST.get("counts_snapshot")
+    result = run_promotion(from_sem=from_sem, expected_snapshot=snapshot if snapshot else None,
+                           actor="faculty", branch=branch)
 
-            progression = {
-                1: (2, 0),
-                2: (3, 1),
-                3: (4, 0),
-                4: (5, 1),
-                5: (6, 0),
-                6: (7, 1),
-                7: (8, 0),
-            }
+    level = result.get("level") or "error"
+    {"success": messages.success, "warning": messages.warning}.get(level, messages.error)(request, result["message"])
 
-            promoted_count = 0
-            from .mongo import promotion_logs
-            now = datetime.now()
-
-            # Process updates student-by-student to maintain exact logs and individual status updates.
-            for student in students:
-                student_id = student["_id"]
-                current_sem = student.get("semester")
-                current_year = student.get("year", 1)
-
-                if current_sem not in progression:
-                    continue
-
-                next_sem, year_change = progression[current_sem]
-                new_year = current_year + year_change
-
-                # Update student document
-                students_col.update_one(
-                    {"_id": student_id},
-                    {"$set": {
-                        "semester": next_sem,
-                        "year": new_year
-                    }}
-                )
-
-                student_type = student.get("student_type", "Hosteller")
-                offices = ["LIBRARY", "COLLEGE", "DEPARTMENT"] if student_type == "Day Scholar" else ["LIBRARY", "HOSTEL", "COLLEGE", "DEPARTMENT"]
-                approved_count = no_due_col.count_documents({
-                    "student_id": student_id,
-                    "office": {"$in": offices},
-                    "status": "APPROVED"
-                })
-                no_due_cleared = (approved_count == len(offices))
-
-                # Reset dues
-                no_due_col.update_many(
-                    {"student_id": student_id},
-                    {
-                        "$set": {
-                            "status": "NOT_SENT",
-                            "attempts_used": 0,
-                            "receipt_url": None,
-                            "cloudinary_public_id": None,
-                            "reject_reason": None,
-                            "last_payment_id": None,
-                            "updated_at": now,
-                        },
-                        "$unset": {
-                            "cooldown_expiry": "",
-                            "second_rejection_at": ""
-                        }
-                    }
-                )
-
-                # Check if a completion log already exists for this student, previous_year, and previous_semester
-                existing_log = promotion_logs.find_one({
-                    "student_id": student_id,
-                    "$or": [
-                        {"previous_semester": current_sem, "previous_year": current_year},
-                        {"semester": current_sem, "year": current_year},
-                    ]
-                })
-
-                if existing_log:
-                    # Update new_semester and new_year on existing log without changing previous Year/Semester/completion_time
-                    promotion_logs.update_one(
-                        {"_id": existing_log["_id"]},
-                        {"$set": {
-                            "new_semester": next_sem,
-                            "new_year": new_year,
-                            "promotion_time": existing_log.get("promotion_time") or now,
-                        }}
-                    )
-                else:
-                    # Only insert a new log if one didn't already exist
-                    promotion_logs.insert_one({
-                        "student_id": student_id,
-                        "previous_semester": current_sem,
-                        "previous_year": current_year,
-                        "semester": current_sem,
-                        "year": current_year,
-                        "new_semester": next_sem,
-                        "new_year": new_year,
-                        "student_type": student_type,
-                        "completion_time": now if no_due_cleared else None,
-                        "promotion_time": now,
-                        "no_due_cleared": no_due_cleared,
-                        "status": "Completed" if no_due_cleared else "Not Cleared",
-                    })
-                promoted_count += 1
-
-                # 🚀 Broadcast real-time promotion to the specific student
-                try:
-                    notify_student(student_id, "student_promoted", {
-                        "new_semester": next_sem,
-                        "new_year": new_year,
-                        "status": "NOT_SENT",
-                        "attempts_used": 0,
-                        "attempts_remaining": 2,
-                    })
-                except Exception as be:
-                    logger.warning("[WS] Failed to broadcast promotion to student %s: %s", student_id, be)
-
-            audit_logger.info("PROMOTION completed: from_sem=%s promoted=%d",
-                              from_sem if from_sem is not None else "ALL", promoted_count)
-            messages.success(request, f"Successfully promoted {promoted_count} students to the next semester!")
-
-            # 🚀 Broadcast promotion completion to faculty and all offices
+    if result.get("ok") and result.get("promoted"):
+        # 🚀 Real-time: tell each promoted student, then faculty and offices.
+        for sid, new_sem, new_year in result.get("moves", []):
             try:
-                notify_faculty("promotion_completed", {"promoted_count": promoted_count})
-                notify_all_offices("cohort_promoted", {"promoted_count": promoted_count})
+                notify_student(sid, "student_promoted", {
+                    "new_semester": new_sem, "new_year": new_year,
+                    "status": "NOT_SENT", "attempts_used": 0, "attempts_remaining": 2,
+                })
             except Exception as be:
-                logger.warning("[WS] Failed to broadcast promotion completion: %s", be)
-
-        except Exception as exc:
-            # Lock is still released by `finally`; surface a safe error.
-            logger.exception("Promotion failed")
-            messages.error(request, "Promotion failed due to an internal error. No further changes were made.")
-        finally:
-            portal_settings.update_one(
-                {"_id": "global_config"},
-                {"$set": {"promotion_in_progress": False}}
-            )
+                logger.warning("[WS] Failed to broadcast promotion to student %s: %s", sid, be)
+        try:
+            notify_faculty("promotion_completed", {"promoted_count": result["promoted"]})
+            notify_all_offices("cohort_promoted", {"promoted_count": result["promoted"]})
+        except Exception as be:
+            logger.warning("[WS] Failed to broadcast promotion completion: %s", be)
 
     return redirect("faculty_promotion")
+
+
+@institution_login_required
+def rollback_promotion(request):
+    """Undo the most recent promotion from its journal (Faculty, password-unlocked, POST only)."""
+    if request.session.get("role") != "FACULTY":
+        return redirect("index")
+    if not request.session.get("promotion_unlocked"):
+        messages.error(request, "Access denied. Please verify password first.")
+        return redirect("faculty_promotion")
+    if request.method != "POST":
+        return redirect("faculty_promotion")
+
+    from .promotion import rollback_last_run
+    if request.POST.get("confirm_text", "").strip().upper() != "UNDO":
+        messages.error(request, "Type UNDO to confirm undoing the last promotion.")
+        return redirect("faculty_promotion")
+
+    result = rollback_last_run(request.POST.get("run_id", ""), actor="faculty")
+    {"success": messages.success, "warning": messages.warning}.get(result.get("level"), messages.error)(
+        request, result["message"])
+    if result.get("ok"):
+        for sid, sem, year in result.get("items", []):
+            try:
+                notify_student(sid, "student_promoted", {"new_semester": sem, "new_year": year,
+                                                         "status": "RESTORED"})
+            except Exception:
+                pass
+        try:
+            notify_faculty("promotion_completed", {"rolled_back": True})
+            notify_all_offices("cohort_promoted", {"rolled_back": True})
+        except Exception:
+            pass
+    return redirect("faculty_promotion")
+
+
+def _promotion_gate(request):
+    """Faculty + password-unlocked + POST, else a redirect response."""
+    if request.session.get("role") != "FACULTY":
+        return redirect("index")
+    if not request.session.get("promotion_unlocked"):
+        messages.error(request, "Access denied. Please verify password first.")
+        return redirect("faculty_promotion")
+    if request.method != "POST":
+        return redirect("faculty_promotion")
+    return None
+
+
+def _flash(request, result):
+    {"success": messages.success, "warning": messages.warning}.get(result.get("level"), messages.error)(
+        request, result["message"])
+
+
+@institution_login_required
+def fix_cohort_view(request):
+    """Put every student of one Department + Year into the chosen semester (undoable)."""
+    gate = _promotion_gate(request)
+    if gate:
+        return gate
+    from .promotion import fix_cohort
+    branch = request.POST.get("branch", "").strip()
+    year, sem = request.POST.get("year", "").strip(), request.POST.get("semester", "").strip()
+    if not branch or not year.isdigit() or not sem.isdigit():
+        messages.error(request, "Choose the class and semester to fix.")
+        return redirect("faculty_promotion")
+    result = fix_cohort(branch, int(year), int(sem), actor="faculty")
+    _flash(request, result)
+    if result.get("ok"):
+        try:
+            notify_faculty("student_roster_updated", {"branch": branch, "year": year})
+            notify_all_offices("student_roster_updated", {"branch": branch, "year": year})
+        except Exception:
+            pass
+    return redirect("faculty_promotion")
+
+
+@institution_login_required
+def restore_archived_view(request):
+    """Restore archived (deleted / Semester 8) students."""
+    gate = _promotion_gate(request)
+    if gate:
+        return gate
+    from .promotion import restore_archived
+    ids = request.POST.getlist("archive_ids")
+    if not ids:
+        messages.error(request, "Select at least one archived student to restore.")
+        return redirect(f"{reverse('faculty_promotion')}#archive")
+    result = restore_archived(ids, actor="faculty")
+    _flash(request, result)
+    if result.get("restored"):
+        try:
+            notify_faculty("student_roster_updated", {})
+            notify_all_offices("student_roster_updated", {})
+        except Exception:
+            pass
+    return redirect(f"{reverse('faculty_promotion')}#archive")
 
 
 @institution_login_required
@@ -2411,21 +2422,30 @@ def remove_sem8_students(request):
         return redirect("faculty_promotion")
 
     if request.method == "POST":
-        query = {"semester": 8}
-        students = list(students_col.find(query))
-        if not students:
-            messages.warning(request, "No Semester 8 students found to remove.")
+        from .promotion import acquire_lock, release_lock, archive_students
+        if not acquire_lock():
+            messages.error(request, "A semester promotion is running right now. Please try again in a minute.")
             return redirect("faculty_promotion")
+        try:
+            query = {"semester": {"$in": [8, "8"]}}
+            students = list(students_col.find(query, {"_id": 1}))
+            if not students:
+                messages.warning(request, "No Semester 8 students found to remove.")
+                return redirect("faculty_promotion")
 
-        student_ids = [s["_id"] for s in students]
+            student_ids = [s["_id"] for s in students]
+            archived = archive_students(student_ids, reason="semester_8_removal")   # recoverable copy
 
-        students_col.delete_many({"_id": {"$in": student_ids}})
-        no_due_col.delete_many({"student_id": {"$in": student_ids}})
+            students_col.delete_many({"_id": {"$in": student_ids}})
+            no_due_col.delete_many({"student_id": {"$in": student_ids}})
 
-        from .mongo import promotion_logs
-        promotion_logs.delete_many({"student_id": {"$in": student_ids}})
+            from .mongo import promotion_logs
+            promotion_logs.delete_many({"student_id": {"$in": student_ids}})
+            audit_logger.info("SEM8 REMOVAL removed=%d archived=%d", len(student_ids), archived)
+        finally:
+            release_lock()
 
-        messages.success(request, f"Successfully removed {len(students)} Semester 8 students from the system.")
+        messages.success(request, f"Removed {len(students)} Semester 8 students. A copy was saved in the archive.")
 
         try:
             notify_faculty("student_roster_updated", {})
@@ -2811,19 +2831,41 @@ def import_students_excel(request):
                 if doc.get("reg_no"):
                     existing_regs.add(doc["reg_no"])
 
+        from .promotion import check_cohort_semester
+        cohort_errors = {}       # semester -> error (cached per semester)
+        file_semester = None     # every imported row must share one semester
         to_insert = []
         for c in candidates:
             if c["roll_no"] in existing_rolls or c["reg_no"] in existing_regs:
                 skipped += 1
                 skipped_students.append(f"{c['name']} (Duplicate RegNo / RollNo)")
-            else:
-                to_insert.append(c)
+                continue
+            sem = c["semester"]
+            if sem not in cohort_errors:
+                cohort_errors[sem] = check_cohort_semester(branch, year_int, sem)
+            if cohort_errors[sem]:
+                skipped += 1
+                skipped_students.append(f"{c['name']} (Semester {sem}: {cohort_errors[sem]})")
+                continue
+            if file_semester is None:
+                file_semester = sem
+            elif sem != file_semester:
+                skipped += 1
+                skipped_students.append(f"{c['name']} (Semester {sem} — the class must be in one semester, {file_semester})")
+                continue
+            to_insert.append(c)
 
         # ── One bulk insert (unordered: a bad doc won't abort the rest) ──
         if to_insert:
             try:
                 result = students_col.insert_many(to_insert, ordered=False)
                 inserted = len(result.inserted_ids)
+                from .promotion import verify_cohort_after_write
+                error = verify_cohort_after_write(branch, year_int)
+                if error:
+                    students_col.delete_many({"_id": {"$in": result.inserted_ids}})
+                    messages.error(request, f"{error} ❌")
+                    return redirect(f"/faculty/?branch={branch}&year={year}")
             except Exception as bulk_exc:
                 # Unique-index collision on a concurrent import → count what stuck.
                 inserted = getattr(bulk_exc, "details", {}).get("nInserted", 0) \
@@ -3505,18 +3547,25 @@ def faculty_report_pdf_view(request):
     filtered by selected Branch and Year.
     """
     if request.session.get("role") != "FACULTY":
-        return HttpResponse("Unauthorized", status=403)
+        return redirect("index")
 
     branch = request.GET.get("branch", "").strip()
     year_str = request.GET.get("year", "").strip()
 
+    def _back(level, text):
+        """Return to the Student Directory with a readable message instead of a bare text page."""
+        {"warning": messages.warning}.get(level, messages.error)(request, text)
+        if branch and year_str:
+            return redirect(f"{reverse('faculty_dashboard')}?{urlencode({'branch': branch, 'year': year_str})}")
+        return redirect("faculty_dashboard")
+
     if not branch or not year_str:
-        return HttpResponse("Branch and Year are required to generate the Faculty Clearance Report.", status=400)
+        return _back("error", "Select a branch and year first, then click Generate Report.")
 
     try:
         year = int(year_str)
     except (ValueError, TypeError):
-        return HttpResponse("Invalid Year provided.", status=400)
+        return _back("error", "That year isn't valid. Choose a year from 1 to 4.")
 
     # Fetch all students for this branch & year
     try:
@@ -3525,10 +3574,11 @@ def faculty_report_pdf_view(request):
         ).sort([("reg_no", 1), ("roll_no", 1)]))
     except Exception as exc:
         logger.error("Failed to query students for faculty report: %s", exc)
-        return HttpResponse(f"Database error: {str(exc)}", status=500)
+        return _back("error", "The report couldn't be generated because the database is unavailable. Please try again in a minute.")
 
     if not student_docs:
-        return HttpResponse(f"No student records found for Branch: {branch}, Year: {year}.", status=404)
+        return _back("warning", f"There are no students in {branch} · Year {year} yet, so there's nothing to report. "
+                                "Add students first, then generate the report.")
 
     student_ids = [s["_id"] for s in student_docs if "_id" in s]
 
