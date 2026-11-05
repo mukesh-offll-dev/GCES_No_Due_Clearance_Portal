@@ -12,6 +12,7 @@ from pymongo import ASCENDING, DESCENDING
 from pymongo.errors import OperationFailure, PyMongoError
 
 from .mongo import (
+    db,
     students_col,
     no_due_col,
     promotion_logs,
@@ -81,6 +82,11 @@ def ensure_indexes():
         # ── institution_logs ────────────────────────────────────────
         _safe(created, institution_logs, [("login_time", DESCENDING)],
               name="login_time")
+
+        # ── django_sessions (login sessions, see mongo_sessions.py) ─
+        # TTL index: MongoDB deletes each session once expire_date passes.
+        _safe(created, db["django_sessions"], [("expire_date", ASCENDING)],
+              name="session_expiry_ttl", expireAfterSeconds=0)
 
         if created:
             logger.info("MongoDB indexes ensured: %s", ", ".join(created))

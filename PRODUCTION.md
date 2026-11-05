@@ -17,9 +17,6 @@ pip install -r requirements.txt
 # Collect static files (WhiteNoise serves them)
 python manage.py collectstatic --noinput
 
-# Apply Django's own tables (sessions/admin live in SQLite)
-python manage.py migrate
-
 # Build MongoDB indexes (idempotent — safe to re-run any time)
 python manage.py ensure_indexes
 ```

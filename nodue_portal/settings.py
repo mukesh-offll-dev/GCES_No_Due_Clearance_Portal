@@ -76,18 +76,16 @@ if ENABLE_HTTPS and not DEBUG:
     SECURE_HSTS_PRELOAD = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
 # ================= SESSION SETTINGS =================
+# Sessions are stored in MongoDB (collection: django_sessions) — no SQL database.
+SESSION_ENGINE             = "authentication.mongo_sessions"
 SESSION_COOKIE_AGE         = 60 * 60 * 2  # 2 hours in seconds
-SESSION_SAVE_EVERY_REQUEST = False         # Save only when modified (prevents SQLite lock contention)
+SESSION_SAVE_EVERY_REQUEST = False         # Save only when modified
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False    # Survive tab close within cookie age
 SESSION_COOKIE_HTTPONLY    = True          # JS cannot read the session cookie
 
 # ================= APPS =================
 INSTALLED_APPS = [
     "daphne",
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "channels",
@@ -101,7 +99,6 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # Per-request structured access log with correlation id + duration.
@@ -159,7 +156,6 @@ TEMPLATES = [
             "context_processors": [
                 "django.template.context_processors.debug",
                 "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "authentication.context_processors.departments_processor",
             ],
@@ -168,16 +164,9 @@ TEMPLATES = [
 ]
 
 # ================= DATABASE =================
-# (Django ku mandatory – MongoDB neenga pymongo-la use pannureenga)
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-        "OPTIONS": {
-            "timeout": 30,  # 30-second busy timeout to prevent lock failures under concurrency
-        },
-    }
-}
+# No SQL database. All data — including login sessions — lives in MongoDB
+# (see authentication/mongo.py and authentication/mongo_sessions.py).
+DATABASES = {}
 
 # ================= PASSWORD VALIDATION =================
 AUTH_PASSWORD_VALIDATORS = [

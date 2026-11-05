@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from django.test import TestCase, Client
+# No SQL database: SimpleTestCase (MongoDB is used directly).
+from django.test import SimpleTestCase as TestCase, Client
 from django.urls import reverse
 from django.conf import settings
 from bson import ObjectId
@@ -1240,3 +1241,70 @@ class StudentRegistrationAndLoginTests(TestCase):
         self.assertContains(res, 'name="password"', count=2)  # institution + student
         self.assertNotContains(res, 'name="dob"')
         self.assertContains(res, "Forgot Password?")
+
+
+class MongoSessionStoreTests(TestCase):
+    """Login sessions are stored in MongoDB (authentication/mongo_sessions.py)."""
+
+    def setUp(self):
+        from authentication.mongo_sessions import SessionStore, sessions_col
+        self.SessionStore = SessionStore
+        self.col = sessions_col
+        self.keys = []
+
+    def tearDown(self):
+        self.col.delete_many({"_id": {"$in": self.keys}})
+
+    def _new(self, **data):
+        store = self.SessionStore()
+        for k, v in data.items():
+            store[k] = v
+        store.save()
+        self.keys.append(store.session_key)
+        return store
+
+    def test_save_and_load_roundtrip(self):
+        store = self._new(role="LIBRARY", department="CSE")
+        doc = self.col.find_one({"_id": store.session_key})
+        self.assertIsNotNone(doc)
+        self.assertIn("expire_date", doc)
+        loaded = self.SessionStore(session_key=store.session_key)
+        self.assertEqual(loaded.get("role"), "LIBRARY")
+        self.assertEqual(loaded.get("department"), "CSE")
+
+    def test_expired_session_is_empty(self):
+        from datetime import datetime, timedelta, timezone
+        store = self._new(role="FACULTY")
+        self.col.update_one({"_id": store.session_key},
+                            {"$set": {"expire_date": datetime.now(timezone.utc) - timedelta(seconds=1)}})
+        loaded = self.SessionStore(session_key=store.session_key)
+        self.assertIsNone(loaded.get("role"))
+
+    def test_flush_deletes_document(self):
+        store = self._new(role="HOSTEL")
+        key = store.session_key
+        store.flush()
+        self.assertIsNone(self.col.find_one({"_id": key}))
+
+    def test_cycle_key_moves_data(self):
+        store = self._new(role="COLLEGE")
+        old_key = store.session_key
+        store.cycle_key()
+        self.keys.append(store.session_key)
+        self.assertNotEqual(old_key, store.session_key)
+        self.assertIsNone(self.col.find_one({"_id": old_key}))
+        self.assertEqual(self.SessionStore(session_key=store.session_key).get("role"), "COLLEGE")
+
+    def test_unknown_key_gives_empty_session(self):
+        loaded = self.SessionStore(session_key="doesnotexist0000000000000000000000")
+        self.assertEqual(dict(loaded.items()), {})
+
+    def test_login_creates_mongo_session(self):
+        from django.conf import settings
+        c = Client()
+        c.post("/", {"office": "library", "username": "library_admin", "password": "lib@123"})
+        key = c.cookies[settings.SESSION_COOKIE_NAME].value
+        self.keys.append(key)
+        doc = self.col.find_one({"_id": key})
+        self.assertIsNotNone(doc)
+        self.assertEqual(self.SessionStore(session_key=key).get("role"), "LIBRARY")

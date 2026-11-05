@@ -32,13 +32,13 @@ python manage.py run_maintenance --loop  # standalone daemon
 See `PRODUCTION.md` for the full deployment guide (systemd units, env tuning,
 load testing). Worker config lives in `gunicorn.conf.py`.
 
-There is no test suite (`authentication/tests.py` is empty) and no linter configured. `python manage.py migrate` only affects the SQLite session/admin store — application data lives in MongoDB (see below).
+Tests: `MONGO_URI=mongodb://localhost:27017 python manage.py test authentication` (needs a local MongoDB; never point tests at Atlas). Tests use `SimpleTestCase` because there is no SQL database. No linter is configured. There is no `migrate` step — the project has no Django ORM tables.
 
-## Critical Architecture Note: Two Databases
+## Critical Architecture Note: MongoDB Only (no SQL)
 
 This project uses **MongoDB (via pymongo) as the real application database**, NOT the Django ORM.
 
-- **SQLite** (`db.sqlite3`, configured in `settings.py` `DATABASES`) exists *only* because Django requires it — it backs sessions, admin, and auth tables. Django migrations apply here.
+- There is **no SQL database**: `DATABASES = {}` in `settings.py`, and `django.contrib.admin/auth/contenttypes/sessions` are not installed. Login sessions use a custom MongoDB session engine (`authentication/mongo_sessions.py`, `SESSION_ENGINE`), stored in the `django_sessions` collection with a TTL index on `expire_date` (built in `db_indexes.py`). `django.contrib.auth.hashers`/`password_validation` are still used as plain libraries for student passwords.
 - **MongoDB** (`authentication/mongo.py`) holds all business data. Connected via `MONGO_URI` env var to database `no_dues_portal`. `authentication/models.py` is intentionally empty — do not add Django models for app data.
 
 MongoDB collections (all accessed as module-level globals imported from `.mongo`):
