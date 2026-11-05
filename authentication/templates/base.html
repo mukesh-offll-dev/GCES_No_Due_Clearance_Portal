@@ -7,140 +7,277 @@
   <meta name="google-adsense-account" content="ca-pub-8306649565394780">
   <title>{% block title %}No Due Clearance Portal{% endblock %}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#d52b1e">
   <link rel="icon" href="{% static 'gces_logo_0.png' %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // ── GCES design tokens ──
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'] },
+          colors: {
+            brand: {
+              50: '#fef3f2', 100: '#fee4e2', 200: '#fecdca', 300: '#fda29b', 400: '#f97066',
+              500: '#e5483b', 600: '#d52b1e', 700: '#b42318', 800: '#912018', 900: '#7a271a'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style type="text/tailwindcss">
+    /* ═════════ Shared UI components (use these everywhere) ═════════ */
+    @layer components {
+      /* Buttons */
+      .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition select-none whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]; }
+      .btn-sm { @apply px-3 py-1.5 text-xs; }
+      .btn-lg { @apply px-5 py-3 text-base; }
+      .btn-primary { @apply bg-brand-600 text-white shadow-sm hover:bg-brand-700 focus-visible:ring-brand-600; }
+      .btn-secondary { @apply bg-white text-slate-700 border border-slate-300 shadow-sm hover:bg-slate-50 focus-visible:ring-slate-400; }
+      .btn-success { @apply bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 focus-visible:ring-emerald-600; }
+      .btn-danger { @apply bg-red-600 text-white shadow-sm hover:bg-red-700 focus-visible:ring-red-600; }
+      .btn-outline-danger { @apply bg-white text-red-700 border border-red-300 hover:bg-red-50 focus-visible:ring-red-500; }
+      .btn-ghost { @apply text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-slate-400; }
+
+      /* Cards & layout */
+      .card { @apply bg-white rounded-xl border border-slate-200 shadow-sm; }
+      .card-header { @apply flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-slate-200; }
+      .card-title { @apply text-base font-semibold text-slate-900; }
+      .card-body { @apply p-5; }
+      .page-header { @apply flex flex-wrap items-start justify-between gap-4 mb-6; }
+      .page-title { @apply text-2xl font-bold tracking-tight text-slate-900; }
+      .page-subtitle { @apply mt-1 text-sm text-slate-500; }
+      .section-title { @apply text-sm font-semibold text-slate-900; }
+
+      /* Stat cards */
+      .stat-card { @apply card p-5 flex items-start gap-4; }
+      .stat-icon { @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg; }
+      .stat-label { @apply text-xs font-medium uppercase tracking-wide text-slate-500; }
+      .stat-value { @apply mt-1 text-2xl font-bold text-slate-900; }
+
+      /* Forms */
+      .label { @apply block text-sm font-medium text-slate-700 mb-1.5; }
+      .input { @apply block w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm; }
+      .select { @apply block w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm; }
+      .help-text { @apply mt-1 text-xs text-slate-500; }
+      .error-text { @apply mt-1 text-xs font-medium text-red-600; }
+
+      /* Badges */
+      .badge { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset whitespace-nowrap; }
+      .badge-success { @apply bg-emerald-50 text-emerald-700 ring-emerald-600/20; }
+      .badge-warning { @apply bg-amber-50 text-amber-800 ring-amber-600/20; }
+      .badge-danger { @apply bg-red-50 text-red-700 ring-red-600/20; }
+      .badge-info { @apply bg-blue-50 text-blue-700 ring-blue-600/20; }
+      .badge-neutral { @apply bg-slate-100 text-slate-700 ring-slate-500/20; }
+      .badge-purple { @apply bg-violet-50 text-violet-700 ring-violet-600/20; }
+      .badge-orange { @apply bg-orange-50 text-orange-700 ring-orange-600/20; }
+
+      /* Alerts */
+      .alert { @apply flex items-start gap-3 rounded-lg border px-4 py-3 text-sm; }
+      .alert-success { @apply bg-emerald-50 border-emerald-200 text-emerald-800; }
+      .alert-error { @apply bg-red-50 border-red-200 text-red-800; }
+      .alert-warning { @apply bg-amber-50 border-amber-200 text-amber-800; }
+      .alert-info { @apply bg-blue-50 border-blue-200 text-blue-800; }
+
+      /* Tables */
+      .table-wrap { @apply overflow-x-auto rounded-xl border border-slate-200; }
+      .table { @apply min-w-full divide-y divide-slate-200 text-sm; }
+      .table thead { @apply bg-slate-50; }
+      .table th { @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap; }
+      .table td { @apply px-4 py-3 text-slate-700; }
+      .table tbody { @apply divide-y divide-slate-100 bg-white; }
+      .table tbody tr:hover { @apply bg-slate-50; }
+
+      /* Modals */
+      .modal-backdrop { @apply fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 overflow-y-auto; }
+      .modal-panel { @apply relative w-full bg-white rounded-2xl shadow-2xl my-auto; }
+      .modal-title { @apply text-lg font-semibold text-slate-900; }
+
+      /* Empty state */
+      .empty-state { @apply flex flex-col items-center justify-center text-center py-12 px-4 text-slate-500; }
+
+      /* Office sidebar navigation */
+      .nav-link { @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition; }
+      .nav-link-active { @apply bg-brand-50 text-brand-700 hover:bg-brand-50 hover:text-brand-700; }
+    }
+
+    @layer base {
+      input:focus, select:focus, textarea:focus {
+        @apply outline-none border-brand-600 ring-2 ring-brand-600/20;
+      }
+    }
+  </style>
   <style>
-    /* Smooth transitions for interactive elements */
-    * {
-      box-sizing: border-box;
-    }
-
-    input,
-    select,
-    textarea,
-    button {
-      transition: all 0.15s ease;
-    }
-
-    input:focus,
-    select:focus,
-    textarea:focus {
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(213, 43, 30, 0.15);
-      border-color: #d52b1e !important;
-    }
-
+    * { box-sizing: border-box; }
+    input, select, textarea, button { transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease; }
     /* Prevent horizontal scroll on mobile */
-    body {
-      overflow-x: hidden;
+    html, body { overflow-x: hidden; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
     }
   </style>
 </head>
 
-<body class="bg-gray-50 min-h-screen flex flex-col">
+<body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen">
 
-  <!-- ===== HEADER ===== -->
-  <header class="bg-[#d52b1e] shadow-md sticky top-0 z-40">
-    <div class="max-w-6xl mx-auto flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 gap-3">
+{% if use_office_shell %}
+  <!-- ═════════ OFFICE / FACULTY SHELL (desktop-first sidebar) ═════════ -->
+  {% with url_name=request.resolver_match.url_name %}
+  <div class="min-h-screen lg:flex">
 
-      <!-- Logo + Title -->
-      <div class="flex items-center gap-2 sm:gap-4 min-w-0">
-        <div
-          class="w-9 h-9 sm:w-12 sm:h-12 bg-white rounded-full flex items-center justify-center overflow-hidden p-1 flex-shrink-0">
-          <img src="{% static 'gces_logo_0.png' %}" alt="GCES Logo" class="w-full h-full object-contain">
-        </div>
+    <!-- Sidebar -->
+    <aside id="appSidebar"
+      class="fixed inset-y-0 left-0 z-50 w-64 -translate-x-full lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen
+             bg-white border-r border-slate-200 flex flex-col transition-transform duration-200"
+      aria-label="Main navigation">
+
+      <div class="flex items-center gap-3 px-5 h-16 border-b border-slate-200 shrink-0">
+        <img src="{% static 'gces_logo_0.png' %}" alt="GCES logo" class="h-9 w-9 rounded-full ring-1 ring-slate-200 bg-white p-0.5">
         <div class="min-w-0">
-          <span class="text-white font-extrabold text-xl sm:text-3xl tracking-wide leading-none">
-            GCES
-          </span>
-          <p class="text-red-200 text-[10px] sm:text-xs font-medium tracking-widest hidden sm:block">
-            NO DUE CLEARANCE PORTAL
-          </p>
+          <p class="font-extrabold text-slate-900 leading-none tracking-wide">GCES</p>
+          <p class="text-[11px] font-medium text-slate-500 mt-1 truncate">No Due Clearance Portal</p>
         </div>
+        <button type="button" onclick="toggleSidebar(false)" class="ml-auto lg:hidden btn btn-ghost btn-sm" aria-label="Close menu">✕</button>
       </div>
 
-      <!-- Logout (show only if logged in) -->
-      {% if current_user_role or current_student_id %}
-      <a href="{% url 'logout' %}"
-        class="flex-shrink-0 border-2 border-white text-white text-sm sm:text-base px-3 sm:px-5 py-1.5 sm:py-2 rounded-full font-semibold hover:bg-white hover:text-[#d52b1e] transition whitespace-nowrap">
-        Log out
-      </a>
-      {% endif %}
+      <div class="px-5 pt-5 pb-2">
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Signed in as</p>
+        <p class="mt-1 text-sm font-semibold text-slate-900">{{ portal_role_label }}</p>
+      </div>
 
-    </div>
-  </header>
+      <nav class="flex-1 overflow-y-auto px-3 py-3 space-y-1">
+        {% if current_user_role == "FACULTY" %}
+          <a href="{% url 'faculty_dashboard' %}" class="nav-link {% if url_name == 'faculty_dashboard' %}nav-link-active{% endif %}">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>
+            Student Directory
+          </a>
+          <a href="{% url 'faculty_promotion' %}" class="nav-link {% if url_name == 'faculty_promotion' %}nav-link-active{% endif %}">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg>
+            Promotion &amp; Settings
+          </a>
+        {% else %}
+          {% if current_user_role == "LIBRARY" %}{% url 'library_dashboard' as home_url %}
+          {% elif current_user_role == "COLLEGE" %}{% url 'college_dashboard' as home_url %}
+          {% elif current_user_role == "HOSTEL" %}{% url 'hostel_dashboard' as home_url %}
+          {% else %}{% url 'department_dashboard' as home_url %}{% endif %}
+          <a href="{{ home_url }}" class="nav-link nav-link-active">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Clearance Requests
+          </a>
+          <button type="button" onclick="if (typeof openReportModal === 'function') { toggleSidebar(false); openReportModal(); }" class="nav-link w-full text-left">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+            Generate Report
+          </button>
+        {% endif %}
+      </nav>
 
-  <!-- ===== PAGE CONTENT ===== -->
-  <div class="flex-1">
-    {% block content %}
-    {% endblock %}
-  </div>
-
-  <!-- ===== SHARED FOOTER ===== -->
-  {% block footer %}
-  {% if request.path == "/" %}
-  <footer class="bg-gray-800 text-gray-200 mt-auto">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-
-      <!-- CONTACT INFO -->
-      <h2 class="text-base font-semibold mb-4 border-b border-gray-600 pb-1 inline-block">
-        Contact Info
-      </h2>
-
-      <ul class="space-y-3 text-sm">
-
-        <!-- Address -->
-        <li class="flex gap-3 items-start">
-          <svg class="w-5 h-5 mt-0.5 text-gray-300 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-            <path
-              d="M12 2C8.1 2 5 5.1 5 9c0 5.3 7 13 7 13s7-7.7 7-13c0-3.9-3.1-7-7-7zm0 9.5c-1.4 0-2.5-1.1-2.5-2.5S10.6 6.5 12 6.5s2.5 1.1 2.5 2.5S13.4 11.5 12 11.5z" />
-          </svg>
-          <span>
-            Government College of Engineering – Srirangam,<br>
-            Trichy – Madurai Highway,<br>
-            Sethurappatti Road, Trichy – 620012
-          </span>
-        </li>
-
-        <!-- Phone -->
-        <li class="flex gap-3 items-center">
-          <svg class="w-5 h-5 text-gray-300 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-            <path
-              d="M6.6 10.8c1.5 2.9 3.7 5.1 6.6 6.6l2.2-2.2c.3-.3.8-.4 1.2-.3 1.3.4 2.7.6 4.1.6.7 0 1.3.6 1.3 1.3v3.5c0 .7-.6 1.3-1.3 1.3C10.6 21.6 2.4 13.4 2.4 3.3 2.4 2.6 3 2 3.7 2H7.2c.7 0 1.3.6 1.3 1.3 0 1.4.2 2.8.6 4.1.1.4 0 .9-.3 1.2l-2.2 2.2z" />
-          </svg>
-          <span>Office – 9488008656, Hostel – 9488091653</span>
-        </li>
-
-        <!-- Email -->
-        <li class="flex gap-3 items-center flex-wrap">
-          <svg class="w-5 h-5 text-gray-300 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-            <path
-              d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z" />
-          </svg>
-          <span class="flex flex-wrap gap-x-2">
-            <a href="mailto:principal@gces.edu.in" class="hover:underline">principal@gces.edu.in</a>,
-            <a href="mailto:gcessrirangam@gmail.com" class="hover:underline">gcessrirangam@gmail.com</a>
-          </span>
-        </li>
-
-      </ul>
-
-      <!-- DEVELOPER CREDIT -->
-      <div class="border-t border-gray-600 mt-6 pt-4 text-center text-xs text-gray-400">
-        Developed by
-        <a href="https://gces.edu.in/15/department-computer-science-engineering-about-department" target="_blank"
-          class="text-yellow-400 font-semibold hover:underline">
-          CSE
-        </a> |
-        <a href="https://shorturl.at/Psd1P" target="_blank" class="text-yellow-400 font-semibold hover:underline">
-          Mukesh
+      <div class="p-3 border-t border-slate-200 shrink-0">
+        <a href="{% url 'logout' %}" class="nav-link text-red-700 hover:bg-red-50 hover:text-red-800">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg>
+          Log out
         </a>
       </div>
+    </aside>
 
-    </div>
-  </footer>
-  {% endif %}
-  {% endblock %}
+    <div id="sidebarBackdrop" class="hidden fixed inset-0 z-40 bg-slate-900/50 lg:hidden" onclick="toggleSidebar(false)"></div>
+
+    <!-- Main column -->
+    <div class="flex-1 min-w-0 flex flex-col">
+      <header class="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center gap-3 px-4 sm:px-6 lg:px-8">
+        <button type="button" onclick="toggleSidebar(true)" class="lg:hidden btn btn-ghost btn-sm -ml-2" aria-label="Open menu">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+        </button>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-slate-900 truncate">{{ portal_role_label }}</p>
+          <p class="text-xs text-slate-500 hidden sm:block">Government College of Engineering, Srirangam</p>
+        </div>
+        <div class="ml-auto flex items-center gap-3">
+          <span id="liveIndicator" class="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-slate-500" title="Live updates">
+            <span class="h-2 w-2 rounded-full bg-emerald-500"></span> Live
+          </span>
+          <a href="{% url 'logout' %}" class="btn btn-secondary btn-sm">Log out</a>
+        </div>
+      </header>
+
+      <div class="flex-1">
+  {% endwith %}
+
+{% else %}
+  <!-- ═════════ PUBLIC / STUDENT SHELL (mobile-first) ═════════ -->
+  <div class="min-h-screen flex flex-col">
+    <header class="bg-brand-600 shadow-sm sticky top-0 z-40">
+      <div class="max-w-5xl mx-auto flex items-center justify-between px-4 sm:px-6 h-14 sm:h-16 gap-3">
+        <a href="{% url 'index' %}" class="flex items-center gap-3 min-w-0">
+          <span class="h-9 w-9 sm:h-10 sm:w-10 bg-white rounded-full flex items-center justify-center overflow-hidden p-0.5 shrink-0">
+            <img src="{% static 'gces_logo_0.png' %}" alt="GCES logo" class="w-full h-full object-contain">
+          </span>
+          <span class="min-w-0">
+            <span class="block text-white font-extrabold text-lg sm:text-xl leading-none tracking-wide">GCES</span>
+            <span class="block text-brand-100 text-[10px] sm:text-xs font-medium tracking-wider mt-0.5 truncate">NO DUE CLEARANCE PORTAL</span>
+          </span>
+        </a>
+
+        {% if current_user_role or current_student_id %}
+        <a href="{% url 'logout' %}"
+          class="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-white/70 text-white text-sm px-3 py-1.5 font-semibold hover:bg-white hover:text-brand-700 transition">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg>
+          Log out
+        </a>
+        {% endif %}
+      </div>
+    </header>
+
+    <div class="flex-1">
+{% endif %}
+
+        {% block content %}{% endblock %}
+
+{% if use_office_shell %}
+      </div><!-- /flex-1 -->
+    </div><!-- /main column -->
+  </div><!-- /shell -->
+{% else %}
+    </div><!-- /flex-1 -->
+
+    <!-- ===== SHARED FOOTER ===== -->
+    {% block footer %}
+    {% if request.path == "/" %}
+    <footer class="bg-slate-900 text-slate-300 mt-12">
+      <div class="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+        <h2 class="text-sm font-semibold text-white mb-4">Contact</h2>
+        <ul class="space-y-3 text-sm">
+          <li class="flex gap-3 items-start">
+            <svg class="w-5 h-5 mt-0.5 text-slate-400 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.3 7 13 7 13s7-7.7 7-13c0-3.9-3.1-7-7-7zm0 9.5c-1.4 0-2.5-1.1-2.5-2.5S10.6 6.5 12 6.5s2.5 1.1 2.5 2.5S13.4 11.5 12 11.5z" /></svg>
+            <span>Government College of Engineering – Srirangam,<br>Trichy – Madurai Highway,<br>Sethurappatti Road, Trichy – 620012</span>
+          </li>
+          <li class="flex gap-3 items-center">
+            <svg class="w-5 h-5 text-slate-400 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M6.6 10.8c1.5 2.9 3.7 5.1 6.6 6.6l2.2-2.2c.3-.3.8-.4 1.2-.3 1.3.4 2.7.6 4.1.6.7 0 1.3.6 1.3 1.3v3.5c0 .7-.6 1.3-1.3 1.3C10.6 21.6 2.4 13.4 2.4 3.3 2.4 2.6 3 2 3.7 2H7.2c.7 0 1.3.6 1.3 1.3 0 1.4.2 2.8.6 4.1.1.4 0 .9-.3 1.2l-2.2 2.2z" /></svg>
+            <span>Office – 9488008656, Hostel – 9488091653</span>
+          </li>
+          <li class="flex gap-3 items-center flex-wrap">
+            <svg class="w-5 h-5 text-slate-400 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z" /></svg>
+            <span class="flex flex-wrap gap-x-2">
+              <a href="mailto:principal@gces.edu.in" class="hover:underline">principal@gces.edu.in</a>,
+              <a href="mailto:gcessrirangam@gmail.com" class="hover:underline">gcessrirangam@gmail.com</a>
+            </span>
+          </li>
+        </ul>
+        <div class="border-t border-slate-700 mt-6 pt-4 text-center text-xs text-slate-400">
+          Developed by
+          <a href="https://gces.edu.in/15/department-computer-science-engineering-about-department" target="_blank" rel="noopener"
+            class="text-amber-400 font-semibold hover:underline">CSE</a> |
+          <a href="https://shorturl.at/Psd1P" target="_blank" rel="noopener" class="text-amber-400 font-semibold hover:underline">Mukesh</a>
+        </div>
+      </div>
+    </footer>
+    {% endif %}
+    {% endblock %}
+  </div>
+{% endif %}
 
   <script>
     // Enforce server revalidation on back/forward browser navigation (bfcache)
@@ -156,12 +293,22 @@
         btn.disabled = true;
         if (btn.tagName === 'BUTTON') {
           btn.innerHTML = `
-            <span class="inline-block animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent mr-1.5 align-middle"></span>
+            <span class="inline-block animate-spin rounded-full h-3.5 w-3.5 border-2 border-current border-t-transparent mr-1.5 align-middle"></span>
             Processing...
           `;
         }
       });
     }
+
+    // Office sidebar (slide-in on tablet / phone)
+    function toggleSidebar(open) {
+      const sb = document.getElementById('appSidebar');
+      const bd = document.getElementById('sidebarBackdrop');
+      if (!sb) return;
+      sb.classList.toggle('-translate-x-full', !open);
+      if (bd) bd.classList.toggle('hidden', !open);
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleSidebar(false); });
   </script>
   {% if current_user_role %}
   <script src="{% static 'js/portal_ws.js' %}"></script>

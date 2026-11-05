@@ -43,8 +43,11 @@ def ensure_indexes():
         # reg_no must be unique (login key + dup guard).
         _safe(created, students_col, [("reg_no", ASCENDING)],
               name="reg_no_unique", unique=True)
-        _safe(created, students_col, [("roll_no", ASCENDING)],
-              name="roll_no_unique", unique=True)
+        # roll_no is unique only when set: faculty-created students have no
+        # roll no until first-time profile setup, so the index is PARTIAL
+        # (a plain unique index would treat every missing roll_no as a
+        # duplicate null).
+        _ensure_roll_no_partial_index(created)
         # dashboards / reports / promotion filter heavily on branch + year + semester.
         _safe(created, students_col, [("branch", ASCENDING), ("year", ASCENDING)],
               name="branch_year")
@@ -86,6 +89,29 @@ def ensure_indexes():
     except PyMongoError as exc:
         logger.error("ensure_indexes failed (app continues without new indexes): %s", exc)
     return created
+
+
+ROLL_NO_PARTIAL_FILTER = {"roll_no": {"$gt": ""}}   # non-empty strings only
+
+
+def _ensure_roll_no_partial_index(created):
+    """
+    Migrate the old full unique `roll_no_unique` index to the partial one.
+    An index's options can't be changed in place, so drop + recreate. Safe to
+    run from several workers at once: a lost drop race just raises
+    OperationFailure (index not found) and the create is a no-op.
+    """
+    try:
+        current = students_col.index_information().get("roll_no_unique")
+        if current and current.get("partialFilterExpression") != ROLL_NO_PARTIAL_FILTER:
+            students_col.drop_index("roll_no_unique")
+            logger.info("Dropped legacy roll_no_unique index (migrating to partial).")
+    except PyMongoError as exc:
+        logger.warning("roll_no index migration check failed: %s", exc)
+
+    _safe(created, students_col, [("roll_no", ASCENDING)],
+          name="roll_no_unique", unique=True,
+          partialFilterExpression=ROLL_NO_PARTIAL_FILTER)
 
 
 def _safe(created, col, keys, **opts):

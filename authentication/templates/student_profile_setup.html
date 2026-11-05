@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Complete Your Profile{% endblock %}
+
+{% block content %}
+<main class="max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+
+  <!-- Steps -->
+  <ol class="flex items-center gap-2 text-xs font-medium text-slate-500 mb-5" aria-label="Setup progress">
+    <li class="flex items-center gap-1.5 text-emerald-700">
+      <span class="h-5 w-5 rounded-full bg-emerald-600 text-white flex items-center justify-center">✓</span> Login
+    </li>
+    <li class="h-px flex-1 bg-slate-300"></li>
+    <li class="flex items-center gap-1.5 text-brand-700" aria-current="step">
+      <span class="h-5 w-5 rounded-full bg-brand-600 text-white flex items-center justify-center">2</span> Profile &amp; password
+    </li>
+    <li class="h-px flex-1 bg-slate-300"></li>
+    <li class="flex items-center gap-1.5">
+      <span class="h-5 w-5 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center">3</span> Dashboard
+    </li>
+  </ol>
+
+  <div class="mb-5">
+    <h1 class="page-title">Complete your profile</h1>
+    <p class="page-subtitle">Welcome! Fill in your details and create a password to continue.</p>
+  </div>
+
+  <!-- Read-only details set by the Faculty Advisor -->
+  <div class="card p-4 sm:p-5 mb-5">
+    <dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+      <div>
+        <dt class="text-xs text-slate-500">Register Number</dt>
+        <dd class="font-semibold text-slate-900">{{ student.reg_no }}</dd>
+      </div>
+      <div>
+        <dt class="text-xs text-slate-500">Department</dt>
+        <dd class="font-semibold text-slate-900">{{ student.branch|default:"—" }}</dd>
+      </div>
+      <div>
+        <dt class="text-xs text-slate-500">Year / Semester</dt>
+        <dd class="font-semibold text-slate-900">{{ student.year|default:"—" }} / {{ student.semester|default:"—" }}</dd>
+      </div>
+      <div>
+        <dt class="text-xs text-slate-500">Student Type</dt>
+        <dd class="font-semibold text-slate-900">{{ student.student_type|default:"Hosteller" }}</dd>
+      </div>
+    </dl>
+    <p class="help-text mt-3">Incorrect details here? Contact your Faculty Advisor after completing setup.</p>
+  </div>
+
+  {% if errors %}
+  <div class="alert alert-error mb-5" role="alert">
+    <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+    <div>
+      <p class="font-semibold mb-1">Please fix the following:</p>
+      <ul class="list-disc list-inside space-y-0.5">
+        {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  <form method="POST" action="{% url 'student_profile_setup' %}" onsubmit="return submitSetup(this)" class="card p-5 sm:p-7">
+    {% csrf_token %}
+
+    <h2 class="section-title mb-4">Personal details</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="sm:col-span-2">
+        <label class="label" for="setupName">Full Name</label>
+        <input id="setupName" type="text" name="name" value="{{ form.name }}" required maxlength="100"
+          autocomplete="name" placeholder="As in college records" class="input text-base sm:text-sm uppercase">
+      </div>
+
+      <div>
+        <label class="label" for="setupRoll">Roll Number</label>
+        <input id="setupRoll" type="text" name="roll_no" value="{{ form.roll_no }}" required maxlength="20"
+          placeholder="e.g. 23CS001" class="input text-base sm:text-sm uppercase">
+      </div>
+
+      <div>
+        <label class="label" for="setupDob">Date of Birth</label>
+        <input id="setupDob" type="date" name="dob" value="{{ form.dob }}" required max="{{ max_dob }}" min="1950-01-01"
+          class="input text-base sm:text-sm">
+      </div>
+
+      <div class="sm:col-span-2">
+        <label class="label" for="setupPhone">Phone Number</label>
+        <input id="setupPhone" type="tel" name="phone" value="{{ form.phone }}" required maxlength="10"
+          inputmode="numeric" pattern="\d{10}" title="10-digit phone number"
+          autocomplete="tel" placeholder="10-digit mobile number" class="input text-base sm:text-sm">
+      </div>
+    </div>
+
+    <hr class="my-6 border-slate-200">
+
+    <h2 class="section-title">Create password</h2>
+    <p class="help-text mb-4">
+      At least 8 characters, not entirely numeric, not a common password, and not your Register Number.
+      You will use this password for all future logins.
+    </p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="label" for="password">New Password</label>
+        <input type="password" name="password" id="password" required minlength="8" maxlength="128"
+          autocomplete="new-password" class="input text-base sm:text-sm">
+      </div>
+      <div>
+        <label class="label" for="confirmPassword">Confirm Password</label>
+        <input type="password" name="confirm_password" id="confirmPassword" required minlength="8" maxlength="128"
+          autocomplete="new-password" class="input text-base sm:text-sm">
+        <p id="matchError" class="hidden error-text">Passwords do not match.</p>
+      </div>
+    </div>
+
+    <label class="flex items-center gap-2 text-sm text-slate-600 mt-4 mb-6 cursor-pointer w-fit select-none">
+      <input type="checkbox" onchange="togglePasswords(this.checked)" class="h-4 w-4 rounded accent-brand-600">
+      Show passwords
+    </label>
+
+    <button type="submit" class="btn btn-primary btn-lg w-full">Save &amp; Continue</button>
+    <a href="{% url 'logout' %}" class="btn btn-ghost w-full mt-2">Cancel and go back to login</a>
+  </form>
+</main>
+
+<script>
+function togglePasswords(show) {
+  ["password", "confirmPassword"].forEach(id => {
+    document.getElementById(id).type = show ? "text" : "password";
+  });
+}
+
+function submitSetup(form) {
+  const pw = document.getElementById("password").value;
+  const confirm = document.getElementById("confirmPassword").value;
+  const err = document.getElementById("matchError");
+  if (pw !== confirm) {
+    err.classList.remove("hidden");
+    document.getElementById("confirmPassword").focus();
+    return false;
+  }
+  err.classList.add("hidden");
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = "Saving...";
+  return true;
+}
+</script>
+{% endblock %}

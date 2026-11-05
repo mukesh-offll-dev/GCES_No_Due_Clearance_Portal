@@ -4,6 +4,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.conf import settings
 from bson import ObjectId
+from django.contrib.auth.hashers import make_password, check_password
 
 
 class AuthenticationAndSecurityTests(TestCase):
@@ -103,12 +104,14 @@ class AuthenticationAndSecurityTests(TestCase):
             "branch": "CSE",
             "year": 3,
             "semester": 5,
+            "password_hash": make_password("Gces#Pass2026"),
+            "profile_completed": True,
         }
 
         with patch("authentication.views.students_col.find_one", return_value=fake_student):
             response = self.client.post(reverse("student_login"), {
                 "reg_no": "830123104001",
-                "dob": "2003-01-01",
+                "password": "Gces#Pass2026",
             })
             self.assertEqual(response.status_code, 302)
             self.assertEqual(response.url, reverse("student_dashboard"))
@@ -141,7 +144,7 @@ class AuthenticationAndSecurityTests(TestCase):
         session["student_id"] = str(fake_id)
         session.save()
 
-        with patch("authentication.decorators.students_col.find_one", return_value={"_id": fake_id}):
+        with patch("authentication.decorators.students_col.find_one", return_value={"_id": fake_id, "profile_completed": True}):
             # Student accessing Faculty dashboard -> redirected
             response = self.client.get(reverse("faculty_dashboard"))
             self.assertEqual(response.status_code, 302)
@@ -347,10 +350,12 @@ class AuthenticationAndSecurityTests(TestCase):
 
         # Login student
         fake_id = ObjectId()
-        with patch("authentication.views.students_col.find_one", return_value={"_id": fake_id, "student_type": "Hosteller"}):
+        fake_student = {"_id": fake_id, "student_type": "Hosteller",
+                        "password_hash": make_password("Gces#Pass2026"), "profile_completed": True}
+        with patch("authentication.views.students_col.find_one", return_value=fake_student):
             client_student.post(reverse("student_login"), {
                 "reg_no": "830123104009",
-                "dob": "2003-05-15",
+                "password": "Gces#Pass2026",
             })
 
         # Check sessions are isolated
@@ -506,9 +511,9 @@ class WebSocketAndRealTimeTests(TestCase):
         session["student_id"] = str(fake_id)
         session.save()
 
-        fake_student = {"_id": fake_id, "reg_no": "830123104001", "name": "TEST", "branch": "CSE", "year": 3, "semester": 5}
+        fake_student = {"_id": fake_id, "reg_no": "830123104001", "name": "TEST", "branch": "CSE", "year": 3, "semester": 5, "profile_completed": True}
 
-        with patch("authentication.decorators.students_col.find_one", return_value={"_id": fake_id}), \
+        with patch("authentication.decorators.students_col.find_one", return_value={"_id": fake_id, "profile_completed": True}), \
              patch("authentication.views.check_no_due_access_status", return_value=True), \
              patch("authentication.views.students_col.find_one", return_value=fake_student), \
              patch("authentication.views.no_due_col") as mock_no_due, \
@@ -536,7 +541,7 @@ class WebSocketAndRealTimeTests(TestCase):
 
         existing_req = {"_id": ObjectId(), "student_id": fake_id, "office": "LIBRARY", "status": "REJECTED", "attempts_used": 1}
 
-        with patch("authentication.decorators.students_col.find_one", return_value={"_id": fake_id}), \
+        with patch("authentication.decorators.students_col.find_one", return_value={"_id": fake_id, "profile_completed": True}), \
              patch("authentication.views.check_no_due_access_status", return_value=True), \
              patch("authentication.views.no_due_col") as mock_no_due, \
              patch("authentication.views.notify_student"):
@@ -942,6 +947,296 @@ class WebSocketAndRealTimeTests(TestCase):
             no_due_col.delete_many({"student_id": test_id})
 
 
+class StudentRegistrationAndLoginTests(TestCase):
+    """
+    Faculty Add / Bulk Add, first-time login (Register No as temporary
+    password), mandatory profile setup, and password-based login.
+    Runs against the real MongoDB (like the department tests). All records use
+    the reserved Register Number prefix 99998800 and are cleaned up.
+    """
 
+    PREFIX = "99998800"
+    NEW_PASSWORD = "Gces#Pass2026"
 
+    def setUp(self):
+        from authentication.departments import ensure_default_departments
+        ensure_default_departments()
+        self._cleanup()
+        self.client = Client()
 
+    def tearDown(self):
+        self._cleanup()
+
+    def _cleanup(self):
+        from authentication.mongo import students_col
+        students_col.delete_many({"reg_no": {"$regex": f"^{self.PREFIX}"}})
+        students_col.delete_many({"roll_no": {"$in": ["99TS001", "99TS002"]}})
+
+    def _reg(self, n):
+        return f"{self.PREFIX}{n:04d}"
+
+    def _login_faculty(self):
+        session = self.client.session
+        session["role"] = "FACULTY"
+        session.save()
+
+    def _students(self, query=None):
+        from authentication.mongo import students_col
+        q = {"reg_no": {"$regex": f"^{self.PREFIX}"}}
+        q.update(query or {})
+        return list(students_col.find(q))
+
+    def _add_student(self, reg_no, branch="CSE", year="3", semester="5"):
+        return self.client.post(reverse("add_student"), {
+            "reg_no": reg_no, "branch": branch, "year": year, "semester": semester,
+        })
+
+    def _valid_profile(self, **overrides):
+        data = {
+            "name": "Test   Student",
+            "roll_no": "99ts001",
+            "dob": "2004-06-15",
+            "phone": "9876543210",
+            "password": self.NEW_PASSWORD,
+            "confirm_password": self.NEW_PASSWORD,
+        }
+        data.update(overrides)
+        return data
+
+    def _first_time_login(self, reg_no):
+        return self.client.post(reverse("student_login"), {"reg_no": reg_no, "password": reg_no})
+
+    # ── Individual registration ──────────────────────────────────
+    def test_add_student_creates_pending_student(self):
+        self._login_faculty()
+        reg = self._reg(1)
+        res = self._add_student(reg)
+        self.assertEqual(res.status_code, 302)
+        self.assertIn("/faculty/?branch=CSE&year=3", res.url)
+
+        docs = self._students()
+        self.assertEqual(len(docs), 1)
+        doc = docs[0]
+        self.assertEqual((doc["branch"], doc["year"], doc["semester"]), ("CSE", 3, 5))
+        self.assertFalse(doc["profile_completed"])
+        self.assertNotIn("password_hash", doc)
+        self.assertNotIn("roll_no", doc)  # must stay absent for the partial unique index
+
+        dash = self.client.get(reverse("faculty_dashboard") + "?branch=CSE&year=3")
+        self.assertContains(dash, reg)
+        self.assertContains(dash, "Pending")
+
+    def test_add_student_rejects_duplicates_and_invalid_input(self):
+        self._login_faculty()
+        reg = self._reg(2)
+        self._add_student(reg)
+        self._add_student(reg)  # duplicate
+        self.assertEqual(len(self._students()), 1)
+        self.assertIn("already exists", self.client.session.get("add_error", ""))
+
+        self._add_student(self._reg(3), semester="2")      # sem 2 is not a Year-3 semester
+        self._add_student("12345", semester="5")            # not 12 digits
+        self._add_student(self._reg(4), branch="NOPE")      # unknown department
+        self.assertEqual(len(self._students()), 1)
+
+    def test_add_student_requires_faculty(self):
+        res = self._add_student(self._reg(5))
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res.url, reverse("index"))
+        self.assertEqual(len(self._students()), 0)
+
+    # ── Bulk registration ────────────────────────────────────────
+    def test_bulk_add_creates_range_and_skips_existing(self):
+        self._login_faculty()
+        self._add_student(self._reg(12))  # already exists inside the range
+
+        res = self.client.post(reverse("bulk_add_students"), {
+            "start_reg_no": self._reg(10), "end_reg_no": self._reg(14),
+            "branch": "CSE", "year": "3", "semester": "5",
+        }, follow=True)
+        self.assertEqual(res.status_code, 200)
+
+        regs = sorted(d["reg_no"] for d in self._students())
+        self.assertEqual(regs, [self._reg(n) for n in range(10, 15)])  # no duplicates
+        msgs = [str(m) for m in res.context["messages"]]
+        self.assertTrue(any("Added: 4" in m and "Skipped (already exist): 1" in m for m in msgs), msgs)
+        self.assertTrue(any(self._reg(12) in m for m in msgs), msgs)
+
+        # Running the same range again adds nothing
+        res = self.client.post(reverse("bulk_add_students"), {
+            "start_reg_no": self._reg(10), "end_reg_no": self._reg(14),
+            "branch": "CSE", "year": "3", "semester": "5",
+        }, follow=True)
+        msgs = [str(m) for m in res.context["messages"]]
+        self.assertTrue(any("Added: 0" in m and "Skipped (already exist): 5" in m for m in msgs), msgs)
+        self.assertEqual(len(self._students()), 5)
+
+    def test_bulk_add_rejects_invalid_ranges(self):
+        self._login_faculty()
+        base = {"branch": "CSE", "year": "3", "semester": "5"}
+        bad_ranges = [
+            (self._reg(20), self._reg(10)),          # start > end
+            (self._reg(0), self._reg(600)),          # over BULK_ADD_LIMIT
+            ("123", self._reg(5)),                   # not 12 digits
+        ]
+        for start, end in bad_ranges:
+            self.client.post(reverse("bulk_add_students"), dict(base, start_reg_no=start, end_reg_no=end))
+        self.client.post(reverse("bulk_add_students"),
+                         dict(base, start_reg_no=self._reg(1), end_reg_no=self._reg(2), semester="8"))
+        self.assertEqual(len(self._students()), 0)
+
+    # ── First-time login + profile completion ────────────────────
+    def test_first_time_login_goes_to_profile_setup_only(self):
+        self._login_faculty()
+        reg = self._reg(30)
+        self._add_student(reg)
+        self.client = Client()
+
+        # Wrong temporary password
+        res = self.client.post(reverse("student_login"), {"reg_no": reg, "password": "wrong"})
+        self.assertEqual(res.url, reverse("index"))
+        self.assertIsNone(self.client.session.get("pending_student_id"))
+
+        res = self._first_time_login(reg)
+        self.assertEqual(res.url, reverse("student_profile_setup"))
+        self.assertIsNone(self.client.session.get("role"))  # NOT logged in yet
+
+        # Pending student cannot reach student pages
+        res = self.client.get(reverse("student_dashboard"))
+        self.assertEqual(res.url, reverse("index"))
+        # Login page bounces back to setup while it is unfinished
+        res = self.client.get(reverse("index"))
+        self.assertEqual(res.url, reverse("student_profile_setup"))
+
+    def test_profile_setup_validates_then_completes_and_logs_in(self):
+        self._login_faculty()
+        reg = self._reg(31)
+        self._add_student(reg)
+        self.client = Client()
+        self._first_time_login(reg)
+
+        res = self.client.get(reverse("student_profile_setup"))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, reg)
+
+        invalid_cases = [
+            self._valid_profile(confirm_password="Different#1"),
+            self._valid_profile(password=reg, confirm_password=reg),
+            self._valid_profile(password="12345678", confirm_password="12345678"),
+            self._valid_profile(phone="12345"),
+            self._valid_profile(dob="2999-01-01"),
+            self._valid_profile(name=""),
+        ]
+        for data in invalid_cases:
+            res = self.client.post(reverse("student_profile_setup"), data)
+            self.assertEqual(res.status_code, 200)
+            self.assertTrue(res.context["errors"])
+        self.assertFalse(self._students()[0]["profile_completed"])
+
+        res = self.client.post(reverse("student_profile_setup"), self._valid_profile())
+        self.assertEqual(res.url, reverse("student_dashboard"))
+        self.assertEqual(self.client.session.get("role"), "STUDENT")
+        self.assertIsNone(self.client.session.get("pending_student_id"))
+
+        doc = self._students()[0]
+        self.assertTrue(doc["profile_completed"])
+        self.assertEqual(doc["name"], "TEST STUDENT")
+        self.assertEqual(doc["roll_no"], "99TS001")
+        self.assertEqual((doc["dob"], doc["phone"]), ("2004-06-15", "9876543210"))
+        self.assertNotEqual(doc["password_hash"], self.NEW_PASSWORD)
+        self.assertTrue(check_password(self.NEW_PASSWORD, doc["password_hash"]))
+
+        # Faculty now sees Completed
+        faculty = Client()
+        s = faculty.session
+        s["role"] = "FACULTY"
+        s.save()
+        dash = faculty.get(reverse("faculty_dashboard") + "?branch=CSE&year=3")
+        self.assertContains(dash, "Completed")
+
+    def test_subsequent_login_requires_new_password(self):
+        self._login_faculty()
+        reg = self._reg(32)
+        self._add_student(reg)
+        self.client = Client()
+        self._first_time_login(reg)
+        self.client.post(reverse("student_profile_setup"), self._valid_profile())
+        self.client.get(reverse("logout"))
+
+        # Register Number no longer works as a password
+        res = self._first_time_login(reg)
+        self.assertEqual(res.url, reverse("index"))
+        self.assertIsNone(self.client.session.get("role"))
+        self.assertIsNone(self.client.session.get("pending_student_id"))
+
+        res = self.client.post(reverse("student_login"), {"reg_no": reg, "password": self.NEW_PASSWORD})
+        self.assertEqual(res.url, reverse("student_dashboard"))
+        self.assertEqual(self.client.session.get("role"), "STUDENT")
+
+        # Setup page cannot be reused to overwrite the password
+        res = self.client.get(reverse("student_profile_setup"))
+        self.assertEqual(res.url, reverse("student_dashboard"))
+
+    def test_profile_setup_rejects_duplicate_roll_no(self):
+        from authentication.mongo import students_col
+        students_col.insert_one({"reg_no": self._reg(40), "roll_no": "99TS002", "name": "OTHER",
+                                 "branch": "CSE", "year": 3, "semester": 5, "profile_completed": True})
+        self._login_faculty()
+        reg = self._reg(41)
+        self._add_student(reg)
+        self.client = Client()
+        self._first_time_login(reg)
+        res = self.client.post(reverse("student_profile_setup"), self._valid_profile(roll_no="99TS002"))
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("This Roll Number is already registered to another student.", res.context["errors"])
+        self.assertFalse(students_col.find_one({"reg_no": reg})["profile_completed"])
+
+    # ── Existing (pre-password) student records ──────────────────
+    def test_existing_student_record_is_prefilled_and_can_complete(self):
+        from authentication.mongo import students_col
+        reg = self._reg(50)
+        students_col.insert_one({
+            "reg_no": reg, "roll_no": "99TS001", "name": "LEGACY STUDENT", "dob": "2003-02-01",
+            "phone": "9123456789", "branch": "CSE", "year": 3, "semester": 5,
+            "student_type": "Day Scholar",
+        })
+
+        res = self._first_time_login(reg)
+        self.assertEqual(res.url, reverse("student_profile_setup"))
+        res = self.client.get(reverse("student_profile_setup"))
+        self.assertContains(res, "LEGACY STUDENT")
+        self.assertContains(res, "99TS001")
+        self.assertContains(res, "2003-02-01")
+        self.assertContains(res, "Day Scholar")
+
+        # Keeping their own roll no must not count as a duplicate
+        res = self.client.post(reverse("student_profile_setup"), self._valid_profile(
+            name="LEGACY STUDENT", roll_no="99TS001", dob="2003-02-01", phone="9123456789"))
+        self.assertEqual(res.url, reverse("student_dashboard"))
+        doc = students_col.find_one({"reg_no": reg})
+        self.assertTrue(doc["profile_completed"])
+        self.assertEqual(doc["student_type"], "Day Scholar")  # untouched
+
+    def test_old_student_session_without_profile_is_logged_out(self):
+        from authentication.mongo import students_col
+        reg = self._reg(60)
+        sid = students_col.insert_one({"reg_no": reg, "name": "OLD SESSION", "branch": "CSE",
+                                       "year": 3, "semester": 5}).inserted_id
+        session = self.client.session
+        session["role"] = "STUDENT"
+        session["student_id"] = str(sid)
+        session.save()
+
+        res = self.client.get(reverse("student_dashboard"))
+        self.assertEqual(res.url, reverse("index"))
+        self.assertIsNone(self.client.session.get("role"))
+
+    def test_profile_setup_requires_first_time_login(self):
+        res = self.client.get(reverse("student_profile_setup"))
+        self.assertEqual(res.url, reverse("index"))
+
+    def test_login_page_has_password_and_forgot_password(self):
+        res = self.client.get(reverse("index"))
+        self.assertContains(res, 'name="password"', count=2)  # institution + student
+        self.assertNotContains(res, 'name="dob"')
+        self.assertContains(res, "Forgot Password?")

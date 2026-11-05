@@ -1,264 +1,319 @@
 {% extends "base.html" %}
-{% block title %}{{ office_name }}{% endblock %}
+{% block title %}{% if office_name == "Department" %}{{ branch }} {% endif %}{{ office_name }}{% endblock %}
 
 {% block content %}
-<main class="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
 
-  <!-- PAGE TITLE -->
-  <div class="flex flex-col sm:flex-row justify-between items-center mb-6 px-2 gap-4">
-    <div class="bg-[#d52b1e] text-white px-6 sm:px-14 py-3 rounded-full text-lg sm:text-xl font-bold text-center shadow-sm">
-      {% if office_name == "Department" %} {{ branch }} {% endif %} {{ office_name }}
+  <!-- PAGE HEADER -->
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Clearance Requests</h1>
+      <p class="page-subtitle">
+        Review and approve no-due requests sent to the
+        {% if office_name == "Department" %}{{ branch }} Department{% else %}{{ office_name }}{% endif %}.
+      </p>
     </div>
-    
-    <button type="button" onclick="openReportModal()"
-      class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-full font-bold shadow-md transition transform hover:scale-105 text-sm">
+    <button type="button" onclick="openReportModal()" class="btn btn-secondary">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
       Generate Report
     </button>
   </div>
 
-  <!-- FILTER -->
-  <form method="GET" class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] p-4 sm:p-6 mb-6
-        grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 items-center bg-white shadow-sm">
-
-    {% if office_name != "Department" %}
-    <div>
-      <label class="font-semibold">Branch</label>
-      <select name="branch" onchange="this.form.submit()" class="w-full border rounded-full px-4 py-2">
-        <option value="">Select</option>
-        {% for b in branches %}
-        <option value="{{ b }}" {% if branch == b %}selected{% endif %}>{{ b }}</option>
-        {% endfor %}
-      </select>
+  <!-- SUMMARY CARDS -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <div class="stat-card">
+      <div class="stat-icon bg-amber-50 text-amber-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <div>
+        <p class="stat-label">Total pending</p>
+        <p class="stat-value">{{ pending_total|default:0 }}</p>
+      </div>
     </div>
+    <div class="stat-card">
+      <div class="stat-icon bg-brand-50 text-brand-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"/></svg>
+      </div>
+      <div>
+        <p class="stat-label">In this view</p>
+        <p class="stat-value">{% if branch and year %}{{ count }}{% else %}—{% endif %}</p>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon bg-blue-50 text-blue-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342"/></svg>
+      </div>
+      <div>
+        <p class="stat-label">Classes waiting</p>
+        <p class="stat-value">{{ pending_cohorts|length }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- PENDING INBOX: every cohort with requests waiting (live-updated).
+       Department logins only ever get their own department's cohorts. -->
+  <div id="pendingInbox" data-total="{{ pending_total|default:0 }}" class="card px-5 py-4 mb-6">
+    {% if pending_total %}
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm font-semibold text-slate-700 mr-1 inline-flex items-center gap-1.5">
+        <span class="relative flex h-2.5 w-2.5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-brand-600"></span></span>
+        Waiting for review
+      </span>
+      {% for c in pending_cohorts %}
+      {% if c.branch == branch and c.year|stringformat:"s" == year %}
+      <span aria-current="page"
+        class="inline-flex items-center gap-1.5 bg-brand-600 text-white text-xs font-semibold pl-3 pr-1.5 py-1 rounded-full">
+        {% if office_name != "Department" %}{{ c.branch }} · {% endif %}Year {{ c.year }}
+        <span class="bg-white text-brand-700 rounded-full px-1.5 min-w-[1.25rem] text-center">{{ c.count }}</span>
+      </span>
+      {% else %}
+      <a href="{% if office_name == 'Department' %}?year={{ c.year }}{% else %}?branch={{ c.branch|urlencode }}&year={{ c.year }}{% endif %}"
+        class="inline-flex items-center gap-1.5 bg-white ring-1 ring-inset ring-slate-300 text-slate-700 hover:ring-brand-600 hover:text-brand-700 text-xs font-semibold pl-3 pr-1.5 py-1 rounded-full transition">
+        {% if office_name != "Department" %}{{ c.branch }} · {% endif %}Year {{ c.year }}
+        <span class="bg-brand-600 text-white rounded-full px-1.5 min-w-[1.25rem] text-center">{{ c.count }}</span>
+      </a>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-sm font-medium text-slate-600 flex items-center gap-2">
+      <svg class="h-5 w-5 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      No pending requests{% if office_name == "Department" %} in any year{% else %} in any branch or year{% endif %}.
+    </p>
     {% endif %}
+  </div>
 
-    <div>
-      <label class="font-semibold block mb-1">Year</label>
-      <select name="year" onchange="this.form.submit()" class="w-full border rounded-full px-4 py-2">
-        <option value="">Select</option>
-        {% for y in "1234" %}
-        <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="flex flex-wrap justify-center gap-2">
-
-      {% if not branch and not year %}
-      <div class="flex flex-wrap justify-end gap-3 mb-6">
-        {% for b, c in branch_summary.items %}
-        <a href="?branch={{ b }}"
-          class="bg-[#d52b1e] text-white px-5 py-2 rounded-full font-semibold hover:scale-105 transition cursor-pointer">
-          {{ b }} - {{ c }}
-        </a>
-        {% endfor %}
+  <!-- FILTERS -->
+  <form method="GET" class="card card-body mb-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+      {% if office_name != "Department" %}
+      <div>
+        <label class="label" for="filterBranch">Branch</label>
+        <select id="filterBranch" name="branch" onchange="this.form.submit()" class="select">
+          <option value="">All branches</option>
+          {% for b in branches %}
+          <option value="{{ b }}" {% if branch == b %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
       </div>
       {% endif %}
 
-      {% if branch and not year %}
-      <div class="flex flex-wrap justify-end gap-3 mb-6">
-        {% for y, c in year_summary.items %}
-        <a href="?branch={{ branch }}&year={{ y }}"
-          class="bg-[#d52b1e] text-white px-5 py-2 rounded-full font-semibold">
-          {{ y }} Year - {{ c }}
-        </a>
-        {% endfor %}
+      <div>
+        <label class="label" for="filterYear">Year</label>
+        <select id="filterYear" name="year" onchange="this.form.submit()" class="select">
+          <option value="">Select year</option>
+          {% for y in "1234" %}
+          <option value="{{ y }}" {% if year == y %}selected{% endif %}>Year {{ y }}</option>
+          {% endfor %}
+        </select>
       </div>
-      {% endif %}
 
       {% if branch and year %}
-      <div class="flex flex-wrap items-center justify-end gap-3 mb-6">
-        <span class="bg-[#d52b1e] text-white px-6 py-2 rounded-full font-semibold text-sm">
-          Students Count - {{ count }}
-        </span>
-        <button type="button" onclick="loadStudentsStatus()"
-          class="bg-[#d52b1e] hover:bg-red-800 text-white px-6 py-2 rounded-full font-bold shadow-md transition transform hover:scale-105 text-sm">
+      <div class="sm:col-span-2 flex flex-wrap items-center gap-3 lg:justify-end">
+        <span class="badge badge-neutral text-sm px-3 py-1">{{ count }} pending in this class</span>
+        <button type="button" onclick="loadStudentsStatus()" class="btn btn-secondary">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0112 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M13.125 12h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125M20.625 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5M12 14.625v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 14.625c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125m0 1.5v-1.5m0 0c0-.621.504-1.125 1.125-1.125m0 0h7.5"/></svg>
           Students Status
         </button>
       </div>
       {% endif %}
-
     </div>
 
+    {% if not branch and not year and branch_summary %}
+    <div class="mt-5 pt-5 border-t border-slate-200">
+      <p class="section-title mb-3">Pending by branch</p>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {% for b, c in branch_summary.items %}
+        <a href="?branch={{ b|urlencode }}"
+          class="rounded-lg border border-slate-200 px-4 py-3 hover:border-brand-600 hover:bg-brand-50 transition">
+          <p class="text-xs font-medium text-slate-500">{{ b }}</p>
+          <p class="text-xl font-bold {% if c %}text-brand-700{% else %}text-slate-400{% endif %}">{{ c }}</p>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if branch and not year and year_summary %}
+    <div class="mt-5 pt-5 border-t border-slate-200">
+      <p class="section-title mb-3">Pending by year{% if office_name != "Department" %} · {{ branch }}{% endif %}</p>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {% for y, c in year_summary.items %}
+        <a href="{% if office_name == 'Department' %}?year={{ y }}{% else %}?branch={{ branch|urlencode }}&year={{ y }}{% endif %}"
+          class="rounded-lg border border-slate-200 px-4 py-3 hover:border-brand-600 hover:bg-brand-50 transition">
+          <p class="text-xs font-medium text-slate-500">Year {{ y }}</p>
+          <p class="text-xl font-bold {% if c %}text-brand-700{% else %}text-slate-400{% endif %}">{{ c }}</p>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
   </form>
 
-  <!-- ACTION BAR -->
-  <form method="POST" action="{% url 'bulk_approve' %}" onsubmit="return validateBulkApprove(this)">
+  <!-- REQUEST LIST + BULK ACTIONS -->
+  <form method="POST" action="{% url 'bulk_approve' %}" onsubmit="return validateBulkApprove(this)" class="card">
     {% csrf_token %}
-    <div class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] p-4 sm:p-6 mb-6
-            flex flex-wrap justify-between items-center gap-3 bg-white shadow-sm">
 
-      <div class="flex flex-wrap gap-2">
-        <button type="button" onclick="selectAll()"
-          class="bg-gray-200 hover:bg-gray-300 px-5 py-2 rounded-full font-semibold text-sm transition">
-          Select All
-        </button>
-        <button type="button" onclick="deselectAll()"
-          class="bg-gray-200 hover:bg-gray-300 px-5 py-2 rounded-full font-semibold text-sm transition">
-          Deselect All
-        </button>
-      </div>
-
-      <div class="flex flex-wrap gap-2 items-center">
-        <button type="submit"
-          class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-full font-semibold text-sm transition">
-          Verify &amp; Approve
-        </button>
-
-        <button type="button" onclick="openRejectModal()"
-          class="bg-[#d52b1e] hover:bg-red-800 text-white px-5 py-2 rounded-full font-semibold text-sm transition">
-          Reject
-        </button>
-      </div>
-    </div>
-    <!-- LIST -->
-    {% if branch and year %}
-
-    {% if requests %}
-    <div class="max-w-6xl mx-auto mb-4">
-      <input type="text" id="pendingSearch" onkeyup="searchPending()" placeholder="Search pending by Roll No, Name or Reg No..."
-        class="w-full border-2 border-[#d52b1e] rounded-full px-6 py-2">
-    </div>
-    
-    <p id="noResultPending" class="hidden text-center font-semibold text-red-600 mt-4 mb-4">
-      No student found matching query
-    </p>
-
-    {% for r in requests %}
-    <div class="pending-card border-2 border-[#d52b1e] rounded-[24px] p-6 mb-4 
-            flex justify-between items-center shadow-sm"
-         data-search="{{ r.student.roll_no }} {{ r.student.name }} {{ r.student.reg_no }}">
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 sm:gap-6 font-medium text-left w-full">
-
-        <div class="border-r pr-4">
-          <b class="block mb-1">Roll no</b>
-          <span class="text-gray-700">{{ r.student.roll_no }}</span>
-        </div>
-
-        <div class="border-r pr-4">
-          <b class="block mb-1">Name</b>
-          <span class="text-gray-700">{{ r.student.name }} {% if r.student.is_75_scheme %}<span class="inline-block bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-1 shadow-sm">7.5</span>{% endif %}</span>
-        </div>
-
-        <div class="border-r pr-4">
-          <b class="block mb-1">Year</b>
-          <span class="text-gray-700">{{ r.student.year }}</span>
-        </div>
-
-        <div class="border-r pr-4">
-          <b class="block mb-1">Semester</b>
-          <span class="text-gray-700">{{ r.student.semester }}</span>
-        </div>
-
-        <div>
-          <b class="block mb-1">Branch</b>
-          <span class="text-gray-700">{{ r.student.branch }}</span>
-        </div>
-
-      </div>
-
-      <input type="checkbox" name="request_ids" value="{{ r.id }}" class="w-6 h-6 ml-4">
-    </div>
-
-    {% endfor %}
-
-    {% else %}
-    <p class="text-center font-semibold text-gray-600">
-      No students found
-    </p>
-    {% endif %}
-
-    {% else %}
-    <p class="text-center font-semibold text-gray-600">
-      Please select Branch & Year
-    </p>
-    {% endif %}
-
-  </form>
-
-  <!-- ================= STUDENTS STATUS SECTION ================= -->
-  <div id="studentsStatusSection" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
-    <div class="bg-white border-4 border-[#d52b1e] rounded-3xl p-6 w-full max-w-5xl overflow-y-auto max-h-[90vh] shadow-2xl relative animate-fadeIn">
-      <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b pb-4">
-        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-          <span class="w-3 h-6 bg-[#d52b1e] rounded-full inline-block"></span>
-          Students Status (Year {{ year }})
-        </h2>
-        <button type="button" onclick="hideStudentsStatus()" class="text-gray-500 hover:text-gray-700 font-semibold text-sm">
-          ✕ Close
-        </button>
-      </div>
-
-      <!-- Search and Filters Bar -->
-      <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-        <div class="flex flex-1 w-full md:w-auto gap-2">
-          <input type="text" id="statusSearchInput" oninput="debounceSearch()" placeholder="Search Reg No or Name..." 
-                 class="w-full md:w-64 border rounded-full px-4 py-2 focus:outline-none focus:border-[#d52b1e] text-sm">
-        </div>
-        <div class="flex flex-wrap gap-3 w-full md:w-auto justify-end">
-          {% if office_name != "Department" %}
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-semibold text-gray-500 uppercase">Branch:</span>
-            <select id="statusBranchFilter" onchange="fetchStudentsStatus(1)" class="border rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#d52b1e]">
-              <option value="">All Departments</option>
-              {% for b in branches %}
-              <option value="{{ b }}" {% if branch == b %}selected{% endif %}>{{ b }}</option>
-              {% endfor %}
-            </select>
-          </div>
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">Pending requests</h2>
+        <p class="text-xs text-slate-500 mt-0.5">
+          {% if branch and year %}
+            {% if office_name != "Department" %}{{ branch }} · {% endif %}Year {{ year }}
+          {% else %}
+            Choose a {% if office_name != "Department" %}branch and {% endif %}year to see requests.
           {% endif %}
-          
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-semibold text-gray-500 uppercase">Status:</span>
-            <select id="statusTypeFilter" onchange="fetchStudentsStatus(1)" class="border rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#d52b1e]">
-              <option value="All">All Status</option>
-              <option value="Completed">Completed</option>
-              <option value="Pending">Pending</option>
-              <option value="Incomplete">Incomplete</option>
-            </select>
-          </div>
-        </div>
+        </p>
       </div>
 
-      <!-- Table Container -->
-      <div class="overflow-x-auto rounded-xl border border-gray-200">
-        <table class="min-w-full divide-y divide-gray-200 text-sm">
-          <thead class="bg-gray-50 font-semibold text-gray-700">
+      {% if branch and year and requests %}
+      <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+        <div class="relative flex-1 min-w-[12rem] lg:w-72">
+          <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+          <input type="search" id="pendingSearch" oninput="searchPending()" onkeydown="if (event.key === 'Enter') event.preventDefault()"
+            placeholder="Search name, roll or reg no…" class="input pl-9" aria-label="Search pending requests">
+        </div>
+        <span id="selectedCountLabel" class="text-xs text-slate-500 px-1">0 selected</span>
+        <button type="submit" class="btn btn-success">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+          Approve selected
+        </button>
+        <button type="button" onclick="openRejectModal()" class="btn btn-outline-danger">
+          Reject selected
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    <p id="bulkSelectError" class="hidden alert alert-warning mx-5 mt-4">Select at least one student first.</p>
+
+    {% if branch and year %}
+      {% if requests %}
+      <p id="noResultPending" class="hidden px-5 py-8 text-center text-sm font-medium text-slate-500">
+        No student matches your search.
+      </p>
+      <div class="overflow-x-auto">
+        <table class="table">
+          <thead>
             <tr>
-              <th class="px-6 py-3 text-left">Register Number</th>
-              <th class="px-6 py-3 text-left">Student Name</th>
-              <th class="px-6 py-3 text-left">Department</th>
-              <th class="px-6 py-3 text-left">Current Semester</th>
-              <th class="px-6 py-3 text-left">Office Status</th>
-              <th class="px-6 py-3 text-left">Completed Time</th>
+              <th class="w-10">
+                <input type="checkbox" id="selectAllBox" onchange="this.checked ? selectAll() : deselectAll()"
+                  class="h-4 w-4 rounded border-slate-300 accent-brand-600 cursor-pointer" aria-label="Select all">
+              </th>
+              <th>Register No</th>
+              <th>Roll No</th>
+              <th>Name</th>
+              <th>Year / Sem</th>
+              <th>Branch</th>
+              <th>Requested</th>
             </tr>
           </thead>
-          <tbody id="studentsStatusTableBody" class="divide-y divide-gray-100 bg-white">
-            <!-- Populated via AJAX -->
+          <tbody>
+            {% for r in requests %}
+            <tr class="pending-card cursor-pointer"
+              data-search="{{ r.student.roll_no }} {{ r.student.name }} {{ r.student.reg_no }}"
+              onclick="if (event.target.type !== 'checkbox') { const cb = this.querySelector('input[name=request_ids]'); cb.checked = !cb.checked; updateSelectedCount(); }">
+              <td>
+                <input type="checkbox" name="request_ids" value="{{ r.id }}" onchange="updateSelectedCount()"
+                  class="h-4 w-4 rounded border-slate-300 accent-brand-600 cursor-pointer" aria-label="Select {{ r.student.reg_no }}">
+              </td>
+              <td class="font-medium text-slate-900 whitespace-nowrap">{{ r.student.reg_no }}</td>
+              <td class="whitespace-nowrap">{{ r.student.roll_no|default:"—" }}</td>
+              <td class="whitespace-nowrap">
+                {{ r.student.name|default:"—" }}
+                {% if r.student.is_75_scheme %}<span class="badge badge-purple ml-1">7.5</span>{% endif %}
+              </td>
+              <td class="whitespace-nowrap">{{ r.student.year }} / {{ r.student.semester }}</td>
+              <td>{{ r.student.branch }}</td>
+              <td class="whitespace-nowrap text-slate-500">{% if r.created_at %}{{ r.created_at|date:"d M, h:i A" }}{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
           </tbody>
         </table>
       </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+        </div>
+        <p class="font-semibold text-slate-800">All caught up!</p>
+        <p class="text-sm mt-1">No pending requests for {% if office_name != "Department" %}{{ branch }} · {% endif %}Year {{ year }}.</p>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="empty-state">
+        <div class="h-12 w-12 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mb-3">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"/></svg>
+        </div>
+        <p class="font-semibold text-slate-800">Select a {% if office_name != "Department" %}branch and {% endif %}year</p>
+        <p class="text-sm mt-1">Use the filters above or click a class in “Waiting for review”.</p>
+      </div>
+    {% endif %}
+  </form>
 
-      <!-- Loading State -->
-      <div id="statusLoading" class="hidden py-8 text-center">
-        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[#d52b1e] border-t-transparent"></div>
-        <p class="text-sm text-gray-500 mt-2 font-medium">Fetching student list...</p>
+  <!-- ================= STUDENTS STATUS MODAL ================= -->
+  <div id="studentsStatusSection" class="hidden modal-backdrop" onclick="if (event.target === this) hideStudentsStatus()">
+    <div class="modal-panel max-w-5xl max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-200">
+        <h2 class="modal-title">Students Status · Year {{ year }}</h2>
+        <button type="button" onclick="hideStudentsStatus()" class="btn btn-ghost btn-sm" aria-label="Close">✕</button>
       </div>
 
-      <!-- Empty State -->
-      <div id="statusEmpty" class="hidden py-8 text-center text-gray-500 font-semibold">
-        No students found matching current filters.
+      <div class="px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100">
+        <input type="search" id="statusSearchInput" oninput="debounceSearch()" placeholder="Search reg no or name…"
+          class="input md:w-72">
+        <div class="flex flex-wrap gap-3">
+          {% if office_name != "Department" %}
+          <select id="statusBranchFilter" onchange="fetchStudentsStatus(1)" class="select w-auto" aria-label="Branch">
+            <option value="">All departments</option>
+            {% for b in branches %}
+            <option value="{{ b }}" {% if branch == b %}selected{% endif %}>{{ b }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
+          <select id="statusTypeFilter" onchange="fetchStudentsStatus(1)" class="select w-auto" aria-label="Status">
+            <option value="All">All status</option>
+            <option value="Completed">Completed</option>
+            <option value="Pending">Pending</option>
+            <option value="Incomplete">Incomplete</option>
+          </select>
+        </div>
       </div>
 
-      <!-- Pagination -->
-      <div id="statusPagination" class="flex justify-between items-center mt-6 border-t pt-4">
-        <div class="text-xs text-gray-500 font-medium">
-          Showing <span id="showingCount" class="font-bold text-gray-800">-</span> of <span id="totalCount" class="font-bold text-gray-800">-</span> students
+      <div class="flex-1 overflow-y-auto px-6 py-4">
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Register Number</th>
+                <th>Student Name</th>
+                <th>Department</th>
+                <th>Semester</th>
+                <th>Office Status</th>
+                <th>Completed Time</th>
+              </tr>
+            </thead>
+            <tbody id="studentsStatusTableBody">
+              <!-- Populated via AJAX -->
+            </tbody>
+          </table>
         </div>
-        <div class="flex gap-2" id="paginationControls">
-          <!-- Buttons injected by JS -->
+
+        <div id="statusLoading" class="hidden py-10 text-center">
+          <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-brand-600 border-t-transparent"></div>
+          <p class="text-sm text-slate-500 mt-2 font-medium">Loading students…</p>
         </div>
+
+        <div id="statusEmpty" class="hidden empty-state">
+          <p class="font-medium">No students match the current filters.</p>
+        </div>
+      </div>
+
+      <div id="statusPagination" class="flex justify-between items-center px-6 py-4 border-t border-slate-200">
+        <div class="text-xs text-slate-500 font-medium">
+          Showing <span id="showingCount" class="font-bold text-slate-800">-</span> of <span id="totalCount" class="font-bold text-slate-800">-</span> students
+        </div>
+        <div class="flex gap-2" id="paginationControls"></div>
       </div>
     </div>
   </div>
@@ -266,49 +321,188 @@
 </main>
 
 <!-- ================= REJECT MODAL ================= -->
-<div id="rejectModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
-
+<div id="rejectModal" class="hidden modal-backdrop" onclick="if (event.target === this) closeRejectModal()">
   <form method="POST" action="{% url 'reject_request' %}" onsubmit="disableSubmitButtons(this)"
-    class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm">
+    class="modal-panel max-w-md p-6">
     {% csrf_token %}
+    <h2 class="modal-title">Reject selected requests</h2>
+    <p id="rejectCountText" class="text-sm text-slate-500 mt-1 mb-4"></p>
 
-    <h2 class="text-xl font-bold text-center mb-4">Reject Reason</h2>
-
-    <textarea name="reason" required class="w-full border rounded-xl p-3 mb-4" placeholder="Enter reason..."></textarea>
+    <label class="label" for="rejectReasonInput">Reason</label>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <button type="button" onclick="pickRejectReason(this)" class="reason-chip badge badge-neutral cursor-pointer hover:ring-brand-600">Dues not cleared</button>
+      <button type="button" onclick="pickRejectReason(this)" class="reason-chip badge badge-neutral cursor-pointer hover:ring-brand-600">Book / item not returned</button>
+      <button type="button" onclick="pickRejectReason(this)" class="reason-chip badge badge-neutral cursor-pointer hover:ring-brand-600">Please meet the office in person</button>
+    </div>
+    <textarea id="rejectReasonInput" name="reason" required maxlength="300" rows="3" class="input mb-4" placeholder="Type or pick a reason…"></textarea>
 
     <div id="rejectReqIdsContainer"></div>
 
-    <button class="bg-[#d52b1e] text-white w-full py-2 rounded-full">
-      Submit
-    </button>
-
-    <button type="button" onclick="closeRejectModal()" class="w-full mt-2">Cancel</button>
+    <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+      <button type="button" onclick="closeRejectModal()" class="btn btn-secondary">Cancel</button>
+      <button class="btn btn-danger">Reject</button>
+    </div>
   </form>
 </div>
 
+<!-- Live alert for a new request from a cohort other than the one being viewed -->
+<div id="newReqToast" role="status" aria-live="polite"
+  class="hidden fixed top-20 right-4 z-[60] max-w-xs card shadow-xl p-4 border-l-4 border-l-brand-600">
+  <div class="flex items-start gap-3">
+    <span class="text-xl" aria-hidden="true">🔔</span>
+    <div class="flex-1 min-w-0">
+      <p class="font-semibold text-sm text-slate-900">New {{ office_name }} request</p>
+      <p id="newReqToastText" class="text-sm text-slate-600 mt-0.5 break-words"></p>
+      <a id="newReqToastLink" href="#" class="inline-block mt-2 text-sm font-semibold text-brand-700 hover:underline">View →</a>
+    </div>
+    <button type="button" onclick="hideNewReqToast()" class="text-slate-400 hover:text-slate-700 font-bold" aria-label="Dismiss">✕</button>
+  </div>
+</div>
+
+<!-- Approve / reject feedback (carried across the post-redirect reload) -->
+<div id="officeToast" role="status" aria-live="polite"
+  class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-slate-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-lg"></div>
+
 <!-- ================= JS ================= -->
 <script>
+  // ── Pending count in the browser tab title ──
+  const BASE_TITLE = document.title;
+  function updateTabTitle() {
+    const inbox = document.getElementById("pendingInbox");
+    const total = inbox ? Number(inbox.dataset.total || 0) : 0;
+    document.title = total > 0 ? `(${total}) ${BASE_TITLE}` : BASE_TITLE;
+  }
+  document.addEventListener("DOMContentLoaded", updateTabTitle);
+
+  // ── Alert for requests from other cohorts ──
+  const IS_DEPARTMENT = {% if office_name == "Department" %}true{% else %}false{% endif %};
+  const VIEW_BRANCH = "{{ branch|default:''|escapejs }}";
+  const VIEW_YEAR = "{{ year|default:''|escapejs }}";
+  let newReqToastTimer = null;
+
+  function hideNewReqToast() {
+    document.getElementById("newReqToast").classList.add("hidden");
+  }
+
+  function showNewRequestToast(data) {
+    if (!data || !data.branch) return;
+    // Defence in depth: a department only ever alerts for its own students.
+    if (IS_DEPARTMENT && String(data.branch).toUpperCase() !== VIEW_BRANCH.toUpperCase()) return;
+    const sameView = data.branch === VIEW_BRANCH && String(data.year) === VIEW_YEAR;
+    if (sameView) return;   // the list itself refreshes for the current view
+    const who = data.name ? `${data.name} (${data.reg_no || ""})` : (data.reg_no || "A student");
+    const cohort = IS_DEPARTMENT ? `Year ${data.year}` : `${data.branch} · Year ${data.year}`;
+    document.getElementById("newReqToastText").textContent = `${who} — ${cohort}`;
+    document.getElementById("newReqToastLink").href = IS_DEPARTMENT
+      ? `?year=${encodeURIComponent(data.year)}`
+      : `?branch=${encodeURIComponent(data.branch)}&year=${encodeURIComponent(data.year)}`;
+    document.getElementById("newReqToast").classList.remove("hidden");
+    clearTimeout(newReqToastTimer);
+    newReqToastTimer = setTimeout(hideNewReqToast, 8000);
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    if (window.PortalWS) PortalWS.on("new_request_submitted", showNewRequestToast);
+  });
+
+  // ── Approve / reject feedback toast ──
+  document.addEventListener("DOMContentLoaded", () => {
+    let msg = null;
+    try { msg = sessionStorage.getItem("officeToast"); sessionStorage.removeItem("officeToast"); } catch (e) {}
+    if (msg) {
+      const t = document.getElementById("officeToast");
+      t.textContent = msg;
+      t.classList.remove("hidden");
+      setTimeout(() => t.classList.add("hidden"), 3000);
+    }
+    const rejectForm = document.querySelector("#rejectModal form");
+    if (rejectForm) rejectForm.addEventListener("submit", () => {
+      try { sessionStorage.setItem("officeToast", "Request(s) rejected"); } catch (e) {}
+    });
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    closeRejectModal();
+    hideStudentsStatus();
+  });
+
+  // After a live soft-reload replaces <main>, refresh the tab title count and selection.
+  window.__reinitPage = function () { updateTabTitle(); updateSelectedCount(); };
+
+  // ── Selection (only rows visible under the current search) ──
+  function visibleRequestBoxes() {
+    return Array.from(document.querySelectorAll(".pending-card"))
+      .filter(row => row.style.display !== "none")
+      .map(row => row.querySelector('input[name="request_ids"]'))
+      .filter(Boolean);
+  }
+  function checkedRequestBoxes() {
+    return visibleRequestBoxes().filter(cb => cb.checked);
+  }
+  function updateSelectedCount() {
+    const boxes = visibleRequestBoxes();
+    const n = boxes.filter(cb => cb.checked).length;
+    const label = document.getElementById("selectedCountLabel");
+    if (label) label.textContent = `${n} selected`;
+    const all = document.getElementById("selectAllBox");
+    if (all) {
+      all.checked = boxes.length > 0 && n === boxes.length;
+      all.indeterminate = n > 0 && n < boxes.length;
+    }
+    document.querySelectorAll(".pending-card").forEach(row => {
+      const cb = row.querySelector('input[name="request_ids"]');
+      row.classList.toggle("bg-brand-50", !!(cb && cb.checked));
+    });
+    if (n > 0) hideBulkError();
+  }
   function selectAll() {
-    document.querySelectorAll('input[type=checkbox]').forEach(c => c.checked = true)
+    visibleRequestBoxes().forEach(c => c.checked = true);
+    updateSelectedCount();
   }
   function deselectAll() {
-    document.querySelectorAll('input[type=checkbox]').forEach(c => c.checked = false)
+    document.querySelectorAll('input[name="request_ids"]').forEach(c => c.checked = false);
+    updateSelectedCount();
+  }
+  function showBulkError() {
+    const el = document.getElementById("bulkSelectError");
+    if (el) { el.classList.remove("hidden"); setTimeout(hideBulkError, 3000); }
+  }
+  function hideBulkError() {
+    const el = document.getElementById("bulkSelectError");
+    if (el) el.classList.add("hidden");
   }
   function validateBulkApprove(form) {
-    const checked = form.querySelector('input[name="request_ids"]:checked');
-    if (!checked) {
-      alert("Select a student first");
+    // Never submit rows hidden by the search filter.
+    document.querySelectorAll(".pending-card").forEach(row => {
+      if (row.style.display === "none") {
+        const cb = row.querySelector('input[name="request_ids"]');
+        if (cb) cb.checked = false;
+      }
+    });
+    const n = checkedRequestBoxes().length;
+    if (!n) {
+      showBulkError();
       return false;
     }
+    try { sessionStorage.setItem("officeToast", `✅ Approved ${n} request${n === 1 ? "" : "s"}`); } catch (e) {}
     disableSubmitButtons(form);
     return true;
   }
+  function pickRejectReason(chip) {
+    document.querySelectorAll(".reason-chip").forEach(c => c.classList.remove("ring-brand-600", "text-brand-700"));
+    chip.classList.add("ring-brand-600", "text-brand-700");
+    document.getElementById("rejectReasonInput").value = chip.textContent.trim();
+  }
   function openRejectModal() {
-    const checked = document.querySelectorAll('input[name="request_ids"]:checked');
+    const checked = checkedRequestBoxes();
     if (checked.length === 0) {
-      alert("Select a student first");
+      showBulkError();
       return;
     }
+    document.getElementById("rejectCountText").textContent =
+      `${checked.length} student${checked.length === 1 ? "" : "s"} selected. The student${checked.length === 1 ? "" : "s"} will see this reason.`;
+    document.getElementById("rejectReasonInput").value = "";
+    document.querySelectorAll(".reason-chip").forEach(c => c.classList.remove("ring-brand-600", "text-brand-700"));
     
     const container = document.getElementById("rejectReqIdsContainer");
     container.innerHTML = "";
@@ -322,6 +516,7 @@
     });
 
     document.getElementById("rejectModal").classList.remove("hidden");
+    document.getElementById("rejectReasonInput").focus();
   }
 
   function closeRejectModal() {
@@ -341,7 +536,7 @@
     cards.forEach(card => {
       let searchText = card.getAttribute("data-search").toLowerCase();
       if (searchText.includes(input)) {
-        card.style.display = "flex";
+        card.style.display = "";
         found = true;
       } else {
         card.style.display = "none";
@@ -353,6 +548,7 @@
     } else {
       noResult.classList.add("hidden");
     }
+    updateSelectedCount();
   }
 
   let searchTimeout = null;
@@ -427,20 +623,20 @@
     students.forEach(s => {
       let statusBadge = '';
       if (s.status === 'Completed') {
-        statusBadge = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">Completed</span>';
+        statusBadge = '<span class="badge badge-success">Completed</span>';
       } else if (s.status === 'Pending') {
-        statusBadge = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">Pending</span>';
+        statusBadge = '<span class="badge badge-warning">Pending</span>';
       } else {
-        statusBadge = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Incomplete</span>';
+        statusBadge = '<span class="badge badge-danger">Incomplete</span>';
       }
       
       const row = `
-        <tr class="hover:bg-gray-50 transition border-b" data-reg-no="${s.reg_no}" data-student-id="${s.student_id || ''}" id="status-row-${s.reg_no}">
-          <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${s.reg_no}</td>
-          <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-700">${s.name} ${s.is_75_scheme ? '<span class="inline-block bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-1 shadow-sm">7.5</span>' : ''}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.branch}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.semester}</td>
-          <td class="px-6 py-4 whitespace-nowrap" id="status-badge-${s.reg_no}">${statusBadge}</td>
+        <tr data-reg-no="${s.reg_no}" data-student-id="${s.student_id || ''}" id="status-row-${s.reg_no}">
+          <td class="whitespace-nowrap font-medium text-slate-900">${s.reg_no}</td>
+          <td class="whitespace-nowrap">${s.name} ${s.is_75_scheme ? '<span class="badge badge-purple ml-1">7.5</span>' : ''}</td>
+          <td class="whitespace-nowrap text-slate-500">${s.branch}</td>
+          <td class="whitespace-nowrap text-slate-500">${s.semester}</td>
+          <td class="whitespace-nowrap" id="status-badge-${s.reg_no}">${statusBadge}</td>
           <td class="px-6 py-4 whitespace-nowrap text-gray-500" id="status-time-${s.reg_no}">${s.completed_time}</td>
         </tr>
       `;

@@ -54,7 +54,7 @@ def institution_login_required(view_func):
             try:
                 student = students_col.find_one(
                     {"_id": ObjectId(student_id_raw)},
-                    {"_id": 1}   # projection: only fetch the ID field (fast)
+                    {"_id": 1, "profile_completed": 1}   # projection: tiny & fast
                 )
             except (InvalidId, Exception) as exc:
                 logger.warning("Invalid student ID in session or DB error: %s", exc)
@@ -62,8 +62,9 @@ def institution_login_required(view_func):
                 response = redirect("index")
                 return _add_no_cache_headers(response)
 
-            if not student:
-                # Student ID in session no longer exists in DB
+            if not student or student.get("profile_completed") is not True:
+                # Student deleted, OR profile setup never finished (e.g. a
+                # session from before password login existed) → log in again.
                 request.session.flush()
                 response = redirect("index")
                 return _add_no_cache_headers(response)

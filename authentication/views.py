@@ -4,13 +4,18 @@ from django.contrib import messages
 from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
 import logging
-from .decorators import institution_login_required
+from .decorators import institution_login_required, _add_no_cache_headers
 from .institution_users import INSTITUTION_USERS
 from .mongo import institution_logs , students_col , no_due_col, portal_settings, departments_col
 from bson.errors import InvalidId
 from bson import ObjectId
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, BulkWriteError, PyMongoError
 from django.conf import settings
+from django.contrib.auth.hashers import make_password, check_password
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.utils.crypto import constant_time_compare
+from urllib.parse import urlencode
 from .utils import save_receipt , reset_expired_no_dues, record_student_no_due_completion
 from .events import notify_student, notify_all_students, notify_office, notify_faculty, notify_all_offices, notify_department_changed
 from .departments import (
@@ -54,6 +59,70 @@ _ROLE_REDIRECT = {
     "DEPARTMENT": "department_dashboard",
     "STUDENT":    "student_dashboard",
 }
+
+
+# =================== STUDENT REGISTRATION CONSTANTS ====================
+# Year → valid semesters (mirrors YEAR_SEM_MAP in faculty_dashboard.html).
+_YEAR_SEMESTERS = {1: (1, 2), 2: (3, 4), 3: (5, 6), 4: (7, 8)}
+
+# Max students one Bulk Add can create (keeps a typo in the range from
+# creating thousands of records).
+BULK_ADD_LIMIT = 500
+
+_NAME_RE = re.compile(r"^[A-Z][A-Z .'\-]{1,99}$")
+_ROLL_NO_RE = re.compile(r"^[A-Z0-9][A-Z0-9/\-]{1,19}$")
+
+
+def _is_valid_reg_no(reg_no):
+    return reg_no.isdigit() and len(reg_no) == 12
+
+
+def _faculty_redirect(branch, year):
+    """Back to the faculty directory filtered on branch + year."""
+    query = urlencode({"branch": branch or "", "year": year or ""})
+    return redirect(f"{reverse('faculty_dashboard')}?{query}")
+
+
+def _validate_cohort(branch, year, semester):
+    """
+    Validate department / year / semester for a NEW student.
+    Returns (year_int, semester_int, error_message_or_None).
+    """
+    if not year.isdigit() or int(year) not in _YEAR_SEMESTERS:
+        return None, None, "Year must be between 1 and 4"
+    year_int = int(year)
+    if not semester.isdigit() or int(semester) not in _YEAR_SEMESTERS[year_int]:
+        valid = " or ".join(str(s) for s in _YEAR_SEMESTERS[year_int])
+        return None, None, f"Semester for Year {year_int} must be {valid}"
+    if not branch or branch not in get_active_department_codes():
+        return None, None, "Please select a valid, active department"
+    return year_int, int(semester), None
+
+
+def _new_student_doc(reg_no, branch, year_int, semester_int, now):
+    """
+    A faculty-created student awaiting first-time profile setup.
+    `roll_no` is deliberately OMITTED (not ""): it is unique, and the
+    partial index only covers non-empty roll numbers — see db_indexes.py.
+    """
+    return {
+        "reg_no": reg_no,
+        "name": "",
+        "dob": "",
+        "phone": "",
+        "branch": branch,
+        "year": year_int,
+        "semester": semester_int,
+        "student_type": "Hosteller",
+        "is_75_scheme": False,
+        "profile_completed": False,
+        "created_at": now,
+    }
+
+
+def _is_profile_complete(student):
+    """Completed = profile setup done AND a personal password exists."""
+    return bool(student and student.get("profile_completed") is True and student.get("password_hash"))
 
 
 def _safe_referer(request, role):
@@ -114,6 +183,38 @@ def _office_year_summary(office, branch, years=(1, 2, 3, 4)):
     return {y: counts.get(y, 0) for y in years}
 
 
+def _office_cohort_summary(office, branch=None):
+    """
+    Every branch+year that has PENDING requests for one office, in a SINGLE
+    aggregation. Returns (rows, total) where rows = [{branch, year, count}]
+    sorted by branch then year — powers the "pending requests" inbox strip so
+    an office sees requests from other cohorts while viewing one.
+
+    Pass ``branch`` to restrict to one department (DEPARTMENT logins must only
+    ever see their own students).
+    """
+    pipeline = [
+        {"$match": {"office": office, "status": "PENDING"}},
+        _STUDENT_LOOKUP,
+        {"$unwind": "$student"},
+    ]
+    if branch:
+        pipeline.append({"$match": {"student.branch": branch}})
+    pipeline += [
+        {"$group": {
+            "_id": {"branch": "$student.branch", "year": "$student.year"},
+            "count": {"$sum": 1},
+        }},
+    ]
+    rows = [
+        {"branch": r["_id"].get("branch") or "", "year": r["_id"].get("year"), "count": r["count"]}
+        for r in no_due_col.aggregate(pipeline)
+        if r["_id"].get("branch")
+    ]
+    rows.sort(key=lambda r: (r["branch"], r["year"] if isinstance(r["year"], int) else 0))
+    return rows, sum(r["count"] for r in rows)
+
+
 def _office_pending_requests(office, branch, year):
     """PENDING requests for an office filtered to branch+year, with a string id."""
     try:
@@ -140,6 +241,9 @@ def index(request):
         dest = _ROLE_REDIRECT.get(role)
         if dest:
             return redirect(dest)
+    elif request.session.get("pending_student_id") and request.method != "POST":
+        # First-time login in progress → finish profile setup first.
+        return redirect("student_profile_setup")
 
     student_error = request.session.pop("student_error", None)
 
@@ -207,56 +311,231 @@ def index(request):
     return render(request, "index.html", {"student_error": student_error})
 
 
+def _cycle_session(request):
+    """🔒 New session ID on every privilege change (prevents session fixation)."""
+    try:
+        request.session.cycle_key()
+    except Exception:
+        request.session.flush()
+
+
+def _start_student_session(request, student_id):
+    _cycle_session(request)
+    request.session.pop("pending_student_id", None)
+    request.session["role"] = "STUDENT"
+    request.session["student_id"] = str(student_id)
+
+
+def _start_pending_session(request, student_id):
+    """
+    First-time login: the student is identified but NOT logged in. No `role`
+    is set, so every @institution_login_required view stays closed until the
+    profile setup page completes.
+    """
+    _cycle_session(request)
+    for key in ("role", "student_id", "department", "promotion_unlocked"):
+        request.session.pop(key, None)
+    request.session["pending_student_id"] = str(student_id)
+
+
+def _student_login_error(request, message):
+    request.session["student_error"] = message
+    return redirect("index")
+
+
 def student_login(request):
     # ── Already logged in as STUDENT? Skip login ──
     if request.session.get("role") == "STUDENT" and request.session.get("student_id"):
         return redirect("student_dashboard")
 
+    if request.method != "POST":
+        return redirect("index")
+
+    reg_no = request.POST.get("reg_no", "").strip()
+    password = request.POST.get("password", "")
+
+    # ✅ VALIDATIONS
+    if not _is_valid_reg_no(reg_no):
+        return _student_login_error(request, "Register Number must be 12 digits")
+    if not password:
+        return _student_login_error(request, "Please enter your password")
+
+    # 🔎 CHECK STUDENT IN DB
+    try:
+        student = students_col.find_one(
+            {"reg_no": reg_no},
+            {"_id": 1, "password_hash": 1, "profile_completed": 1},
+        )
+    except Exception as exc:
+        logger.error("Database query failed on student_login: %s", exc)
+        return _student_login_error(request, "Service temporarily unavailable. Please try again.")
+
+    stored_hash = student.get("password_hash") if student else None
+    if stored_hash:
+        authenticated = check_password(password, stored_hash)
+        first_time = False
+    elif student:
+        # 🆕 First-time login: Register Number is the temporary password.
+        # Only valid while the student has never set a password.
+        authenticated = constant_time_compare(password, reg_no)
+        first_time = True
+    else:
+        authenticated = False
+        first_time = False
+
+    if not authenticated:
+        audit_logger.warning("STUDENT LOGIN failed reg_no=%s ip=%s",
+                             reg_no, request.META.get("REMOTE_ADDR"))
+        return _student_login_error(request, "Invalid Register Number or Password")
+
+    if first_time or not _is_profile_complete(student):
+        _start_pending_session(request, student["_id"])
+        audit_logger.info("STUDENT FIRST LOGIN reg_no=%s -> profile setup", reg_no)
+        return redirect("student_profile_setup")
+
+    # ================= LOGIN SUCCESS =================
+    _start_student_session(request, student["_id"])
+    return redirect("student_dashboard")
+
+
+def student_profile_setup(request):
+    """
+    Mandatory first-time profile completion + password creation.
+    Reached only through a first-time login (session `pending_student_id`).
+    """
+    role = request.session.get("role")
+    if role:
+        return redirect(_ROLE_REDIRECT.get(role, "index"))
+
+    pending_id = request.session.get("pending_student_id")
+    if not pending_id:
+        return redirect("index")
+
+    try:
+        student_oid = ObjectId(pending_id)
+        student = students_col.find_one({"_id": student_oid})
+    except InvalidId:
+        request.session.flush()
+        return redirect("index")
+    except Exception as exc:
+        logger.error("Database query failed on student_profile_setup: %s", exc)
+        request.session.pop("pending_student_id", None)
+        return _student_login_error(request, "Service temporarily unavailable. Please try again.")
+
+    if not student:
+        request.session.flush()
+        return redirect("index")
+
+    if _is_profile_complete(student):
+        # Already set up (e.g. completed in another tab) — the temporary
+        # password is no longer valid, so send them back to the login.
+        request.session.pop("pending_student_id", None)
+        return _student_login_error(request, "Your profile is already set up. Please log in with your password.")
+
+    reg_no = student.get("reg_no", "")
+    errors = []
+    form = {
+        "name": student.get("name", "") or "",
+        "roll_no": student.get("roll_no", "") or "",
+        "dob": student.get("dob", "") or "",
+        "phone": student.get("phone", "") or "",
+    }
+
     if request.method == "POST":
-        reg_no = request.POST.get("reg_no", "").strip()
-        dob = request.POST.get("dob", "").strip()
+        form = {
+            "name": re.sub(r"\s+", " ", request.POST.get("name", "")).strip().upper(),
+            "roll_no": request.POST.get("roll_no", "").strip().upper(),
+            "dob": request.POST.get("dob", "").strip(),
+            "phone": request.POST.get("phone", "").strip(),
+        }
+        password = request.POST.get("password", "")
+        confirm_password = request.POST.get("confirm_password", "")
 
-        # ✅ VALIDATIONS
-        if not reg_no.isdigit() or len(reg_no) != 12:
-            request.session["student_error"] = "Register Number must be 12 digits"
-            return redirect("index")
+        # ================= VALIDATIONS =================
+        if not _NAME_RE.match(form["name"]):
+            errors.append("Enter your full name (letters, spaces and dots only).")
+
+        if not _ROLL_NO_RE.match(form["roll_no"]):
+            errors.append("Enter a valid Roll Number (e.g. 23CS001).")
 
         try:
-            datetime.strptime(dob, "%Y-%m-%d")
+            dob_date = datetime.strptime(form["dob"], "%Y-%m-%d").date()
+            if not (date(1950, 1, 1) <= dob_date < date.today()):
+                errors.append("Enter a valid Date of Birth.")
         except ValueError:
-            request.session["student_error"] = "Invalid Date of Birth"
-            return redirect("index")
+            errors.append("Enter a valid Date of Birth.")
 
-        # 🔎 CHECK STUDENT IN DB
-        try:
-            student = students_col.find_one({
-                "reg_no": reg_no,
-                "dob": dob
-            })
-        except Exception as exc:
-            logger.error("Database query failed on student_login: %s", exc)
-            request.session["student_error"] = "Service temporarily unavailable. Please try again."
-            return redirect("index")
+        if not (form["phone"].isdigit() and len(form["phone"]) == 10):
+            errors.append("Phone Number must be exactly 10 digits.")
 
-        if not student:
-            audit_logger.warning("STUDENT LOGIN failed reg_no=%s ip=%s",
-                                 reg_no, request.META.get("REMOTE_ADDR"))
-            request.session["student_error"] = "Invalid credentials"
-            return redirect("index")
+        if password != confirm_password:
+            errors.append("Passwords do not match.")
+        elif password == reg_no:
+            errors.append("Your new password cannot be your Register Number.")
+        elif len(password) > 128:
+            errors.append("Password is too long (max 128 characters).")
+        else:
+            try:
+                validate_password(password)
+            except ValidationError as exc:
+                errors.extend(exc.messages)
 
-        # ================= LOGIN SUCCESS =================
-        # 🔒 Cycle session ID (prevent session-fixation attacks).
-        try:
-            request.session.cycle_key()
-        except Exception:
-            request.session.flush()
+        # Roll No must be unique (friendly check; the unique index is the real guard)
+        if not errors:
+            try:
+                if students_col.find_one({"roll_no": form["roll_no"], "_id": {"$ne": student_oid}}, {"_id": 1}):
+                    errors.append("This Roll Number is already registered to another student.")
+            except PyMongoError as exc:
+                logger.error("Roll No duplicate check failed: %s", exc)
+                errors.append("Service temporarily unavailable. Please try again.")
 
-        request.session["role"]       = "STUDENT"
-        request.session["student_id"] = str(student["_id"])
+        # ================= SAVE =================
+        if not errors:
+            try:
+                # `profile_completed != True` in the filter makes this a
+                # one-shot: a second tab/submit cannot overwrite the password.
+                result = students_col.update_one(
+                    {"_id": student_oid, "profile_completed": {"$ne": True}},
+                    {"$set": {
+                        "name": form["name"],
+                        "roll_no": form["roll_no"],
+                        "dob": form["dob"],
+                        "phone": form["phone"],
+                        "password_hash": make_password(password),
+                        "profile_completed": True,
+                        "profile_completed_at": datetime.now(timezone.utc),
+                    }},
+                )
+            except DuplicateKeyError:
+                errors.append("This Roll Number is already registered to another student.")
+            except PyMongoError as exc:
+                logger.error("Profile setup save failed for %s: %s", reg_no, exc)
+                errors.append("Service temporarily unavailable. Please try again.")
+            else:
+                if result.matched_count == 0:
+                    request.session.pop("pending_student_id", None)
+                    return _student_login_error(request, "Your profile is already set up. Please log in with your password.")
 
-        return redirect("student_dashboard")
+                audit_logger.info("STUDENT PROFILE COMPLETED reg_no=%s", reg_no)
+                try:
+                    notify_faculty("student_roster_updated", {
+                        "branch": student.get("branch", ""),
+                        "year": student.get("year", ""),
+                    })
+                except Exception:
+                    pass
 
-    return redirect("index")
+                _start_student_session(request, student_oid)
+                messages.success(request, "Profile completed successfully. Welcome!")
+                return redirect("student_dashboard")
+
+    response = render(request, "student_profile_setup.html", {
+        "student": student,
+        "form": form,
+        "errors": errors,
+        "max_dob": date.today().isoformat(),
+    })
+    return _add_no_cache_headers(response)
 
 
  
@@ -667,7 +946,11 @@ def hostel_dashboard(request):
     else:
         branch_summary = _office_branch_summary("HOSTEL", active_branches)
 
+    pending_cohorts, pending_total = _office_cohort_summary("HOSTEL")
+
     return render(request, "hostel_dashboard.html", {
+        "pending_cohorts": pending_cohorts,
+        "pending_total": pending_total,
         "requests": requests,
         "count": count,
         "branch": branch,
@@ -708,7 +991,11 @@ def library_dashboard(request):
     else:
         branch_summary = _office_branch_summary("LIBRARY", active_branches)
 
+    pending_cohorts, pending_total = _office_cohort_summary("LIBRARY")
+
     return render(request, "institution_dashboard.html", {
+        "pending_cohorts": pending_cohorts,
+        "pending_total": pending_total,
         "office_name": "Library Office",
         "requests": requests,
         "branch": branch,
@@ -929,7 +1216,11 @@ def college_dashboard(request):
     else:
         branch_summary = _office_branch_summary("COLLEGE", active_branches)
 
+    pending_cohorts, pending_total = _office_cohort_summary("COLLEGE")
+
     return render(request, "institution_dashboard.html", {
+        "pending_cohorts": pending_cohorts,
+        "pending_total": pending_total,
         "office_name": "College Office",
         "requests": requests,
         "branch": branch,
@@ -966,7 +1257,12 @@ def department_dashboard(request):
     else:
         year_summary = _office_year_summary("DEPARTMENT", dept)
 
+    # Scoped to this department only — never other departments' requests.
+    pending_cohorts, pending_total = _office_cohort_summary("DEPARTMENT", branch=dept)
+
     return render(request, "institution_dashboard.html", {
+        "pending_cohorts": pending_cohorts,
+        "pending_total": pending_total,
         "office_name": "Department",
         "requests": requests,
         "branch": dept,
@@ -1247,6 +1543,7 @@ def faculty_dashboard(request):
 
             students.append({
                 "id": str(student_id),
+                "profile_status": "Completed" if _is_profile_complete(s) else "Pending",
                 "roll_no": s.get("roll_no", ""),
                 "reg_no": s.get("reg_no", ""),
                 "name": s.get("name", ""),
@@ -1330,102 +1627,159 @@ def update_75_scheme(request):
 
 @institution_login_required
 def add_student(request):
+    """Faculty → Add Student popup: Register No + Department + Year + Semester."""
     if request.session.get("role") != "FACULTY":
         return redirect("index")
 
-    if request.method == "POST":
-        roll_no = request.POST.get("roll_no", "").strip()
-        reg_no = request.POST.get("reg_no", "").strip()
-        name = request.POST.get("name", "").strip()
-        dob = request.POST.get("dob", "").strip()
-        semester = request.POST.get("semester", "").strip()
-        phone = request.POST.get("phone", "").strip()
-        branch = request.POST.get("branch", "").strip()
-        year = request.POST.get("year", "").strip()
+    reg_no = request.POST.get("reg_no", "").strip()
+    branch = request.POST.get("branch", "").strip()
+    year = request.POST.get("year", "").strip()
+    semester = request.POST.get("semester", "").strip()
 
-        # ================= FORMAT FIXES =================
+    if request.method != "POST":
+        return redirect("faculty_dashboard")
 
-        # 🔥 NAME → FULL CAPS
-        name = name.upper()
+    # ================= VALIDATIONS =================
+    if not _is_valid_reg_no(reg_no):
+        request.session["add_error"] = "Register Number must be exactly 12 digits"
+        return _faculty_redirect(branch, year)
 
-        # 🔥 ROLL NO → department code CAPS (23cs533 → 23CS533)
-        roll_no = re.sub(r'([a-zA-Z]+)', lambda m: m.group(1).upper(), roll_no)
+    year_int, semester_int, error = _validate_cohort(branch, year, semester)
+    if error:
+        request.session["add_error"] = error
+        return _faculty_redirect(branch, year)
 
-        # ================= VALIDATIONS =================
+    # ================= DUPLICATE CHECK + INSERT =================
+    try:
+        if students_col.find_one({"reg_no": reg_no}, {"_id": 1}):
+            request.session["add_error"] = f"Student with Register Number {reg_no} already exists"
+            return _faculty_redirect(branch, year)
 
-        # Register Number → exactly 12 digits
-        if not reg_no.isdigit() or len(reg_no) != 12:
-            request.session["add_error"] = "Register Number must be exactly 12 digits"
-            return redirect(f"/faculty/?branch={branch}&year={year}")
+        students_col.insert_one(_new_student_doc(
+            reg_no, branch, year_int, semester_int, datetime.now(timezone.utc)
+        ))
+    except DuplicateKeyError:
+        # Lost a race with a concurrent add — the unique index caught it.
+        request.session["add_error"] = f"Student with Register Number {reg_no} already exists"
+        return _faculty_redirect(branch, year)
+    except Exception as exc:
+        logger.error("Failed to insert student: %s", exc)
+        request.session["add_error"] = "Failed to add student. Please try again."
+        return _faculty_redirect(branch, year)
 
-        # Phone Number → exactly 10 digits
-        if not phone.isdigit() or len(phone) != 10:
-            request.session["add_error"] = "Phone Number must be exactly 10 digits"
-            return redirect(f"/faculty/?branch={branch}&year={year}")
+    audit_logger.info("STUDENT ADDED reg_no=%s branch=%s year=%s sem=%s",
+                      reg_no, branch, year_int, semester_int)
+    request.session["add_success"] = f"Student {reg_no} added. Status: Pending profile setup."
+    try:
+        notify_faculty("student_roster_updated", {"branch": branch, "year": year})
+        notify_all_offices("student_roster_updated", {"branch": branch, "year": year})
+    except Exception:
+        pass
 
-        # DOB → valid date
+    return _faculty_redirect(branch, year)
+
+
+@institution_login_required
+def bulk_add_students(request):
+    """
+    Faculty → Bulk Add: create every Register Number in [start, end].
+    Existing Register Numbers are skipped (never duplicated) and reported.
+    """
+    if request.session.get("role") != "FACULTY":
+        return redirect("index")
+
+    if request.method != "POST":
+        return redirect("faculty_dashboard")
+
+    start_reg = request.POST.get("start_reg_no", "").strip()
+    end_reg = request.POST.get("end_reg_no", "").strip()
+    branch = request.POST.get("branch", "").strip()
+    year = request.POST.get("year", "").strip()
+    semester = request.POST.get("semester", "").strip()
+
+    # ================= VALIDATIONS =================
+    if not _is_valid_reg_no(start_reg) or not _is_valid_reg_no(end_reg):
+        messages.error(request, "Start and End Register Numbers must be exactly 12 digits ❌")
+        return _faculty_redirect(branch, year)
+
+    start_int, end_int = int(start_reg), int(end_reg)
+    if start_int > end_int:
+        messages.error(request, "Start Register Number must be less than or equal to the End Register Number ❌")
+        return _faculty_redirect(branch, year)
+
+    total = end_int - start_int + 1
+    if total > BULK_ADD_LIMIT:
+        messages.error(request, f"Range too large: {total} students. Bulk Add allows at most {BULK_ADD_LIMIT} at a time ❌")
+        return _faculty_redirect(branch, year)
+
+    year_int, semester_int, error = _validate_cohort(branch, year, semester)
+    if error:
+        messages.error(request, f"{error} ❌")
+        return _faculty_redirect(branch, year)
+
+    reg_nos = [str(n).zfill(12) for n in range(start_int, end_int + 1)]
+
+    # ================= SKIP EXISTING + BULK INSERT =================
+    try:
+        existing = {
+            doc["reg_no"]
+            for doc in students_col.find({"reg_no": {"$in": reg_nos}}, {"reg_no": 1})
+            if doc.get("reg_no")
+        }
+    except PyMongoError as exc:
+        logger.error("Bulk add duplicate lookup failed: %s", exc)
+        messages.error(request, "Bulk add failed ❌ Database connection error. Please try again.")
+        return _faculty_redirect(branch, year)
+
+    now = datetime.now(timezone.utc)
+    to_insert = [
+        _new_student_doc(r, branch, year_int, semester_int, now)
+        for r in reg_nos if r not in existing
+    ]
+
+    inserted = 0
+    skipped = set(existing)
+    failed = 0
+    if to_insert:
         try:
-            datetime.strptime(dob, "%Y-%m-%d")
-        except ValueError:
-            request.session["add_error"] = "Invalid Date of Birth format"
-            return redirect(f"/faculty/?branch={branch}&year={year}")
+            result = students_col.insert_many(to_insert, ordered=False)
+            inserted = len(result.inserted_ids)
+        except BulkWriteError as bwe:
+            details = bwe.details or {}
+            inserted = details.get("nInserted", 0)
+            for err in details.get("writeErrors", []):
+                if err.get("code") == 11000:
+                    # Concurrent add of the same Register Number → skip it.
+                    skipped.add((err.get("op") or {}).get("reg_no", "?"))
+                else:
+                    failed += 1
+            logger.warning("Bulk add partial failure: %s", bwe)
+        except PyMongoError as exc:
+            logger.error("Bulk add insert failed: %s", exc)
+            messages.error(request, "Bulk add failed ❌ Database connection error. Please try again.")
+            return _faculty_redirect(branch, year)
 
-        # Semester → 1 to 8
-        if not semester.isdigit() or not (1 <= int(semester) <= 8):
-            request.session["add_error"] = "Semester must be between 1 and 8"
-            return redirect(f"/faculty/?branch={branch}&year={year}")
+    summary = f"Bulk Add Completed ✅ Added: {inserted}, Skipped (already exist): {len(skipped)}"
+    if failed:
+        summary += f", Failed: {failed}"
+    messages.success(request, summary)
+    if skipped:
+        messages.warning(
+            request,
+            "Skipped Register Numbers (already exist):\n" + ", ".join(sorted(skipped))
+        )
 
-        # Year → 1 to 4
-        if not year.isdigit() or not (1 <= int(year) <= 4):
-            request.session["add_error"] = "Year must be between 1 and 4"
-            return redirect(f"/faculty/?branch={branch}&year={year}")
+    audit_logger.info("BULK ADD range=%s-%s branch=%s year=%s sem=%s added=%d skipped=%d failed=%d",
+                      start_reg, end_reg, branch, year_int, semester_int, inserted, len(skipped), failed)
 
-        # Duplicate check (Roll No / Reg No)
+    if inserted:
         try:
-            existing_student = students_col.find_one({
-                "$or": [
-                    {"roll_no": roll_no},
-                    {"reg_no": reg_no}
-                ]
-            })
-        except Exception as exc:
-            logger.error("Error checking duplicate student: %s", exc)
-            existing_student = None
+            notify_faculty("student_roster_updated", {"branch": branch, "year": year})
+            notify_all_offices("student_roster_updated", {"branch": branch, "year": year})
+        except Exception as be:
+            logger.warning("[WS] Failed to broadcast bulk add: %s", be)
 
-        if existing_student:
-            request.session["add_error"] = (
-                "Student with this Roll No or Register No already exists"
-            )
-            return redirect(f"/faculty/?branch={branch}&year={year}")
-
-        # ================= INSERT =================
-        student_type = request.POST.get("student_type", "Hosteller")
-        if student_type not in ("Hosteller", "Day Scholar"):
-            student_type = "Hosteller"
-
-        try:
-            inserted_student = students_col.insert_one({
-                "roll_no": roll_no,
-                "reg_no": reg_no,
-                "name": name,
-                "dob": dob,
-                "phone": phone,
-                "branch": branch,
-                "year": int(year),
-                "semester": int(semester),
-                "student_type": student_type
-            })
-            request.session["add_success"] = "Student added successfully"
-            try:
-                notify_faculty("student_roster_updated", {"branch": branch, "year": year})
-                notify_all_offices("student_roster_updated", {"branch": branch, "year": year})
-            except Exception:
-                pass
-        except Exception as exc:
-            logger.error("Failed to insert student: %s", exc)
-            request.session["add_error"] = "Failed to add student. Please try again."
-
-    return redirect(f"/faculty/?branch={branch}&year={year}")
+    return _faculty_redirect(branch, year)
 
 
 @institution_login_required
@@ -1487,19 +1841,24 @@ def edit_student(request):
             year_val = int(year_val_raw) if year_val_raw.isdigit() else 1
             sem_val = int(sem_val_raw) if sem_val_raw.isdigit() else 1
 
-            students_col.update_one(
-                {"_id": ObjectId(student_id)},
-                {"$set": {
-                    "roll_no": request.POST.get("roll_no", "").strip().upper(),
-                    "reg_no": request.POST.get("reg_no", "").strip(),
-                    "name": request.POST.get("name", "").strip().upper(),
-                    "dob": request.POST.get("dob", "").strip(),
-                    "year": year_val,
-                    "phone": request.POST.get("phone", "").strip(),
-                    "semester": sem_val,
-                    "student_type": student_type
-                }}
-            )
+            roll_no_val = request.POST.get("roll_no", "").strip().upper()
+            update = {"$set": {
+                "reg_no": request.POST.get("reg_no", "").strip(),
+                "name": request.POST.get("name", "").strip().upper(),
+                "dob": request.POST.get("dob", "").strip(),
+                "year": year_val,
+                "phone": request.POST.get("phone", "").strip(),
+                "semester": sem_val,
+                "student_type": student_type
+            }}
+            if roll_no_val:
+                update["$set"]["roll_no"] = roll_no_val
+            else:
+                # Pending students have no roll no yet — keep the field
+                # absent (not "") so the partial unique index ignores it.
+                update["$unset"] = {"roll_no": ""}
+
+            students_col.update_one({"_id": ObjectId(student_id)}, update)
             try:
                 notify_student(student_id, "student_profile_updated", {
                     "roll_no": request.POST.get("roll_no", "").strip().upper(),
@@ -1511,6 +1870,8 @@ def edit_student(request):
                 notify_faculty("student_roster_updated", {"branch": branch, "year": year})
             except Exception:
                 pass
+        except DuplicateKeyError:
+            request.session["add_error"] = "Another student already has this Register Number or Roll Number"
         except (InvalidId, Exception) as exc:
             logger.warning("Failed to edit student %s: %s", student_id, exc)
 

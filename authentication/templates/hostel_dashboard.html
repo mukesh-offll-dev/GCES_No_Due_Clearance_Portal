@@ -3,334 +3,762 @@
 
 {% block content %}
 
-<main class="max-w-6xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
 
-  <!-- PAGE TITLE -->
-  <div class="flex flex-col sm:flex-row justify-between items-center mt-4 mb-6 px-2 gap-4">
-    <div
-      class="bg-[#d52b1e] text-white font-semibold text-lg sm:text-xl px-6 sm:px-16 py-3 rounded-full text-center shadow-sm">
-      Hostel Office
+  <!-- PAGE HEADER -->
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Hostel Fee Verification</h1>
+      <p class="page-subtitle">Check each student's SBI payment receipt, then approve or reject the request.</p>
     </div>
-
-    <button type="button" onclick="openReportModal()"
-      class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-full font-bold shadow-md transition transform hover:scale-105 text-sm">
+    <button type="button" onclick="openReportModal()" class="btn btn-secondary">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
       Generate Report
     </button>
   </div>
 
-  <!-- FILTER CARD -->
-  <form method="GET"
-    class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] px-4 sm:px-8 py-4 sm:py-6 mb-6 bg-white shadow-sm">
-
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-
-      <!-- Branch -->
+  <!-- SUMMARY CARDS -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <div class="stat-card">
+      <div class="stat-icon bg-amber-50 text-amber-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
       <div>
-        <label class="font-semibold mb-2 block">Branch</label>
-        <select name="branch" onchange="this.form.submit()" class="w-full border rounded-full px-4 py-2">
-          <option value="">Select Branch</option>
-          {% for b in branches %}
-          <option value="{{ b }}" {% if branch == b %}selected{% endif %}>
-            {{ b }}
-          </option>
-          {% endfor %}
-        </select>
-
+        <p class="stat-label">Total pending</p>
+        <p class="stat-value">{{ pending_total|default:0 }}</p>
       </div>
-
-      <!-- Year -->
-      <div>
-        <label class="font-semibold mb-2 block">Year</label>
-        <select name="year" onchange="this.form.submit()" class="w-full border rounded-full px-4 py-2">
-          <option value="">Select Year</option>
-          <option value="1" {% if year == "1" %}selected{% endif %}>1</option>
-          <option value="2" {% if year == "2" %}selected{% endif %}>2</option>
-          <option value="3" {% if year == "3" %}selected{% endif %}>3</option>
-          <option value="4" {% if year == "4" %}selected{% endif %}>4</option>
-
-        </select>
-      </div>
-
-      <div class="flex flex-wrap justify-center gap-2">
-
-        {% if not branch and not year %}
-        <div class="flex flex-wrap justify-end gap-3 mb-6">
-          {% for b, c in branch_summary.items %}
-          <a href="?branch={{ b }}"
-            class="bg-[#d52b1e] text-white px-5 py-2 rounded-full font-semibold hover:scale-105 transition cursor-pointer">
-            {{ b }} - {{ c }}
-          </a>
-          {% endfor %}
-        </div>
-        {% endif %}
-
-        {% if branch and not year %}
-        <div class="flex flex-wrap justify-end gap-3 mb-6">
-          {% for y, c in year_summary.items %}
-          <a href="?branch={{ branch }}&year={{ y }}"
-            class="bg-[#d52b1e] text-white px-5 py-2 rounded-full font-semibold hover:scale-105 transition">
-            {{ y }} Year - {{ c }}
-          </a>
-          {% endfor %}
-        </div>
-        {% endif %}
-
-        {% if branch and year %}
-        <div class="flex flex-wrap items-center justify-end gap-3 mb-6">
-          <span class="bg-[#d52b1e] text-white px-6 py-2 rounded-full font-semibold text-sm">
-            Students Count - {{ count }}
-          </span>
-          <button type="button" onclick="loadStudentsStatus()"
-            class="bg-[#d52b1e] hover:bg-red-800 text-white px-6 py-2 rounded-full font-bold shadow-md transition transform hover:scale-105 text-sm">
-            Students Status
-          </button>
-        </div>
-        {% endif %}
-
-        <div>
-          {% if branch and year %}
-          <div class="max-w-6xl mx-auto mb-4">
-            <input type="text" id="regSearch" onkeyup="searchByRegNo()" placeholder="Search by Register Number..."
-              class="w-full border-2 border-[#d52b1e] rounded-full px-6 py-2">
-          </div>
-          {% endif %}
-        </div>
-
-      </div>
-
     </div>
+    <div class="stat-card">
+      <div class="stat-icon bg-brand-50 text-brand-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+      </div>
+      <div>
+        <p class="stat-label">In this view</p>
+        <p class="stat-value">{% if branch and year %}{{ count }}{% else %}—{% endif %}</p>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon bg-blue-50 text-blue-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342"/></svg>
+      </div>
+      <div>
+        <p class="stat-label">Classes waiting</p>
+        <p class="stat-value">{{ pending_cohorts|length }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- PENDING INBOX: every branch/year that has requests waiting (live-updated) -->
+  <div id="pendingInbox" data-total="{{ pending_total }}" class="card px-5 py-4 mb-6">
+    {% if pending_total %}
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-sm font-semibold text-slate-700 mr-1 inline-flex items-center gap-1.5">
+        <span class="relative flex h-2.5 w-2.5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-brand-600"></span></span>
+        Waiting for review
+      </span>
+      {% for c in pending_cohorts %}
+      {% if c.branch == branch and c.year|stringformat:"s" == year %}
+      <span aria-current="page"
+        class="inline-flex items-center gap-1.5 bg-brand-600 text-white text-xs font-semibold pl-3 pr-1.5 py-1 rounded-full">
+        {{ c.branch }} · Year {{ c.year }}
+        <span class="bg-white text-brand-700 rounded-full px-1.5 min-w-[1.25rem] text-center">{{ c.count }}</span>
+      </span>
+      {% else %}
+      <a href="?branch={{ c.branch|urlencode }}&year={{ c.year }}"
+        class="inline-flex items-center gap-1.5 bg-white ring-1 ring-inset ring-slate-300 text-slate-700 hover:ring-brand-600 hover:text-brand-700 text-xs font-semibold pl-3 pr-1.5 py-1 rounded-full transition">
+        {{ c.branch }} · Year {{ c.year }}
+        <span class="bg-brand-600 text-white rounded-full px-1.5 min-w-[1.25rem] text-center">{{ c.count }}</span>
+      </a>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-sm font-medium text-slate-600 flex items-center gap-2">
+      <svg class="h-5 w-5 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      No pending requests in any branch or year.
+    </p>
+    {% endif %}
+  </div>
+
+  <!-- FILTERS -->
+  <form method="GET" class="card card-body mb-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+      <div>
+        <label class="label" for="filterBranch">Branch</label>
+        <select id="filterBranch" name="branch" onchange="this.form.submit()" class="select">
+          <option value="">All branches</option>
+          {% for b in branches %}
+          <option value="{{ b }}" {% if branch == b %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="label" for="filterYear">Year</label>
+        <select id="filterYear" name="year" onchange="this.form.submit()" class="select">
+          <option value="">Select year</option>
+          <option value="1" {% if year == "1" %}selected{% endif %}>Year 1</option>
+          <option value="2" {% if year == "2" %}selected{% endif %}>Year 2</option>
+          <option value="3" {% if year == "3" %}selected{% endif %}>Year 3</option>
+          <option value="4" {% if year == "4" %}selected{% endif %}>Year 4</option>
+        </select>
+      </div>
+
+      {% if branch and year %}
+      <div class="sm:col-span-2 flex flex-wrap items-center gap-3 lg:justify-end">
+        <span class="badge badge-neutral text-sm px-3 py-1">{{ count }} pending in this class</span>
+        <button type="button" onclick="loadStudentsStatus()" class="btn btn-secondary">Students Status</button>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if not branch and not year and branch_summary %}
+    <div class="mt-5 pt-5 border-t border-slate-200">
+      <p class="section-title mb-3">Pending by branch</p>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {% for b, c in branch_summary.items %}
+        <a href="?branch={{ b|urlencode }}"
+          class="rounded-lg border border-slate-200 px-4 py-3 hover:border-brand-600 hover:bg-brand-50 transition">
+          <p class="text-xs font-medium text-slate-500">{{ b }}</p>
+          <p class="text-xl font-bold {% if c %}text-brand-700{% else %}text-slate-400{% endif %}">{{ c }}</p>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if branch and not year and year_summary %}
+    <div class="mt-5 pt-5 border-t border-slate-200">
+      <p class="section-title mb-3">Pending by year · {{ branch }}</p>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {% for y, c in year_summary.items %}
+        <a href="?branch={{ branch|urlencode }}&year={{ y }}"
+          class="rounded-lg border border-slate-200 px-4 py-3 hover:border-brand-600 hover:bg-brand-50 transition">
+          <p class="text-xs font-medium text-slate-500">Year {{ y }}</p>
+          <p class="text-xl font-bold {% if c %}text-brand-700{% else %}text-slate-400{% endif %}">{{ c }}</p>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
   </form>
 
   <!-- REQUEST LIST -->
-  <section class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] px-4 sm:px-6 py-4 sm:py-6 bg-white shadow-sm">
+  <section class="card">
+    <div class="card-header">
+      <div>
+        <h2 class="card-title">Pending requests</h2>
+        <p class="text-xs text-slate-500 mt-0.5">
+          {% if branch and year %}{{ branch }} · Year {{ year }}{% else %}Choose a branch and year to see requests.{% endif %}
+        </p>
+      </div>
 
+      {% if branch and year and requests %}
+      <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+        <div class="relative flex-1 min-w-[12rem] lg:w-72">
+          <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+          <input type="search" id="regSearch" oninput="searchByRegNo()" placeholder="Search reg no or name…"
+            onkeydown="if (event.key === 'Enter') event.preventDefault()" class="input pl-9" aria-label="Search requests">
+        </div>
+        <label class="inline-flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer select-none px-1">
+          <input type="checkbox" id="selectAllRequests" onchange="toggleSelectAllRequests(this.checked)"
+            class="h-4 w-4 rounded border-slate-300 accent-emerald-600 cursor-pointer">
+          Select all
+        </label>
+        <span id="selectedCount" class="text-xs text-slate-500">0 selected</span>
+        <button type="button" id="approveSelectedBtn" onclick="openBulkApprove()" disabled class="btn btn-success">
+          Approve selected
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="p-4 sm:p-5">
     {% if branch and year %}
-    <p id="noResult" class="hidden text-center font-semibold text-red-600 mt-4">
-      No student found for this Register Number
+
+    <p id="noResult" class="hidden text-center text-sm font-medium text-slate-500 py-8">
+      No student matches your search.
     </p>
 
     {% for r in requests %}
     <div
-      class="request-card border rounded-[20px] p-5 mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
-      data-reg="{{ r.student.reg_no }}">
-      <!-- DETAILS -->
-      <div class="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm font-medium">
+      class="request-card rounded-xl border border-slate-200 bg-white p-4 sm:p-5 mb-3 last:mb-0 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 transition hover:border-slate-300 hover:shadow-sm {% if r.attempts_used >= 2 %}border-l-4 border-l-orange-400{% endif %}"
+      data-id="{{ r.id }}"
+      data-reg="{{ r.student.reg_no }}"
+      data-name="{{ r.student.name|lower }}"
+      data-display-name="{{ r.student.name }}"
+      data-sem="{{ r.student.semester }}"
+      data-ref="{{ r.last_payment_id|default:'' }}"
+      data-attempts="{{ r.attempts_used|default:1 }}"
+      data-is75="{% if r.student.is_75_scheme %}1{% endif %}"
+      data-receipt="{% if r.receipt_url and 'http' in r.receipt_url and not r.student.is_75_scheme %}{{ r.receipt_url }}{% endif %}"
+      data-kind="{% if r.receipt_url and 'http' in r.receipt_url and not r.student.is_75_scheme %}{% if '.pdf' in r.receipt_url|lower %}pdf{% else %}image{% endif %}{% endif %}">
+      <!-- Used by live updates to find this card -->
+      <input type="hidden" name="request_ids" value="{{ r.id }}">
 
-        <div>
-          <p class="font-semibold">Reg no</p>
-          <p class="text-gray-700">{{ r.student.reg_no }}</p>
+      <div class="flex items-start gap-4 flex-1 min-w-0">
+        <input type="checkbox" class="req-select h-4 w-4 mt-1 rounded border-slate-300 accent-emerald-600 cursor-pointer shrink-0"
+          value="{{ r.id }}" onchange="updateSelection()" aria-label="Select {{ r.student.reg_no }}">
+
+        <div class="flex-1 min-w-0">
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3 text-sm">
+            <div>
+              <p class="text-xs font-medium text-slate-500">Register No</p>
+              <p class="font-semibold text-slate-900">{{ r.student.reg_no }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-medium text-slate-500">Name</p>
+              <p class="font-medium text-slate-800">{{ r.student.name|default:"—" }} {% if r.student.is_75_scheme %}<span class="badge badge-purple ml-1">7.5</span>{% endif %}</p>
+            </div>
+            <div>
+              <p class="text-xs font-medium text-slate-500">Semester</p>
+              <p class="font-medium text-slate-800">{{ r.student.semester }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-medium text-slate-500">SBI Reference No</p>
+              <p class="font-mono text-slate-800 break-all">{{ r.last_payment_id|default:"—" }}</p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 mt-3 text-xs">
+            {% if r.student.is_75_scheme or r.receipt_url == "7.5 Scheme Student" or r.last_payment_id == "7.5 Scheme" %}
+            <span class="badge badge-purple">No receipt required</span>
+            {% elif r.receipt_url and "http" in r.receipt_url %}
+            <button type="button" onclick="openReview(this)" class="badge badge-info cursor-pointer hover:bg-blue-100">
+              {% if ".pdf" in r.receipt_url|lower %}📄 Preview PDF{% else %}🖼️ Preview image{% endif %}
+            </button>
+            <a href="{{ r.receipt_url }}" target="_blank" rel="noopener"
+              class="font-semibold text-blue-700 hover:underline">Open in new tab ↗</a>
+            {% else %}
+            <span class="badge badge-neutral">No receipt</span>
+            {% endif %}
+
+            {% if r.created_at %}
+            <span class="text-slate-500">· Submitted {{ r.created_at|date:"d M, h:i A" }}</span>
+            {% endif %}
+
+            {% if r.attempts_used >= 2 %}
+            <span class="badge badge-orange" title="Rejecting this request starts a 24-hour cooldown for the student">Attempt 2 of 2 · Final</span>
+            {% else %}
+            <span class="badge badge-neutral">Attempt 1 of 2</span>
+            {% endif %}
+          </div>
         </div>
-
-        <div>
-          <p class="font-semibold">Name</p>
-          <p class="text-gray-700">{{ r.student.name }} {% if r.student.is_75_scheme %}<span class="inline-block bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-1 shadow-sm">7.5</span>{% endif %}</p>
-        </div>
-
-        <div>
-          <p class="font-semibold">Semester</p>
-          <p class="text-gray-700">{{ r.student.semester }}</p>
-        </div>
-
-        <div>
-          <p class="font-semibold">Last Payment SBI Reference Number</p>
-          <p class="text-gray-700">{{ r.last_payment_id }}</p>
-        </div>
-
-        {% if r.receipt_url and "http" in r.receipt_url and not r.student.is_75_scheme %}
-        <div class="flex flex-col gap-1 text-right">
-          <span class="tkoext-sm font-semibold ">
-            View Receipt
-          </span>
-          <a href="{{ r.receipt_url }}" target="_blank" class="text-blue-600 underline font-semibold">
-            View PDF/Original
-          </a>
-          {% if ".pdf" in r.receipt_url %}
-          <a href="{{ r.receipt_url|slice:":-4" }}.png" target="_blank" class="text-green-600 underline font-semibold text-xs mt-1">
-            View as Image (PNG)
-          </a>
-          {% endif %}
-        </div>
-        {% elif r.student.is_75_scheme or r.receipt_url == "7.5 Scheme Student" or r.last_payment_id == "7.5 Scheme" %}
-        <span class="text-gray-400 text-sm">No Receipt Required</span>
-        {% else %}
-        <span class="text-gray-400 text-sm">No Receipt</span>
-        {% endif %}
-
-      </div>
-      <!-- ACTIONS -->
-      <div class="flex flex-wrap gap-3">
-
-
-        <!-- APPROVE -->
-        <form method="POST" action="{% url 'bulk_approve' %}" onsubmit="disableSubmitButtons(this)">
-          {% csrf_token %}
-          <input type="hidden" name="request_ids" value="{{ r.id }}">
-          <button class="bg-green-600 text-white px-6 py-2 rounded-full font-semibold">
-            Verify & Approve
-          </button>
-        </form>
-
-        <!-- REJECT -->
-        <button onclick="openReject('{{ r.id }}')" class="bg-[#d52b1e] text-white px-6 py-2 rounded-full font-semibold">
-          Reject
-        </button>
-
       </div>
 
+      <div class="flex gap-2 lg:flex-col lg:items-stretch shrink-0 lg:w-40">
+        <button type="button" onclick="openReview(this)" class="btn btn-success flex-1">Verify &amp; Approve</button>
+        <button type="button" onclick="openReject(this)" class="btn btn-outline-danger flex-1">Reject</button>
+      </div>
     </div>
     {% empty %}
-    <p class="text-center font-semibold text-gray-600 mt-6">
-      No pending requests
-    </p>
+    <div class="empty-state">
+      <div class="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+        <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+      </div>
+      <p class="font-semibold text-slate-800">All caught up!</p>
+      <p class="text-sm mt-1">No pending requests for {{ branch }} · Year {{ year }}.</p>
+    </div>
     {% endfor %}
 
     {% else %}
-    <p class="text-center font-semibold text-gray-600">
-      Please select Branch and Year
-    </p>
+    <div class="empty-state">
+      <div class="h-12 w-12 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mb-3">
+        <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"/></svg>
+      </div>
+      <p class="font-semibold text-slate-800">Select a branch and year</p>
+      <p class="text-sm mt-1">Use the filters above or click a class in “Waiting for review”.</p>
+    </div>
     {% endif %}
-
+    </div>
   </section>
 
-  <!-- ================= STUDENTS STATUS SECTION ================= -->
-  <div id="studentsStatusSection" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
-    <div
-      class="bg-white border-4 border-[#d52b1e] rounded-3xl p-6 w-full max-w-5xl overflow-y-auto max-h-[90vh] shadow-2xl relative animate-fadeIn">
-      <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b pb-4">
-        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-          <span class="w-3 h-6 bg-[#d52b1e] rounded-full inline-block"></span>
-          Students Status (Year {{ year }})
-        </h2>
-        <button type="button" onclick="hideStudentsStatus()"
-          class="text-gray-500 hover:text-gray-700 font-semibold text-sm">
-          ✕ Close
-        </button>
+  <!-- ================= STUDENTS STATUS MODAL ================= -->
+  <div id="studentsStatusSection" class="hidden modal-backdrop" onclick="if (event.target === this) hideStudentsStatus()">
+    <div class="modal-panel max-w-5xl max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-200">
+        <h2 class="modal-title">Students Status · Year {{ year }}</h2>
+        <button type="button" onclick="hideStudentsStatus()" class="btn btn-ghost btn-sm" aria-label="Close">✕</button>
       </div>
 
-      <!-- Search and Filters Bar -->
-      <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-        <div class="flex flex-1 w-full md:w-auto gap-2">
-          <input type="text" id="statusSearchInput" oninput="debounceSearch()" placeholder="Search Reg No or Name..."
-            class="w-full md:w-64 border rounded-full px-4 py-2 focus:outline-none focus:border-[#d52b1e] text-sm">
-        </div>
-        <div class="flex flex-wrap gap-3 w-full md:w-auto justify-end">
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-semibold text-gray-500 uppercase">Branch:</span>
-            <select id="statusBranchFilter" onchange="fetchStudentsStatus(1)"
-              class="border rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#d52b1e]">
-              <option value="">All Departments</option>
-              {% for b in branches %}
-              <option value="{{ b }}" {% if branch == b %}selected{% endif %}>{{ b }}</option>
-              {% endfor %}
-            </select>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-semibold text-gray-500 uppercase">Status:</span>
-            <select id="statusTypeFilter" onchange="fetchStudentsStatus(1)"
-              class="border rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-[#d52b1e]">
-              <option value="All">All Status</option>
-              <option value="Completed">Completed</option>
-              <option value="Pending">Pending</option>
-              <option value="Incomplete">Incomplete</option>
-            </select>
-          </div>
+      <div class="px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100">
+        <input type="search" id="statusSearchInput" oninput="debounceSearch()" placeholder="Search reg no or name…" class="input md:w-72">
+        <div class="flex flex-wrap gap-3">
+          <select id="statusBranchFilter" onchange="fetchStudentsStatus(1)" class="select w-auto" aria-label="Branch">
+            <option value="">All departments</option>
+            {% for b in branches %}
+            <option value="{{ b }}" {% if branch == b %}selected{% endif %}>{{ b }}</option>
+            {% endfor %}
+          </select>
+          <select id="statusTypeFilter" onchange="fetchStudentsStatus(1)" class="select w-auto" aria-label="Status">
+            <option value="All">All status</option>
+            <option value="Completed">Completed</option>
+            <option value="Pending">Pending</option>
+            <option value="Incomplete">Incomplete</option>
+          </select>
         </div>
       </div>
 
-      <!-- Table Container -->
-      <div class="overflow-x-auto rounded-xl border border-gray-200">
-        <table class="min-w-full divide-y divide-gray-200 text-sm">
-          <thead class="bg-gray-50 font-semibold text-gray-700">
-            <tr>
-              <th class="px-6 py-3 text-left">Register Number</th>
-              <th class="px-6 py-3 text-left">Student Name</th>
-              <th class="px-6 py-3 text-left">Department</th>
-              <th class="px-6 py-3 text-left">Current Semester</th>
-              <th class="px-6 py-3 text-left">No Due Status</th>
-              <th class="px-6 py-3 text-left">Completed Time</th>
-            </tr>
-          </thead>
-          <tbody id="studentsStatusTableBody" class="divide-y divide-gray-100 bg-white">
-            <!-- Populated via AJAX -->
-          </tbody>
-        </table>
+      <div class="flex-1 overflow-y-auto px-6 py-4">
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Register Number</th>
+                <th>Student Name</th>
+                <th>Department</th>
+                <th>Semester</th>
+                <th>No Due Status</th>
+                <th>Completed Time</th>
+              </tr>
+            </thead>
+            <tbody id="studentsStatusTableBody">
+              <!-- Populated via AJAX -->
+            </tbody>
+          </table>
+        </div>
+
+        <div id="statusLoading" class="hidden py-10 text-center">
+          <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-brand-600 border-t-transparent"></div>
+          <p class="text-sm text-slate-500 mt-2 font-medium">Loading students…</p>
+        </div>
+
+        <div id="statusEmpty" class="hidden empty-state">
+          <p class="font-medium">No students match the current filters.</p>
+        </div>
       </div>
 
-      <!-- Loading State -->
-      <div id="statusLoading" class="hidden py-8 text-center">
-        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[#d52b1e] border-t-transparent">
+      <div id="statusPagination" class="flex justify-between items-center px-6 py-4 border-t border-slate-200">
+        <div class="text-xs text-slate-500 font-medium">
+          Showing <span id="showingCount" class="font-bold text-slate-800">-</span> of <span id="totalCount" class="font-bold text-slate-800">-</span> students
         </div>
-        <p class="text-sm text-gray-500 mt-2 font-medium">Fetching student list...</p>
-      </div>
-
-      <!-- Empty State -->
-      <div id="statusEmpty" class="hidden py-8 text-center text-gray-500 font-semibold">
-        No students found matching current filters.
-      </div>
-
-      <!-- Pagination -->
-      <div id="statusPagination" class="flex justify-between items-center mt-6 border-t pt-4">
-        <div class="text-xs text-gray-500 font-medium">
-          Showing <span id="showingCount" class="font-bold text-gray-800">-</span> of <span id="totalCount"
-            class="font-bold text-gray-800">-</span> students
-        </div>
-        <div class="flex gap-2" id="paginationControls">
-          <!-- Buttons injected by JS -->
-        </div>
+        <div class="flex gap-2" id="paginationControls"></div>
       </div>
     </div>
   </div>
 
 </main>
 
+<!-- ================= REVIEW (VERIFY & APPROVE) MODAL ================= -->
+<div id="reviewModal" class="hidden modal-backdrop"
+  onclick="if (event.target === this) closeReview()">
+  <div class="modal-panel max-w-5xl max-h-[95vh] flex flex-col overflow-hidden">
+
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h3 class="modal-title">Verify Hostel Fee Receipt</h3>
+      <button type="button" onclick="closeReview()" class="btn btn-ghost btn-sm"
+        aria-label="Close">✕</button>
+    </div>
+
+    <div class="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-3 gap-5 p-5">
+      <!-- Receipt preview -->
+      <div class="md:col-span-2 bg-gray-100 rounded-xl flex flex-col items-center justify-center min-h-[40vh] relative">
+        <img id="reviewImg" alt="Hostel fee receipt"
+          class="hidden max-h-[65vh] w-auto max-w-full object-contain rounded-lg cursor-zoom-in"
+          onclick="window.open(this.src, '_blank', 'noopener')">
+        <iframe id="reviewPdf" title="Hostel fee receipt (PDF)" class="hidden w-full h-[65vh] rounded-lg bg-white"></iframe>
+        <div id="reviewNoReceipt" class="hidden text-center p-6">
+          <p class="text-4xl mb-2">🧾</p>
+          <p id="reviewNoReceiptText" class="font-semibold text-gray-600"></p>
+        </div>
+        <p id="reviewLoading" class="hidden absolute text-sm text-gray-500">Loading receipt…</p>
+      </div>
+
+      <!-- Student details -->
+      <div class="text-sm space-y-3">
+        <div>
+          <p class="text-gray-500 text-xs">Name</p>
+          <p id="reviewName" class="font-semibold text-gray-900"></p>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <p class="text-gray-500 text-xs">Register Number</p>
+            <p id="reviewReg" class="font-semibold text-gray-900"></p>
+          </div>
+          <div>
+            <p class="text-gray-500 text-xs">Semester</p>
+            <p id="reviewSem" class="font-semibold text-gray-900"></p>
+          </div>
+        </div>
+        <div>
+          <p class="text-gray-500 text-xs">SBI Reference Number</p>
+          <div class="flex items-center gap-2">
+            <p id="reviewRef" class="font-mono font-bold text-base text-gray-900 break-all"></p>
+            <button type="button" id="copyRefBtn" onclick="copyRef()"
+              class="text-xs text-blue-600 hover:underline shrink-0">Copy</button>
+          </div>
+        </div>
+        <div>
+          <p class="text-gray-500 text-xs">Attempt</p>
+          <p id="reviewAttempt" class="font-semibold text-gray-900"></p>
+        </div>
+
+        <div id="reviewChecklist" class="bg-blue-50 border border-blue-100 text-blue-900 rounded-xl p-3 text-xs">
+          <p class="font-semibold mb-1">Before approving, check that:</p>
+          <ul class="list-disc list-inside space-y-0.5">
+            <li>the SBI reference number matches the receipt</li>
+            <li>the name and fee amount are correct</li>
+            <li>the receipt is clear and readable</li>
+          </ul>
+        </div>
+
+        <a id="reviewOpenLink" href="#" target="_blank" rel="noopener"
+          class="hidden inline-block text-blue-600 hover:underline font-semibold text-sm">Open receipt in new tab ↗</a>
+      </div>
+    </div>
+
+    <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+      <button type="button" onclick="closeReview()" class="btn btn-secondary">
+        Cancel
+      </button>
+      <button type="button" onclick="rejectFromReview()" class="btn btn-outline-danger">
+        Reject
+      </button>
+      <form method="POST" action="{% url 'bulk_approve' %}" onsubmit="return submitApprove(this, 1)">
+        {% csrf_token %}
+        <input type="hidden" name="request_ids" id="reviewReqId">
+        <button class="btn btn-success w-full px-8">
+          Approve
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ================= BULK APPROVE CONFIRM MODAL ================= -->
+<div id="bulkApproveModal" class="hidden modal-backdrop"
+  onclick="if (event.target === this) closeBulkApprove()">
+  <form method="POST" action="{% url 'bulk_approve' %}" id="bulkApproveForm"
+    onsubmit="return submitApprove(this, selectedRequestIds().length)"
+    class="modal-panel max-w-sm p-6">
+    {% csrf_token %}
+    <div id="bulkApproveIds"></div>
+    <h3 class="modal-title mb-1">
+      Approve <span id="bulkApproveCount">0</span> student(s)?
+    </h3>
+    <p class="text-sm text-slate-500 mb-5">
+      Make sure you have checked each student's receipt before approving.
+    </p>
+    <button class="btn btn-success w-full">
+      Yes, Approve
+    </button>
+    <button type="button" onclick="closeBulkApprove()" class="btn btn-ghost w-full mt-2">
+      Cancel
+    </button>
+  </form>
+</div>
+
 <!-- ================= REJECT MODAL ================= -->
-<div id="rejectModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+<div id="rejectModal" class="hidden modal-backdrop"
+  onclick="if (event.target === this) closeReject()">
 
   <form method="POST" action="{% url 'reject_request' %}" onsubmit="disableSubmitButtons(this)"
-    class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm">
+    class="modal-panel max-w-md p-6">
 
     {% csrf_token %}
     <input type="hidden" name="req_id" id="rejectReqId">
 
-    <h3 class="text-center font-bold text-lg mb-4">
-      Enter the reason to reject
-    </h3>
+    <h3 class="modal-title">Reject request</h3>
+    <p id="rejectWho" class="text-sm text-slate-500 mt-1 mb-4"></p>
 
-    <textarea name="reason" required class="w-full border rounded-xl p-3 mb-4" rows="3"></textarea>
+    <p id="rejectFinalWarn" class="hidden alert alert-warning text-xs mb-3">
+      This is the student's final attempt. Rejecting starts a 24-hour cooldown before they can request again.
+    </p>
+    <p id="rejectRetryInfo" class="hidden alert alert-info text-xs mb-3">
+      The student can correct the details and submit once more.
+    </p>
 
-    <button class="bg-[#d52b1e] text-white w-full py-2 rounded-full font-semibold">
-      Submit
+    <p class="label">Reason</p>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <button type="button" onclick="setRejectReason(this)" class="reason-chip badge badge-neutral cursor-pointer hover:ring-brand-600">Receipt is unclear / unreadable</button>
+      <button type="button" onclick="setRejectReason(this)" class="reason-chip badge badge-neutral cursor-pointer hover:ring-brand-600">SBI reference number does not match the receipt</button>
+      <button type="button" onclick="setRejectReason(this)" class="reason-chip badge badge-neutral cursor-pointer hover:ring-brand-600">Fee amount is incorrect</button>
+      <button type="button" onclick="setRejectReason(this)" class="reason-chip badge badge-neutral cursor-pointer hover:ring-brand-600">Wrong document uploaded</button>
+    </div>
+
+    <textarea name="reason" id="rejectReason" required maxlength="300" placeholder="Type or pick a reason above"
+      class="input mb-4" rows="3"></textarea>
+
+    <button class="btn btn-danger w-full">
+      Reject Request
     </button>
 
-    <button type="button" onclick="closeReject()" class="w-full mt-2 text-center">
+    <button type="button" onclick="closeReject()" class="btn btn-ghost w-full mt-2">
       Cancel
     </button>
 
   </form>
 </div>
 
+<!-- Live alert for a new request from a branch/year other than the one being viewed -->
+<div id="newReqToast" role="status" aria-live="polite"
+  class="hidden fixed top-20 right-4 z-[60] max-w-xs card shadow-xl p-4 border-l-4 border-l-brand-600">
+  <div class="flex items-start gap-3">
+    <span class="text-xl">🔔</span>
+    <div class="flex-1 min-w-0">
+      <p class="font-semibold text-sm text-slate-900">New hostel request</p>
+      <p id="newReqToastText" class="text-sm text-gray-600 mt-0.5 break-words"></p>
+      <a id="newReqToastLink" href="#" class="inline-block mt-2 text-sm font-semibold text-brand-700 hover:underline">View →</a>
+    </div>
+    <button type="button" onclick="hideNewReqToast()" class="text-gray-400 hover:text-gray-700 font-bold" aria-label="Dismiss">✕</button>
+  </div>
+</div>
+
+<!-- Toast shown after approve/reject (message carried across the redirect) -->
+<div id="hostelToast"
+  class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-gray-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-lg"></div>
+
 <script>
-  function openReject(id) {
-    document.getElementById("rejectReqId").value = id;
-    document.getElementById("rejectModal").classList.remove("hidden");
+  // ── Card helpers ─────────────────────────────
+  function cardOf(el) { return el.closest(".request-card"); }
+
+  let currentCard = null;
+
+  // ── Verify & Approve (review modal) ──────────
+  function openReview(btn) {
+    const card = cardOf(btn);
+    if (!card) return;
+    currentCard = card;
+    const d = card.dataset;
+
+    document.getElementById("reviewReqId").value = d.id;
+    document.getElementById("reviewName").textContent = d.displayName || "—";
+    document.getElementById("reviewReg").textContent = d.reg;
+    document.getElementById("reviewSem").textContent = d.sem || "—";
+    document.getElementById("reviewRef").textContent = d.ref || "—";
+    document.getElementById("copyRefBtn").classList.toggle("hidden", !d.ref || d.is75 === "1");
+
+    const finalAttempt = Number(d.attempts) >= 2;
+    const attemptEl = document.getElementById("reviewAttempt");
+    attemptEl.textContent = finalAttempt ? "2 of 2 (final attempt)" : "1 of 2";
+    attemptEl.className = "font-semibold " + (finalAttempt ? "text-orange-700" : "text-gray-900");
+
+    const img = document.getElementById("reviewImg");
+    const pdf = document.getElementById("reviewPdf");
+    const none = document.getElementById("reviewNoReceipt");
+    const link = document.getElementById("reviewOpenLink");
+    const loading = document.getElementById("reviewLoading");
+    [img, pdf, none, link, loading].forEach(el => el.classList.add("hidden"));
+    img.removeAttribute("src");
+    pdf.removeAttribute("src");
+
+    document.getElementById("reviewChecklist").classList.toggle("hidden", !d.receipt);
+
+    if (d.receipt) {
+      link.href = d.receipt;
+      link.classList.remove("hidden");
+      loading.classList.remove("hidden");
+      if (d.kind === "pdf") {
+        pdf.onload = () => loading.classList.add("hidden");
+        pdf.src = d.receipt;
+        pdf.classList.remove("hidden");
+      } else {
+        img.onload = () => loading.classList.add("hidden");
+        img.onerror = () => {
+          loading.classList.add("hidden");
+          img.classList.add("hidden");
+          document.getElementById("reviewNoReceiptText").textContent =
+            "Could not load the receipt here. Use “Open receipt in new tab”.";
+          none.classList.remove("hidden");
+        };
+        img.src = d.receipt;
+        img.classList.remove("hidden");
+      }
+    } else {
+      document.getElementById("reviewNoReceiptText").textContent =
+        d.is75 === "1" ? "No receipt required (7.5 Scheme student)." : "No receipt was uploaded.";
+      none.classList.remove("hidden");
+    }
+
+    document.getElementById("reviewModal").classList.remove("hidden");
   }
+
+  function closeReview() {
+    document.getElementById("reviewModal").classList.add("hidden");
+    document.getElementById("reviewPdf").removeAttribute("src");
+  }
+
+  function rejectFromReview() {
+    const card = currentCard;
+    closeReview();
+    if (card) openReject(card);
+  }
+
+  function copyRef() {
+    const text = document.getElementById("reviewRef").textContent;
+    const btn = document.getElementById("copyRefBtn");
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = "Copied!";
+        setTimeout(() => btn.textContent = "Copy", 1500);
+      }).catch(() => {});
+    }
+  }
+
+  // ── Reject ───────────────────────────────────
+  function openReject(el) {
+    const card = el.classList && el.classList.contains("request-card") ? el : cardOf(el);
+    if (!card) return;
+    const d = card.dataset;
+    document.getElementById("rejectReqId").value = d.id;
+    document.getElementById("rejectWho").textContent = `${d.displayName || ""} (${d.reg})`;
+    const finalAttempt = Number(d.attempts) >= 2;
+    document.getElementById("rejectFinalWarn").classList.toggle("hidden", !finalAttempt);
+    document.getElementById("rejectRetryInfo").classList.toggle("hidden", finalAttempt);
+    document.getElementById("rejectReason").value = "";
+    document.querySelectorAll(".reason-chip").forEach(c => c.classList.remove("ring-brand-600", "text-brand-700"));
+    document.getElementById("rejectModal").classList.remove("hidden");
+    document.getElementById("rejectReason").focus();
+  }
+
   function closeReject() {
     document.getElementById("rejectModal").classList.add("hidden");
   }
 
-  function searchByRegNo() {
-    let input = document.getElementById("regSearch").value.toLowerCase();
-    let cards = document.querySelectorAll(".request-card");
-    let noResult = document.getElementById("noResult");
+  function setRejectReason(chip) {
+    document.querySelectorAll(".reason-chip").forEach(c => c.classList.remove("ring-brand-600", "text-brand-700"));
+    chip.classList.add("ring-brand-600", "text-brand-700");
+    document.getElementById("rejectReason").value = chip.textContent.trim();
+  }
 
+  // ── Selection & bulk approve ─────────────────
+  function visibleSelectBoxes() {
+    return Array.from(document.querySelectorAll(".request-card"))
+      .filter(card => card.style.display !== "none")
+      .map(card => card.querySelector(".req-select"))
+      .filter(Boolean);
+  }
+
+  function selectedRequestIds() {
+    return visibleSelectBoxes().filter(cb => cb.checked).map(cb => cb.value);
+  }
+
+  function toggleSelectAllRequests(checked) {
+    visibleSelectBoxes().forEach(cb => { cb.checked = checked; });
+    updateSelection();
+  }
+
+  function updateSelection() {
+    const boxes = visibleSelectBoxes();
+    const selected = boxes.filter(cb => cb.checked).length;
+    const countEl = document.getElementById("selectedCount");
+    const btn = document.getElementById("approveSelectedBtn");
+    const all = document.getElementById("selectAllRequests");
+    if (countEl) countEl.textContent = `${selected} selected`;
+    if (btn) btn.disabled = selected === 0;
+    if (all) {
+      all.checked = boxes.length > 0 && selected === boxes.length;
+      all.indeterminate = selected > 0 && selected < boxes.length;
+    }
+  }
+
+  function openBulkApprove() {
+    const ids = selectedRequestIds();
+    if (ids.length === 0) return;
+    const container = document.getElementById("bulkApproveIds");
+    container.innerHTML = "";
+    ids.forEach(id => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "request_ids";
+      input.value = id;
+      container.appendChild(input);
+    });
+    document.getElementById("bulkApproveCount").textContent = ids.length;
+    document.getElementById("bulkApproveModal").classList.remove("hidden");
+  }
+
+  function closeBulkApprove() {
+    document.getElementById("bulkApproveModal").classList.add("hidden");
+  }
+
+  // ── Toast across the post-redirect reload ────
+  function submitApprove(form, count) {
+    try { sessionStorage.setItem("hostelToast", `✅ Approved ${count} request${count === 1 ? "" : "s"}`); } catch (e) {}
+    disableSubmitButtons(form);
+    return true;
+  }
+
+  function showHostelToast() {
+    let msg = null;
+    try { msg = sessionStorage.getItem("hostelToast"); sessionStorage.removeItem("hostelToast"); } catch (e) {}
+    if (!msg) return;
+    const t = document.getElementById("hostelToast");
+    t.textContent = msg;
+    t.classList.remove("hidden");
+    setTimeout(() => t.classList.add("hidden"), 3000);
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    showHostelToast();
+    const rejectForm = document.querySelector("#rejectModal form");
+    if (rejectForm) {
+      rejectForm.addEventListener("submit", () => {
+        try { sessionStorage.setItem("hostelToast", "❌ Request rejected"); } catch (e) {}
+      });
+    }
+  });
+
+  // Esc closes whichever modal is open
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    closeReview();
+    closeReject();
+    closeBulkApprove();
+  });
+
+  // ── Pending count in the browser tab title ──
+  const BASE_TITLE = document.title;
+  function updateTabTitle() {
+    const inbox = document.getElementById("pendingInbox");
+    const total = inbox ? Number(inbox.dataset.total || 0) : 0;
+    document.title = total > 0 ? `(${total}) ${BASE_TITLE}` : BASE_TITLE;
+  }
+  document.addEventListener("DOMContentLoaded", updateTabTitle);
+
+  // ── Alert for requests from other branches / years ──
+  const VIEW_BRANCH = "{{ branch|default:''|escapejs }}";
+  const VIEW_YEAR = "{{ year|default:''|escapejs }}";
+  let newReqToastTimer = null;
+
+  function hideNewReqToast() {
+    document.getElementById("newReqToast").classList.add("hidden");
+  }
+
+  function showNewRequestToast(data) {
+    if (!data || !data.branch) return;
+    const sameView = data.branch === VIEW_BRANCH && String(data.year) === VIEW_YEAR;
+    if (sameView) return;   // the list itself refreshes for the current view
+    const who = data.name ? `${data.name} (${data.reg_no || ""})` : (data.reg_no || "A student");
+    document.getElementById("newReqToastText").textContent = `${who} — ${data.branch} · Year ${data.year}`;
+    document.getElementById("newReqToastLink").href =
+      `?branch=${encodeURIComponent(data.branch)}&year=${encodeURIComponent(data.year)}`;
+    document.getElementById("newReqToast").classList.remove("hidden");
+    clearTimeout(newReqToastTimer);
+    newReqToastTimer = setTimeout(hideNewReqToast, 8000);
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    if (window.PortalWS) PortalWS.on("new_request_submitted", showNewRequestToast);
+  });
+
+  // After a live soft-reload replaces <main>, reset the selection bar and title.
+  window.__reinitPage = function () { updateSelection(); updateTabTitle(); };
+</script>
+
+<script>
+
+  function searchByRegNo() {
+    const input = document.getElementById("regSearch").value.toLowerCase().trim();
+    const cards = document.querySelectorAll(".request-card");
+    const noResult = document.getElementById("noResult");
     let found = false;
 
     cards.forEach(card => {
-      let regNo = card.getAttribute("data-reg").toLowerCase();
-
-      if (regNo.includes(input)) {
-        card.style.display = "flex";
+      const regNo = (card.dataset.reg || "").toLowerCase();
+      const name = card.dataset.name || "";
+      if (regNo.includes(input) || name.includes(input)) {
+        card.style.display = "";
         found = true;
       } else {
         card.style.display = "none";
@@ -338,11 +766,8 @@
     });
 
     // Show message only when no match AND something is typed
-    if (input !== "" && !found) {
-      noResult.classList.remove("hidden");
-    } else {
-      noResult.classList.add("hidden");
-    }
+    noResult.classList.toggle("hidden", !(input !== "" && !found));
+    updateSelection();
   }
 
   let searchTimeout = null;
@@ -417,20 +842,20 @@
     students.forEach(s => {
       let statusBadge = '';
       if (s.status === 'Completed') {
-        statusBadge = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">Completed</span>';
+        statusBadge = '<span class="badge badge-success">Completed</span>';
       } else if (s.status === 'Pending') {
-        statusBadge = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">Pending</span>';
+        statusBadge = '<span class="badge badge-warning">Pending</span>';
       } else {
-        statusBadge = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">Incomplete</span>';
+        statusBadge = '<span class="badge badge-danger">Incomplete</span>';
       }
 
       const row = `
-        <tr class="hover:bg-gray-50 transition border-b" data-reg-no="${s.reg_no}" data-student-id="${s.student_id || ''}" id="status-row-${s.reg_no}">
-          <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${s.reg_no}</td>
-          <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-700">${s.name} ${s.is_75_scheme ? '<span class="inline-block bg-purple-600 text-white text-xs font-bold px-2 py-0.5 rounded-full ml-1 shadow-sm">7.5</span>' : ''}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.branch}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-gray-500">${s.semester}</td>
-          <td class="px-6 py-4 whitespace-nowrap" id="status-badge-${s.reg_no}">${statusBadge}</td>
+        <tr data-reg-no="${s.reg_no}" data-student-id="${s.student_id || ''}" id="status-row-${s.reg_no}">
+          <td class="whitespace-nowrap font-medium text-slate-900">${s.reg_no}</td>
+          <td class="whitespace-nowrap">${s.name} ${s.is_75_scheme ? '<span class="badge badge-purple ml-1">7.5</span>' : ''}</td>
+          <td class="whitespace-nowrap text-slate-500">${s.branch}</td>
+          <td class="whitespace-nowrap text-slate-500">${s.semester}</td>
+          <td class="whitespace-nowrap" id="status-badge-${s.reg_no}">${statusBadge}</td>
           <td class="px-6 py-4 whitespace-nowrap text-gray-500" id="status-time-${s.reg_no}">${s.completed_time}</td>
         </tr>
       `;

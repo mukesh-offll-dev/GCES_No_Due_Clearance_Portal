@@ -92,7 +92,7 @@ class PortalConsumer(AsyncJsonWebsocketConsumer):
         elif self.role == "DEPARTMENT":
             await self._add_group("office_DEPARTMENT")
             if self.department:
-                await self._add_group(f"office_DEPARTMENT_{self.department}")
+                await self._add_group(f"office_DEPARTMENT_{str(self.department).upper()}")
             await self._add_group("offices_all")
 
         await self.accept()

@@ -7,7 +7,8 @@ from .views import (
     import_students_excel, office_student_status_api, office_report_preview_api,
     office_report_pdf_view, faculty_report_pdf_view, faculty_promotion_page, promote_students, remove_sem8_students,
     toggle_no_due_access, update_75_scheme, faculty_departments_api, add_department_view,
-    edit_department_view, toggle_department_view, delete_department_view
+    edit_department_view, toggle_department_view, delete_department_view,
+    student_profile_setup, bulk_add_students
 )
 
 from django.conf.urls.static import static
@@ -26,6 +27,7 @@ urlpatterns = [
 
     # Student
     path("student/login/",student_login, name="student_login"),
+    path("student/profile/setup/", student_profile_setup, name="student_profile_setup"),
     path("student/dashboard/",student_dashboard, name="student_dashboard"),
     path("student/hostel/send/",send_hostel_request, name="send_hostel"),
     path("library/", library_dashboard, name="library_dashboard"),
@@ -38,6 +40,7 @@ urlpatterns = [
     
     path("faculty/", faculty_dashboard, name="faculty_dashboard"),
     path("faculty/add-student/", add_student, name="add_student"),
+    path("faculty/bulk-add/", bulk_add_students, name="bulk_add_students"),
     path("faculty/delete/", delete_students, name="delete_students"),
     path("faculty/edit/", edit_student, name="edit_student"),
     path("faculty/template/", download_student_template, name="download_student_template"),

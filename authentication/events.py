@@ -130,13 +130,16 @@ def notify_office(office_name, event_name, data=None, department=None):
         **(data or {}),
     }
     
-    # Broadcast to general office group (e.g. office_HOSTEL, office_LIBRARY, office_COLLEGE, office_DEPARTMENT)
-    _broadcast_to_group(f"office_{office_upper}", payload)
-    
-    # If specific department (e.g. office_DEPARTMENT_CSE)
+    # Department-scoped event (e.g. a CSE student's request) → ONLY that
+    # department's group, so other departments never receive the student's
+    # details (name, reg no) over their sockets.
     if department and office_upper == "DEPARTMENT":
         dept_upper = str(department).upper()
         _broadcast_to_group(f"office_DEPARTMENT_{dept_upper}", payload)
+        return
+
+    # Broadcast to general office group (e.g. office_HOSTEL, office_LIBRARY, office_COLLEGE, office_DEPARTMENT)
+    _broadcast_to_group(f"office_{office_upper}", payload)
 
 
 def notify_faculty(event_name, data=None):

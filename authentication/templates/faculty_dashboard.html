@@ -3,172 +3,157 @@
 
 {% block content %}
 
-<main class="max-w-6xl mx-auto px-4 sm:p-6">
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
 
-  <!-- Navigation Tabs -->
-  <div class="flex gap-4 border-b-2 border-gray-200 mb-6 pb-px">
-    <a href="{% url 'faculty_dashboard' %}" class="py-2.5 px-4 font-bold text-sm border-b-4 border-[#d52b1e] text-[#d52b1e] flex items-center gap-2">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-      Student Directory
-    </a>
-    <a href="{% url 'faculty_promotion' %}" class="py-2.5 px-4 font-semibold text-sm text-gray-500 hover:text-[#d52b1e] border-b-4 border-transparent hover:border-[#d52b1e]/50 transition flex items-center gap-2">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-      Student Promotion &amp; Departments
-    </a>
+  <!-- ═════════ PAGE HEADER ═════════ -->
+  <div class="page-header">
+    <div class="flex-1 min-w-[16rem]">
+      <h1 class="page-title">Student Directory</h1>
+      <p class="page-subtitle">
+        {% if branch and year %}
+          Showing <span class="font-semibold text-slate-700">{{ branch }}</span> &middot; <span class="font-semibold text-slate-700">Year {{ year }}</span> &mdash; add, edit or remove students and track their profile and No Due status.
+        {% else %}
+          Choose a branch and year to manage the student roster.
+        {% endif %}
+      </p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+      {% if branch and year %}
+      <a href="{% url 'faculty_report_pdf' %}?branch={{ branch }}&year={{ year }}"
+         target="_blank"
+         title="Generate and Download PDF Clearance Report for {{ branch }} - Year {{ year }}"
+         class="btn btn-secondary">
+        <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+        </svg>
+        Generate Report
+      </a>
+
+      <button type="button" onclick="openSchemeModal()" class="btn btn-secondary">
+        <svg class="w-4 h-4 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        7.5 Students
+      </button>
+
+      <button type="button" onclick="openBulkModal()" class="btn btn-secondary">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"></path>
+        </svg>
+        Bulk Add Students
+      </button>
+
+      <button type="button" onclick="openAddModal()" class="btn btn-primary">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path>
+        </svg>
+        Add Student
+      </button>
+      {% else %}
+      <button type="button" disabled
+        title="Please select Branch and Year to generate report"
+        class="btn btn-secondary">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+        </svg>
+        Generate Report
+      </button>
+      {% endif %}
+    </div>
   </div>
 
-<!-- FILTER -->
-<form method="GET"
-  class="flex flex-wrap gap-3 sm:gap-6 border-2 border-[#d52b1e] p-4 sm:p-6 rounded-2xl sm:rounded-3xl mb-6 items-center bg-white shadow-sm">
+  <!-- ═════════ FILTER ═════════ -->
+  <form method="GET" class="card card-body mb-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,20rem)_minmax(0,12rem)_1fr] gap-4 items-end">
+      <div>
+        <label class="label" for="filter_branch">Branch</label>
+        <select name="branch" id="filter_branch" onchange="this.form.submit()" class="select">
+          <option value="">Select Branch</option>
+          {% for d in global_active_departments %}
+          <option value="{{ d.code }}" {% if branch == d.code %}selected{% endif %}>{{ d.code }} - {{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-  <select name="branch" onchange="this.form.submit()"
-    class="border rounded-full px-4 py-2 w-full sm:w-48 text-sm">
-    <option value="">Select Branch</option>
-    {% for d in global_active_departments %}
-    <option value="{{ d.code }}" {% if branch == d.code %}selected{% endif %}>{{ d.code }} - {{ d.name }}</option>
-    {% endfor %}
-  </select>
+      <div>
+        <label class="label" for="filter_year">Year</label>
+        <select name="year" id="filter_year" onchange="this.form.submit()" class="select">
+          <option value="">Select Year</option>
+          <option value="1" {% if year == "1" %}selected{% endif %}>1</option>
+          <option value="2" {% if year == "2" %}selected{% endif %}>2</option>
+          <option value="3" {% if year == "3" %}selected{% endif %}>3</option>
+          <option value="4" {% if year == "4" %}selected{% endif %}>4</option>
+        </select>
+      </div>
 
-  <select name="year" onchange="this.form.submit()"
-    class="border rounded-full px-4 py-2 w-full sm:w-36">
-    <option value="">Select Year</option>
-    <option value="1" {% if year == "1" %}selected{% endif %}>1</option>
-    <option value="2" {% if year == "2" %}selected{% endif %}>2</option>
-    <option value="3" {% if year == "3" %}selected{% endif %}>3</option>
-    <option value="4" {% if year == "4" %}selected{% endif %}>4</option>
-  </select>
-
-  {% if branch and year %}
-  <a href="{% url 'faculty_report_pdf' %}?branch={{ branch }}&year={{ year }}"
-     target="_blank"
-     title="Generate and Download PDF Clearance Report for {{ branch }} - Year {{ year }}"
-     class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-full font-semibold text-sm transition flex items-center gap-2 shadow-sm active:scale-95">
-    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-    </svg>
-    Generate Report
-  </a>
-
-  <button type="button" onclick="openSchemeModal()"
-    class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full font-semibold text-sm transition flex items-center gap-2 shadow-sm">
-    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-    </svg>
-    7.5 Students
-  </button>
-  {% else %}
-  <button type="button" disabled
-    title="Please select Branch and Year to generate report"
-    class="bg-gray-200 text-gray-400 cursor-not-allowed px-5 py-2 rounded-full font-semibold text-sm flex items-center gap-2 shadow-sm opacity-60">
-    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-    </svg>
-    Generate Report
-  </button>
-  {% endif %}
-
-  <span class="sm:ml-auto bg-[#d52b1e] text-white px-4 sm:px-6 py-2 rounded-full font-semibold text-sm">
-    Students Count – <span id="studentCountSpan">{{ count }}</span>
-  </span>
-</form>
+      <p class="help-text sm:col-span-2 lg:col-span-1 lg:mb-3">The list updates as soon as you change a filter.</p>
+    </div>
+  </form>
 
 {% if add_error %}
-<p id="addErrorMsg"
-   class="text-red-600 font-semibold text-center mb-4">
+<div id="addErrorMsg" class="alert alert-error mb-4 font-medium">
   {{ add_error }}
-</p>
+</div>
 {% endif %}
 
 {% if add_success %}
-<p id="addSuccessMsg"
-   class="text-green-600 font-semibold text-center mb-4">
+<div id="addSuccessMsg" class="alert alert-success mb-4 font-medium">
   {{ add_success }}
-</p>
+</div>
 {% endif %}
 
-  
 {% for message in messages %}
-<div class="relative px-6 py-3 rounded-xl font-semibold
+<div class="alert relative mb-4 pr-10
   {% if message.tags == 'success' %}
-    bg-green-100 text-green-800
+    alert-success
   {% elif message.tags == 'warning' %}
-    bg-yellow-100 text-yellow-800
+    alert-warning
   {% elif message.tags == 'error' %}
-    bg-red-100 text-red-800
+    alert-error
+  {% else %}
+    alert-info
   {% endif %}
 ">
   <button onclick="this.parentElement.remove()"
-    class="absolute top-2 right-3 font-bold">✖</button>
+    class="absolute top-2.5 right-3 text-current opacity-60 hover:opacity-100 font-bold" aria-label="Dismiss">✕</button>
 
-  <pre class="whitespace-pre-wrap">{{ message }}</pre>
+  <pre class="whitespace-pre-wrap font-sans font-medium">{{ message }}</pre>
 </div>
 {% endfor %}
 
-  
-{% if branch and year %}
-<!-- Bottom Row : Download + Upload -->
-<div class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-3xl p-4 sm:p-5 flex flex-col gap-4 mt-6 bg-white shadow-sm mb-6">
-
-  <p class="font-bold text-gray-800 text-base">Bulk Students Add</p>
-
-  <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-    <!-- LEFT : Download -->
-    <div class="flex items-center gap-3">
-      <span class="font-semibold text-gray-700">Excel Template</span>
-      <a href="{% url 'download_student_template' %}"
-         onclick="return confirm('Do you want to download the Excel template?')"
-         class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full font-semibold transition">
-        Download
-      </a>
+  <!-- ═════════ SUMMARY STATS ═════════ -->
+  {% if branch and year %}
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <div class="stat-card">
+      <div class="stat-icon bg-brand-50 text-brand-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>
+      </div>
+      <div>
+        <p class="stat-label">Total Students</p>
+        <p class="stat-value"><span id="studentCountSpan">{{ count }}</span></p>
+      </div>
     </div>
-
-    <!-- RIGHT : Upload -->
-    <form id="excelUploadForm"
-          method="POST"
-          action="{% url 'import_students_excel' %}"
-          enctype="multipart/form-data"
-          class="flex flex-wrap items-center gap-3 w-full md:w-auto">
-      {% csrf_token %}
-      <input type="hidden" name="branch" value="{{ branch }}">
-      <input type="hidden" id="excelYearHidden" name="year" value="{{ year }}">
-
-      <input type="file"
-             name="excel"
-             accept=".xlsx, .xls"
-             required
-             id="excelFileInput"
-             class="border-2 border-gray-300 rounded-lg px-3 py-1.5
-                    text-sm file:mr-3 file:px-4 file:py-1
-                    file:border-0 file:rounded-full
-                    file:bg-gray-200 file:font-semibold">
-
-      <button id="importBtn" type="submit"
-              class="bg-blue-600 text-white px-6 py-2 rounded-full font-semibold flex items-center gap-2 transition">
-        <span id="importText">Import</span>
-        <svg id="importSpinner" class="hidden animate-spin h-5 w-5 text-white"
-             xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-        </svg>
-      </button>
-    </form>
-  </div>
-
- 
-
-  <!-- Excel row-level validation errors appear here -->
-  <div id="excelErrors" class="hidden">
-    <div class="bg-red-50 border border-red-300 rounded-xl px-4 py-3 text-sm text-red-800">
-      <p class="font-semibold mb-1">Excel Validation Errors — Please fix and re-upload:</p>
-      <ul id="excelErrorList" class="list-disc list-inside space-y-1"></ul>
+    <div class="stat-card">
+      <div class="stat-icon bg-emerald-50 text-emerald-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <div>
+        <p class="stat-label">Profile Completed</p>
+        <p class="stat-value" id="profileCompletedCount">&ndash;</p>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon bg-amber-50 text-amber-600">
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <div>
+        <p class="stat-label">Profile Pending</p>
+        <p class="stat-value" id="profilePendingCount">&ndash;</p>
+      </div>
     </div>
   </div>
-
-</div>
-{% endif %}
-
-
-
+  {% endif %}
 
 <!-- DELETE FORM (wraps students) -->
 <form id="deleteForm" method="POST" action="{% url 'delete_students' %}">
@@ -176,228 +161,272 @@
 <input type="hidden" name="branch" value="{{ branch }}">
 <input type="hidden" name="year" value="{{ year }}">
 
-<!-- TOP BAR -->
-<div class="border-2 border-[#d52b1e] rounded-2xl sm:rounded-[40px] p-4 sm:p-6 mb-6 flex flex-wrap justify-between items-center gap-3 bg-white shadow-sm">
-
-  <button type="button"
-    {% if not branch or not year %}disabled{% endif %}
-    onclick="openAddModal()"
-    class="flex items-center gap-3 font-semibold
-    {% if not branch or not year %}opacity-50 cursor-not-allowed{% endif %}">
-    <span class="w-9 h-9 bg-gray-300 rounded-lg flex items-center justify-center text-xl">+</span>
-    Add Student
-  </button>
-
-  {% if branch and year %}
-  <!-- SEARCH BAR -->
-  <div class="relative w-full sm:w-72 md:w-96">
-    <input type="text"
-           id="studentSearchInput"
-           placeholder="Search by Reg No, Roll No, or Name..."
-           class="w-full border-2 border-gray-300 rounded-full px-5 py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-[#d52b1e] transition-colors duration-200">
-    <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
-         fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-    </svg>
-  </div>
-  {% endif %}
-
-<div class="flex flex-col items-end">
-  <button type="button"
-    onclick="handleDeleteClick()"
-    class="bg-[#d52b1e] text-white px-8 py-2 rounded-full font-semibold">
-    Delete
-  </button>
-
-  <!-- Error message exactly below button -->
-  <p id="deleteError"
-     class="hidden text-red-600 font-semibold text-sm mt-2">
-    Please select at least one student to delete
-  </p>
-</div>
-
-</div>
-
-
-<!-- STUDENT LIST -->
 {% if branch and year %}
-  <div id="studentList">
+<div class="card">
 
-  {% for s in students %}
- <div class="border-2 border-gray-600 bg-white rounded-[20px] p-6 mb-4 flex justify-between items-center shadow-sm student-card"  data-reg="{{ s.reg_no }}" data-roll="{{ s.roll_no }}" data-name="{{ s.name }}">
+  <!-- TOOLBAR: search + bulk selection -->
+  <div class="card-header">
+    <div class="relative w-full sm:w-80 md:w-96">
+      <input type="text"
+             id="studentSearchInput"
+             placeholder="Search by Reg No, Roll No, or Name..."
+             class="input pl-10">
+      <svg class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+           fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+      </svg>
+    </div>
 
-
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm font-medium">
-      <div>
-        <p><b>Register Number :</b> {{ s.reg_no }}</p>
-        <p class="mt-2"><b>Roll no :</b> {{ s.roll_no }}</p>
+    <div class="flex flex-col items-start sm:items-end">
+      <div class="flex items-center gap-3">
+        <label class="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer select-none">
+          <input type="checkbox" id="selectAllStudents" onchange="toggleSelectAll(this.checked)"
+            class="h-4 w-4 rounded border-slate-300 accent-brand-600 cursor-pointer">
+          Select All
+        </label>
+        <button type="button"
+          onclick="handleDeleteClick()"
+          class="btn btn-outline-danger btn-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+          Delete
+        </button>
       </div>
-      <div>
-        <p><b>Name :</b> {{ s.name }} {% if s.is_75_scheme %}<span class="inline-block bg-purple-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-full ml-1 shadow-sm">7.5</span>{% endif %}</p>
-        <p class="mt-2"><b>Date of Birth :</b> {{ s.dob }}</p>
-      </div>
-      <div>
-        <p class="mt-2"><b>Semester :</b> {{ s.semester }}</p>
-        <p class="mt-2"><b>Year :</b> {{ s.year }}</p>
-        <p class="mt-2"><b>Branch :</b> {{ s.branch }}</p>
-        <p class="mt-2"><b>Phone Number :</b> {{ s.phone }}</p>
-        <p class="mt-2">
+
+      <!-- Error message exactly below button -->
+      <p id="deleteError"
+         class="hidden error-text">
+        Please select at least one student to delete
+      </p>
+    </div>
+  </div>
+
+  <!-- STUDENT TABLE -->
+  <div class="overflow-x-auto">
+    <table class="table">
+      <thead>
+        <tr>
+          <th class="w-10"><span class="sr-only">Select</span></th>
+          <th>Register No</th>
+          <th>Name</th>
+          <th>Class</th>
+          <th>DOB / Phone</th>
+          <th>Type</th>
+          <th>Profile Status</th>
+          <th class="!text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="studentList">
+
+      {% for s in students %}
+      <tr class="student-card" data-reg="{{ s.reg_no }}" data-roll="{{ s.roll_no }}" data-name="{{ s.name }}" data-profile="{{ s.profile_status }}">
+        <td class="w-10">
+          <input type="checkbox" name="student_ids"
+            value="{{ s.id }}" class="h-4 w-4 rounded border-slate-300 accent-brand-600 cursor-pointer" aria-label="Select {{ s.reg_no }}">
+        </td>
+        <td class="whitespace-nowrap">
+          <p class="font-medium text-slate-900 tabular-nums">{{ s.reg_no }}</p>
+          <p class="text-xs text-slate-500 mt-0.5">Roll: {{ s.roll_no|default:"—" }}</p>
+        </td>
+        <td class="min-w-[10rem]">
+          <p class="font-medium text-slate-900 flex flex-wrap items-center gap-1.5">
+            {{ s.name|default:"—" }}
+            {% if s.is_75_scheme %}<span class="badge badge-purple" title="7.5% Government School Scheme">7.5</span>{% endif %}
+          </p>
+        </td>
+        <td class="whitespace-nowrap">
+          <p class="text-slate-900">Sem {{ s.semester }} &middot; Year {{ s.year }}</p>
+          <p class="text-xs text-slate-500 mt-0.5">{{ s.branch }}</p>
+        </td>
+        <td class="whitespace-nowrap">
+          <p class="tabular-nums">{{ s.dob|default:"—" }}</p>
+          <p class="text-xs text-slate-500 mt-0.5 tabular-nums">{{ s.phone|default:"—" }}</p>
+        </td>
+        <td>
           {% if s.student_type == "Day Scholar" %}
-          <span class="inline-block bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">Day Scholar</span>
+          <span class="badge badge-info">Day Scholar</span>
           {% else %}
-          <span class="inline-block bg-orange-100 text-orange-800 text-xs font-bold px-3 py-1 rounded-full">Hosteller</span>
+          <span class="badge badge-orange">Hosteller</span>
           {% endif %}
-        </p>
-      </div>
-    </div>
+        </td>
+        <td>
+          {% if s.profile_status == "Completed" %}
+          <span class="badge badge-success" title="Profile setup and password creation finished">Completed</span>
+          {% else %}
+          <span class="badge badge-warning" title="Student has not completed first-time profile setup">Pending</span>
+          {% endif %}
+        </td>
+        <td class="text-right whitespace-nowrap">
+          <div class="inline-flex items-center gap-1.5">
+            <button type="button"
+              onclick="openNoDueModal('{{ s.id }}')"
+              class="btn btn-secondary btn-sm">
+              No Due
+            </button>
 
-    
-    <div class="flex flex-wrap gap-3 items-center">
-          <button type="button"
-            onclick="openNoDueModal('{{ s.id }}')"
-            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-full text-sm font-semibold transition">
-            No Due
-          </button>
-          
-
-      <button type="button"
-        data-id="{{ s.id }}"
-        data-roll="{{ s.roll_no }}"
-        data-reg="{{ s.reg_no }}"
-        data-name="{{ s.name }}"
-        data-dob="{{ s.dob }}"
-        data-phone="{{ s.phone }}"
-        data-sem="{{ s.semester }}"
-        data-year="{{ s.year }}"
-        data-type="{{ s.student_type }}"
-        data-branch="{{ s.branch }}"
-        onclick="handleEditBtnClick(this)"
-        class="text-blue-600 font-semibold cursor-pointer">
-        Edit
-      </button>
-
-      <input type="checkbox" name="student_ids"
-        value="{{ s.id }}" class="w-6 h-6 border-2">
-    </div>
+            <button type="button"
+              data-id="{{ s.id }}"
+              data-roll="{{ s.roll_no }}"
+              data-reg="{{ s.reg_no }}"
+              data-name="{{ s.name }}"
+              data-dob="{{ s.dob }}"
+              data-phone="{{ s.phone }}"
+              data-sem="{{ s.semester }}"
+              data-year="{{ s.year }}"
+              data-type="{{ s.student_type }}"
+              data-branch="{{ s.branch }}"
+              onclick="handleEditBtnClick(this)"
+              class="btn btn-ghost btn-sm text-brand-700 hover:text-brand-800">
+              Edit
+            </button>
+          </div>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="8">
+          <div class="empty-state">
+            <svg class="h-10 w-10 text-slate-300 mb-3" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>
+            <p class="font-semibold text-slate-700">No students found</p>
+            <p class="text-sm mt-1">Use <span class="font-medium">Add Student</span> or <span class="font-medium">Bulk Add Students</span> to create the roster for {{ branch }} &middot; Year {{ year }}.</p>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </div>
-  {% empty %}
-    <p class="text-center font-semibold">No students found</p>
-  {% endfor %}
-  </div>
+</div>
 
 {% else %}
-  <p class="text-center font-semibold text-gray-600">
-    Please select <b>Branch</b> and <b>Year</b>
-  </p>
+  <div class="card empty-state">
+    <svg class="h-10 w-10 text-slate-300 mb-3" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"/></svg>
+    <p class="font-semibold text-slate-700">No class selected</p>
+    <p class="text-sm mt-1">Please select <b>Branch</b> and <b>Year</b> above to view students.</p>
+  </div>
 {% endif %}
 </form>
 
 </main>
 
 <!-- ================= ADD MODAL ================= -->
-<div id="addModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
-<form method="POST" action="{% url 'add_student' %}"
- class="bg-white border-4 border-[#d52b1e] rounded-2xl p-6 w-full max-w-sm overflow-y-auto max-h-[90vh]">
+<div id="addModal" class="hidden modal-backdrop">
+<form method="POST" action="{% url 'add_student' %}" onsubmit="return submitAddForm(this)"
+ class="modal-panel max-w-md p-6">
 {% csrf_token %}
-<h2 class="text-xl font-bold text-center mb-4">Create Student Profile</h2>
+<h2 class="modal-title">Add Student</h2>
+<p class="text-sm text-slate-500 mt-1 mb-5">The student completes the rest of the profile at first login (Register Number is the temporary password).</p>
 
-
-
-<label class="block text-sm font-medium mb-1">Roll No</label>
-<input name="roll_no"
-       class="w-full border rounded-full px-4 py-2 mb-2"
-       placeholder="Roll No"
+<label class="label" for="add_reg">Register Number</label>
+<input name="reg_no" id="add_reg"
+       class="input"
+       placeholder="12-digit Register Number"
+       inputmode="numeric" maxlength="12" pattern="\d{12}" title="12-digit Register Number"
        required>
 
-<label class="block text-sm font-medium mb-1">Register No</label>
-<input name="reg_no"
-       class="w-full border rounded-full px-4 py-2 mb-2"
-       placeholder="Register No"
-       required>
-
-<label class="block text-sm font-medium mb-1">Name</label>
-<input name="name"
-       class="w-full border rounded-full px-4 py-2 mb-2"
-       placeholder="Student Name"
-       required>
-
-<label class="block text-sm font-medium mb-1">Semester</label>
-<select id="add_sem" name="semester"
-        class="w-full border rounded-full px-4 py-2.5 mb-1"
-        required>
-  <option value="">Select semester</option>
-</select>
-<p id="addSemError" class="hidden text-red-600 text-xs mb-2 px-2">
-  Selected semester is not valid for the chosen year.
-</p>
-
-<label class="block text-sm font-medium mb-1 mt-2">Date of Birth</label>
-<input name="dob"
-       type="date"
-       class="w-full border rounded-full px-4 py-2 mb-2"
-       required>
-
-<label class="block text-sm font-medium mb-1">Phone Number</label>
-<input name="phone"
-       class="w-full border rounded-full px-4 py-2 mb-3"
-       placeholder="Phone Number"
-       required>
-
-<label class="block text-sm font-medium mb-1">Student Type</label>
-<div class="flex gap-4 mb-4">
-  <label class="flex items-center gap-2 cursor-pointer">
-    <input type="radio" name="student_type" value="Hosteller" id="add_type_hosteller" checked
-           class="w-4 h-4 accent-[#d52b1e]">
-    <span class="text-sm font-semibold">Hosteller</span>
-  </label>
-  <label class="flex items-center gap-2 cursor-pointer">
-    <input type="radio" name="student_type" value="Day Scholar" id="add_type_dayscholar"
-           class="w-4 h-4 accent-blue-600">
-    <span class="text-sm font-semibold">Day Scholar</span>
-  </label>
+<input type="hidden" name="branch" id="add_branch" value="{{ branch }}">
+<input type="hidden" name="year" id="add_year" value="{{ year }}">
+<div class="flex gap-2 mt-4 mb-4">
+  <span class="badge badge-neutral">{{ branch }}</span>
+  <span class="badge badge-neutral">Year {{ year }}</span>
 </div>
 
-<label class="block text-sm font-medium mb-1">Branch / Department</label>
-<select name="branch" id="add_branch_select" class="w-full border rounded-full px-4 py-2 mb-2 text-sm" required>
-  <option value="">Select Branch</option>
-  {% for d in global_active_departments %}
-  <option value="{{ d.code }}" {% if branch == d.code %}selected{% endif %}>{{ d.code }} - {{ d.name }}</option>
-  {% endfor %}
+<label class="label" for="add_sem">Semester</label>
+<select name="semester" id="add_sem" required class="select">
+  <option value="">Semester</option>
 </select>
+<p id="addSemError" class="hidden error-text">
+  Select a semester that is valid for the chosen year.
+</p>
 
-<input type="hidden" id="add_year_hidden" name="year" value="{{ year }}">
-<button type="button" onclick="submitAddForm(this)"
-        class="bg-[#d52b1e] hover:bg-red-800 text-white w-full py-2 rounded-full font-semibold transition flex items-center justify-center gap-2">
-  <span>Submit</span>
+<div class="flex flex-row-reverse gap-3 mt-6">
+<button type="submit"
+        class="btn btn-primary flex-1">
+  <span>Add Student</span>
   <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
   </svg>
 </button>
-<button type="button" onclick="closeAddModal()" class="w-full mt-2 text-gray-600">Cancel</button>
+<button type="button" onclick="closeAddModal()" class="btn btn-secondary flex-1">Cancel</button>
+</div>
+</form>
+</div>
+
+<!-- ================= BULK ADD MODAL ================= -->
+<div id="bulkModal" class="hidden modal-backdrop">
+<form method="POST" action="{% url 'bulk_add_students' %}" onsubmit="return submitBulkForm(this)"
+ class="modal-panel max-w-lg p-6">
+{% csrf_token %}
+<h2 class="modal-title">Bulk Add Students</h2>
+<p class="text-sm text-slate-500 mt-1 mb-5">Creates every Register Number from Start to End (inclusive). Existing Register Numbers are skipped.</p>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  <div>
+    <label class="label" for="bulk_start">Start Register No</label>
+    <input name="start_reg_no" id="bulk_start" oninput="updateBulkCount()"
+           class="input"
+           placeholder="e.g. 830123104001"
+           inputmode="numeric" maxlength="12" pattern="\d{12}" title="12-digit Register Number" required>
+  </div>
+  <div>
+    <label class="label" for="bulk_end">End Register No</label>
+    <input name="end_reg_no" id="bulk_end" oninput="updateBulkCount()"
+           class="input"
+           placeholder="e.g. 830123104060"
+           inputmode="numeric" maxlength="12" pattern="\d{12}" title="12-digit Register Number" required>
+  </div>
+</div>
+<p id="bulkCount" class="text-xs font-medium mt-2 mb-4 text-slate-500">Enter a range to see how many students will be created.</p>
+
+<input type="hidden" name="branch" id="bulk_branch" value="{{ branch }}">
+<input type="hidden" name="year" id="bulk_year" value="{{ year }}">
+<div class="flex gap-2 mb-4">
+  <span class="badge badge-neutral">{{ branch }}</span>
+  <span class="badge badge-neutral">Year {{ year }}</span>
+</div>
+
+<label class="label" for="bulk_sem">Semester</label>
+<select name="semester" id="bulk_sem" required class="select">
+  <option value="">Semester</option>
+</select>
+<p id="bulkSemError" class="hidden error-text">
+  Select a semester that is valid for the chosen year.
+</p>
+
+<div class="flex flex-row-reverse gap-3 mt-6">
+<button type="submit"
+        class="btn btn-primary flex-1">
+  <span>Create Students</span>
+  <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+  </svg>
+</button>
+<button type="button" onclick="closeBulkModal()" class="btn btn-secondary flex-1">Cancel</button>
+</div>
 </form>
 </div>
 
 <!-- ================= 7.5 SCHEME MODAL ================= -->
-<div id="schemeModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
-  <div class="bg-white border-4 border-indigo-600 rounded-2xl p-6 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-    <div class="flex justify-between items-center mb-3">
+<div id="schemeModal" class="hidden modal-backdrop">
+  <div class="modal-panel max-w-lg p-6 overflow-hidden flex flex-col max-h-[90vh]">
+    <div class="flex justify-between items-start gap-4 mb-4">
       <div>
-        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-          <span class="bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded-full">7.5</span>
+        <h2 class="modal-title flex items-center gap-2">
+          <span class="badge badge-purple">7.5</span>
           7.5 Scheme Students
         </h2>
-        <p class="text-xs text-gray-500 mt-0.5">Select students belonging to Year {{ year }} - {% if branch %}{{ branch }}{% else %}All Branches{% endif %}</p>
+        <p class="text-sm text-slate-500 mt-1">Select students belonging to Year {{ year }} - {% if branch %}{{ branch }}{% else %}All Branches{% endif %}</p>
       </div>
-      <button type="button" onclick="closeSchemeModal()" class="text-gray-500 hover:text-gray-800 text-xl font-bold">✖</button>
+      <button type="button" onclick="closeSchemeModal()" class="btn btn-ghost btn-sm -mr-2 -mt-1" aria-label="Close">✕</button>
     </div>
 
     <!-- Live Search -->
     <div class="relative mb-3">
       <input type="text" id="schemeSearchInput" placeholder="Search by Reg No, Roll No, or Name..."
              oninput="filterSchemeStudents(this.value)"
-             class="w-full border-2 border-gray-300 rounded-full px-4 py-1.5 pl-9 text-sm focus:outline-none focus:border-indigo-600">
-      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             class="input pl-10">
+      <svg class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
       </svg>
     </div>
@@ -409,43 +438,43 @@
       <input type="hidden" name="year" value="{{ year }}">
 
       <!-- Header with Select All -->
-      <div class="flex justify-between items-center px-3 py-2 bg-gray-100 rounded-t-lg border-b text-xs font-semibold text-gray-700">
+      <div class="flex justify-between items-center px-3 py-2.5 bg-slate-50 rounded-t-lg border border-slate-200 text-xs font-semibold text-slate-600">
         <label class="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" id="selectAllScheme" onchange="toggleSelectAllScheme(this.checked)" class="w-4 h-4 accent-indigo-600 rounded">
+          <input type="checkbox" id="selectAllScheme" onchange="toggleSelectAllScheme(this.checked)" class="h-4 w-4 rounded border-slate-300 accent-violet-600">
           <span>Select All Visible</span>
         </label>
         <span>Total Students: {{ students|length }}</span>
       </div>
 
       <!-- Student list scroll container -->
-      <div class="overflow-y-auto flex-1 divide-y border rounded-b-lg mb-4 max-h-72">
+      <div class="overflow-y-auto flex-1 divide-y divide-slate-100 border border-t-0 border-slate-200 rounded-b-lg mb-5 max-h-72">
         {% for s in students %}
-        <div class="scheme-student-row flex items-center justify-between p-3 hover:bg-indigo-50/50 transition-colors"
+        <div class="scheme-student-row flex items-center justify-between px-3 py-2.5 hover:bg-slate-50 transition-colors"
              data-reg="{{ s.reg_no }}" data-roll="{{ s.roll_no }}" data-name="{{ s.name }}">
           <label class="flex items-center gap-3 cursor-pointer w-full">
             <input type="checkbox" name="selected_student_ids" value="{{ s.id }}" {% if s.is_75_scheme %}checked{% endif %}
-                   class="scheme-checkbox w-5 h-5 accent-indigo-600 rounded cursor-pointer">
-            <div>
-              <p class="font-semibold text-sm text-gray-900 flex items-center gap-1.5">
+                   class="scheme-checkbox h-4 w-4 rounded border-slate-300 accent-violet-600 cursor-pointer">
+            <div class="min-w-0">
+              <p class="font-medium text-sm text-slate-900 flex items-center gap-1.5">
                 {{ s.name }}
                 {% if s.is_75_scheme %}
-                <span class="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded-full">7.5 Active</span>
+                <span class="badge badge-purple">7.5 Active</span>
                 {% endif %}
               </p>
-              <p class="text-xs text-gray-500">Reg: {{ s.reg_no }} | Roll: {{ s.roll_no }} | Sem: {{ s.semester }}</p>
+              <p class="text-xs text-slate-500">Reg: {{ s.reg_no }} | Roll: {{ s.roll_no }} | Sem: {{ s.semester }}</p>
             </div>
           </label>
         </div>
         {% empty %}
-        <p class="text-center py-6 text-sm text-gray-500 font-medium">No students found for selected Year and Semester</p>
+        <p class="text-center py-8 text-sm text-slate-500">No students found for selected Year and Semester</p>
         {% endfor %}
       </div>
 
-      <div class="flex gap-3">
-        <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white w-full py-2 rounded-full font-semibold transition text-sm">
+      <div class="flex flex-row-reverse gap-3">
+        <button type="submit" class="btn btn-primary flex-1">
           Submit
         </button>
-        <button type="button" onclick="closeSchemeModal()" class="w-full border border-gray-300 text-gray-700 py-2 rounded-full font-semibold text-sm hover:bg-gray-100">
+        <button type="button" onclick="closeSchemeModal()" class="btn btn-secondary flex-1">
           Cancel
         </button>
       </div>
@@ -454,80 +483,101 @@
 </div>
 
 <!-- ================= EDIT MODAL ================= -->
-<div id="editModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50 px-4">
+<div id="editModal" class="hidden modal-backdrop">
 <form method="POST" action="{% url 'edit_student' %}"
- class="bg-white border-4 border-[#d52b1e] rounded-2xl p-4 w-full max-w-sm overflow-y-auto max-h-[90vh]">
+ class="modal-panel max-w-lg p-6">
 {% csrf_token %}
 
-<h2 class="text-lg font-bold text-center mb-3">Edit Student</h2>
+<h2 class="modal-title mb-5">Edit Student</h2>
 
 <input type="hidden" name="student_id" id="edit_id">
 
-<label class="block text-sm font-semibold mb-1">Branch / Department</label>
-<select id="edit_branch" name="branch" class="w-full border rounded-full px-3 py-1.5 mb-2 text-sm" required>
-  <option value="">Select Branch</option>
-  {% for d in global_all_departments %}
-  <option value="{{ d.code }}">{{ d.code }} - {{ d.name }}</option>
-  {% endfor %}
-</select>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
+  <div class="sm:col-span-2">
+    <label class="label" for="edit_branch">Branch / Department</label>
+    <select id="edit_branch" name="branch" class="select" required>
+      <option value="">Select Branch</option>
+      {% for d in global_all_departments %}
+      <option value="{{ d.code }}">{{ d.code }} - {{ d.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
 
-<label class="block text-sm font-semibold mb-1">Roll No</label>
-<input id="edit_roll" name="roll_no"
-       class="w-full border rounded-full px-3 py-1.5 mb-2 text-sm">
+  <div>
+    <label class="label" for="edit_reg">Register No</label>
+    <input id="edit_reg" name="reg_no"
+           class="input">
+  </div>
 
-<label class="block text-sm font-semibold mb-1">Register No</label>
-<input id="edit_reg" name="reg_no"
-       class="w-full border rounded-full px-3 py-1.5 mb-2 text-sm">
+  <div>
+    <label class="label" for="edit_roll">Roll No</label>
+    <input id="edit_roll" name="roll_no"
+           class="input">
+  </div>
 
-<label class="block text-sm font-semibold mb-1">Name</label>
-<input id="edit_name" name="name"
-       class="w-full border rounded-full px-3 py-1.5 mb-2 text-sm">
+  <div class="sm:col-span-2">
+    <label class="label" for="edit_name">Name</label>
+    <input id="edit_name" name="name"
+           class="input">
+  </div>
 
-<label class="block text-sm font-semibold mb-1">Year</label>
-<select id="edit_year" name="year"
-        required
-        onchange="updateSemesterOptions('edit_year','edit_sem')"
-        class="w-full border rounded-full px-3 py-1.5 mb-3 text-sm">
-  <option value="1">1</option>
-  <option value="2">2</option>
-  <option value="3">3</option>
-  <option value="4">4</option>
-</select>
+  <div>
+    <label class="label" for="edit_year">Year</label>
+    <select id="edit_year" name="year"
+            required
+            onchange="updateSemesterOptions('edit_year','edit_sem')"
+            class="select">
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+    </select>
+  </div>
 
-<label class="block text-sm font-semibold mb-1">Semester</label>
-<select id="edit_sem" name="semester"
-        required
-        class="w-full border rounded-full px-3 py-1.5 mb-1 text-sm">
-  <option value="">Select semester</option>
-</select>
-<p id="editSemError" class="hidden text-red-600 text-xs mb-2 px-2">
-  Selected semester is not valid for the chosen year.
-</p>
+  <div>
+    <label class="label" for="edit_sem">Semester</label>
+    <select id="edit_sem" name="semester"
+            required
+            class="select">
+      <option value="">Select semester</option>
+    </select>
+    <p id="editSemError" class="hidden error-text">
+      Selected semester is not valid for the chosen year.
+    </p>
+  </div>
 
-<label class="block text-sm font-semibold mb-1 mt-2">DOB</label>
-<input id="edit_dob" name="dob" type="date"
-       class="w-full border rounded-full px-3 py-1.5 mb-2 text-sm">
+  <div>
+    <label class="label" for="edit_dob">DOB</label>
+    <input id="edit_dob" name="dob" type="date"
+           class="input">
+  </div>
 
-<label class="block text-sm font-semibold mb-1">Phone</label>
-<input id="edit_phone" name="phone"
-       class="w-full border rounded-full px-3 py-1.5 mb-3 text-sm">
+  <div>
+    <label class="label" for="edit_phone">Phone</label>
+    <input id="edit_phone" name="phone"
+           class="input">
+  </div>
 
-<label class="block text-sm font-semibold mb-1">Student Type</label>
-<div class="flex gap-4 mb-4">
-  <label class="flex items-center gap-2 cursor-pointer">
-    <input type="radio" name="student_type" value="Hosteller" id="edit_type_hosteller"
-           class="w-4 h-4 accent-[#d52b1e]">
-    <span class="text-sm font-semibold">Hosteller</span>
-  </label>
-  <label class="flex items-center gap-2 cursor-pointer">
-    <input type="radio" name="student_type" value="Day Scholar" id="edit_type_dayscholar"
-           class="w-4 h-4 accent-blue-600">
-    <span class="text-sm font-semibold">Day Scholar</span>
-  </label>
+  <div class="sm:col-span-2">
+    <span class="label">Student Type</span>
+    <div class="flex flex-wrap gap-3">
+      <label class="flex items-center gap-2 cursor-pointer rounded-lg border border-slate-300 px-3.5 py-2 hover:bg-slate-50">
+        <input type="radio" name="student_type" value="Hosteller" id="edit_type_hosteller"
+               class="w-4 h-4 accent-brand-600">
+        <span class="text-sm font-medium text-slate-700">Hosteller</span>
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer rounded-lg border border-slate-300 px-3.5 py-2 hover:bg-slate-50">
+        <input type="radio" name="student_type" value="Day Scholar" id="edit_type_dayscholar"
+               class="w-4 h-4 accent-brand-600">
+        <span class="text-sm font-medium text-slate-700">Day Scholar</span>
+      </label>
+    </div>
+  </div>
 </div>
 
+<div class="flex flex-row-reverse gap-3 mt-6">
 <button type="button" onclick="submitEditForm(this)"
-        class="bg-[#d52b1e] hover:bg-red-800 text-white w-full py-1.5 rounded-full text-sm font-semibold transition flex items-center justify-center gap-2">
+        class="btn btn-primary flex-1">
   <span>Update</span>
   <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -537,28 +587,32 @@
 
 <button type="button"
         onclick="closeEditModal()"
-        class="w-full mt-1 text-sm text-gray-600">
+        class="btn btn-secondary flex-1">
   Cancel
 </button>
+</div>
 
 </form>
 
 </div>
 
 <!-- ================= DELETE CONFIRM ================= -->
-<div id="deleteModal" class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50">
-<div class="bg-white p-6 rounded-2xl text-center w-80">
-<h2 class="text-xl font-bold mb-4">Confirm Delete</h2>
-<p class="mb-6">Delete selected students?</p>
-<div class="flex gap-4 justify-center">
-<button onclick="submitDelete(this)" class="bg-red-600 text-white px-6 py-2 rounded-full flex items-center justify-center gap-2">
+<div id="deleteModal" class="hidden modal-backdrop">
+<div class="modal-panel max-w-sm p-6 text-center">
+<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+  <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+</div>
+<h2 class="modal-title mb-1">Confirm Delete</h2>
+<p class="text-sm text-slate-500 mb-6">Delete selected students?</p>
+<div class="flex flex-row-reverse gap-3 justify-center">
+<button onclick="submitDelete(this)" class="btn btn-danger flex-1">
   <span>Yes</span>
   <svg class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
   </svg>
 </button>
-<button onclick="closeDeleteConfirm()" class="border px-6 py-2 rounded-full">Cancel</button>
+<button onclick="closeDeleteConfirm()" class="btn btn-secondary flex-1">Cancel</button>
 </div>
 </div>
 </div>
@@ -568,19 +622,20 @@
 
 <!-- ================= NO DUE MODAL ================= -->
 <div id="noDueModal"
- class="hidden fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+ class="hidden modal-backdrop">
 
-  <div class="bg-white w-[360px] rounded-2xl p-6 relative">
+  <div class="modal-panel max-w-sm p-6">
 
     <!-- CLOSE -->
     <button onclick="closeNoDueModal()"
-      class="absolute top-3 right-4 text-xl font-bold">✖</button>
+      class="btn btn-ghost btn-sm absolute top-3 right-3" aria-label="Close">✕</button>
 
-    <h2 class="text-center text-lg font-bold mb-6">
+    <h2 class="modal-title mb-1">
       No Due Status
     </h2>
+    <p class="text-sm text-slate-500 mb-5">Clearance status for each office.</p>
 
-    <div id="noDueContent" class="space-y-4">
+    <div id="noDueContent" class="divide-y divide-slate-100 rounded-lg border border-slate-200">
 
       <!-- rows inserted by JS -->
 
@@ -638,7 +693,7 @@ function updateSemesterOptions(yearSelectId, semSelectId, currentSem) {
   const semSel = document.getElementById(semSelectId);
   const validSems = YEAR_SEM_MAP[year] || [];
 
-  semSel.innerHTML = '<option value="">Select semester</option>';
+  semSel.innerHTML = '<option value="">Semester</option>';
   validSems.forEach(s => {
     const opt = document.createElement('option');
     opt.value = s;
@@ -654,50 +709,94 @@ function isSemValidForYear(year, sem) {
   return valid.includes(Number(sem));
 }
 
-// ── Add Modal ────────────────────────────────
+// ── Add / Bulk Add Modals ────────────────────
+const BULK_ADD_LIMIT = 500;
+
+function showSubmitting(form, text) {
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.querySelector('span').textContent = text;
+  btn.querySelector('svg').classList.remove('hidden');
+  const cancelBtn = btn.nextElementSibling;
+  if (cancelBtn) cancelBtn.disabled = true;
+}
+
+/** Year + semester must match (YEAR_SEM_MAP); shows the given error element otherwise. */
+function checkYearSem(yearId, semId, errId) {
+  const year = document.getElementById(yearId).value;
+  const sem  = document.getElementById(semId).value;
+  const errEl = document.getElementById(errId);
+  if (!sem || !isSemValidForYear(year, sem)) {
+    errEl.classList.remove('hidden');
+    document.getElementById(semId).focus();
+    return false;
+  }
+  errEl.classList.add('hidden');
+  return true;
+}
+
 function openAddModal() {
-  // populate semester options for the current (filter) year
-  const year = document.getElementById('add_year_hidden').value;
-  const semSel = document.getElementById('add_sem');
-  const validSems = YEAR_SEM_MAP[year] || [];
-
-  semSel.innerHTML = '<option value="">Select semester</option>';
-  validSems.forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s; opt.textContent = s;
-    semSel.appendChild(opt);
-  });
-
-  // Update info banner
-  const banner = document.getElementById('addModalValidSems');
-  if (banner) banner.textContent = validSems.join(' & ');
-
+  updateSemesterOptions('add_year', 'add_sem');
   document.getElementById('addSemError').classList.add('hidden');
   addModal.classList.remove('hidden');
+  document.getElementById('add_reg').focus();
 }
 
 function closeAddModal() { addModal.classList.add('hidden'); }
 
-function submitAddForm(btn) {
-  const year = document.getElementById('add_year_hidden').value;
-  const sem  = document.getElementById('add_sem').value;
-  const errEl = document.getElementById('addSemError');
+function submitAddForm(form) {
+  if (!checkYearSem('add_year', 'add_sem', 'addSemError')) return false;
+  showSubmitting(form, 'Adding...');
+  return true;
+}
 
-  if (!sem || !isSemValidForYear(year, sem)) {
-    errEl.classList.remove('hidden');
-    document.getElementById('add_sem').focus();
-    return;
+function openBulkModal() {
+  updateSemesterOptions('bulk_year', 'bulk_sem');
+  document.getElementById('bulkSemError').classList.add('hidden');
+  updateBulkCount();
+  bulkModal.classList.remove('hidden');
+  document.getElementById('bulk_start').focus();
+}
+
+function closeBulkModal() { bulkModal.classList.add('hidden'); }
+
+/** Live preview of how many Register Numbers the range covers. Returns the count or -1. */
+function updateBulkCount() {
+  const start = document.getElementById('bulk_start').value.trim();
+  const end   = document.getElementById('bulk_end').value.trim();
+  const el    = document.getElementById('bulkCount');
+  const valid = /^\d{12}$/;
+
+  el.className = 'text-xs font-medium mt-2 mb-4 ';
+  if (!valid.test(start) || !valid.test(end)) {
+    el.className += 'text-slate-500';
+    el.textContent = 'Enter two 12-digit Register Numbers to see how many students will be created.';
+    return -1;
   }
-  errEl.classList.add('hidden');
+  const count = Number(BigInt(end) - BigInt(start)) + 1;
+  if (count < 1) {
+    el.className += 'text-red-600';
+    el.textContent = 'Start Register Number must be less than or equal to the End Register Number.';
+    return -1;
+  }
+  if (count > BULK_ADD_LIMIT) {
+    el.className += 'text-red-600';
+    el.textContent = `${count} students — too many. Bulk Add allows at most ${BULK_ADD_LIMIT} at a time.`;
+    return -1;
+  }
+  el.className += 'text-emerald-700';
+  el.textContent = `${count} student${count === 1 ? '' : 's'} will be created (existing ones are skipped).`;
+  return count;
+}
 
-  btn.disabled = true;
-  btn.querySelector('span').textContent = 'Submitting...';
-  btn.querySelector('svg').classList.remove('hidden');
-  const cancelBtn = btn.nextElementSibling;
-  if (cancelBtn) cancelBtn.disabled = true;
-
-  // submit the parent form
-  document.getElementById('add_sem').closest('form').submit();
+function submitBulkForm(form) {
+  if (updateBulkCount() < 1) {
+    document.getElementById('bulk_start').focus();
+    return false;
+  }
+  if (!checkYearSem('bulk_year', 'bulk_sem', 'bulkSemError')) return false;
+  showSubmitting(form, 'Creating...');
+  return true;
 }
 
 // ── Edit Modal ───────────────────────────────
@@ -753,10 +852,37 @@ function submitEditForm(btn) {
 
   document.getElementById('edit_sem').closest('form').submit();
 }
+/** Student checkboxes of cards that are currently visible (respects the search filter). */
+function visibleStudentBoxes() {
+  return Array.from(document.querySelectorAll(".student-card"))
+    .filter(card => card.style.display !== "none")
+    .map(card => card.querySelector("input[name='student_ids']"))
+    .filter(Boolean);
+}
+
+/** Select / clear every visible student. */
+function toggleSelectAll(checked) {
+  visibleStudentBoxes().forEach(cb => { cb.checked = checked; });
+  syncSelectAll();
+}
+
+/** Keep the Select All box in step with the individual checkboxes. */
+function syncSelectAll() {
+  const all = document.getElementById("selectAllStudents");
+  if (!all) return;
+  const boxes = visibleStudentBoxes();
+  const checked = boxes.filter(cb => cb.checked).length;
+  all.checked = boxes.length > 0 && checked === boxes.length;
+  all.indeterminate = checked > 0 && checked < boxes.length;
+}
+
+document.addEventListener("change", e => {
+  if (e.target && e.target.name === "student_ids") syncSelectAll();
+});
+
 function handleDeleteClick() {
-  const checkboxes = document.querySelectorAll(
-    "input[name='student_ids']:checked"
-  );
+  // Only students that are visible (not hidden by the search filter) are deleted.
+  const checkboxes = visibleStudentBoxes().filter(cb => cb.checked);
 
   const error = document.getElementById("deleteError");
 
@@ -782,6 +908,14 @@ function submitDelete(btn){
   btn.querySelector('svg').classList.remove('hidden');
   const cancelBtn = btn.nextElementSibling;
   if (cancelBtn) cancelBtn.disabled = true;
+
+  // Never delete students hidden by the search filter.
+  document.querySelectorAll(".student-card").forEach(card => {
+    if (card.style.display === "none") {
+      const cb = card.querySelector("input[name='student_ids']");
+      if (cb) cb.checked = false;
+    }
+  });
 
   document.getElementById("deleteForm").submit();
 }
@@ -825,29 +959,29 @@ function openNoDueModal(studentId) {
     const status = noDues[office] || "NOT_SENT";
 
     let displayStatus = status;
-    let color = "text-gray-600";
+    let color = "badge-neutral";
 
     if (status === "NOT_SENT") {
       displayStatus = "Incomplete";
-      color = "text-red-600";
+      color = "badge-danger";
     }
     else if (status === "APPROVED") {
       displayStatus = "Completed";
-      color = "text-green-600";
+      color = "badge-success";
     }
     else if (status === "PENDING") {
       displayStatus = "Pending";
-      color = "text-yellow-600";
+      color = "badge-warning";
     }
     else if (status === "REJECTED") {
       displayStatus = "Rejected";
-      color = "text-red-600";
+      color = "badge-danger";
     }
 
     content.innerHTML += `
-      <div class="flex justify-between items-center border-b pb-2">
-        <span class="font-semibold">${office} Office</span>
-        <span class="${color} font-semibold">${displayStatus}</span>
+      <div class="flex justify-between items-center px-4 py-3">
+        <span class="text-sm font-medium text-slate-700">${office} Office</span>
+        <span class="badge ${color}">${displayStatus}</span>
       </div>
     `;
   });
@@ -858,71 +992,6 @@ function openNoDueModal(studentId) {
 function closeNoDueModal() {
   document.getElementById("noDueModal").classList.add("hidden");
 }
-
-// ═══════════════════════════════════════════
-//  EXCEL UPLOAD — CLIENT-SIDE VALIDATION
-// ═══════════════════════════════════════════
-(function () {
-  // Load SheetJS dynamically
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-  document.head.appendChild(script);
-
-  script.onload = function () {
-    const form    = document.getElementById('excelUploadForm');
-    const fileInp = document.getElementById('excelFileInput');
-    const errBox  = document.getElementById('excelErrors');
-    const errList = document.getElementById('excelErrorList');
-    if (!form || !fileInp) return;
-
-    form.addEventListener('submit', function (e) {
-      const file = fileInp.files[0];
-      if (!file) return; // let browser handle 'required'
-
-      e.preventDefault(); // hold submission until validation
-
-      const year = parseInt(document.getElementById('excelYearHidden').value);
-      const validSems = YEAR_SEM_MAP[String(year)] || [];
-
-      const reader = new FileReader();
-      reader.onload = function (ev) {
-        const wb   = XLSX.read(ev.target.result, { type: 'binary' });
-        const ws   = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
-        const errors = [];
-        rows.forEach((row, idx) => {
-          // Column header may be 'semester', 'Semester', 'SEMESTER' etc.
-          const semKey = Object.keys(row).find(k => k.toLowerCase() === 'semester');
-          if (!semKey) return; // no semester column — skip row-level check
-          const sem = parseInt(row[semKey]);
-          if (!isNaN(sem) && !validSems.includes(sem)) {
-            errors.push(`Row ${idx + 2}: Semester ${sem} is not valid for Year ${year}. (Expected ${validSems.join(' or ')})`);
-          }
-        });
-
-        if (errors.length > 0) {
-          errList.innerHTML = '';
-          errors.forEach(msg => {
-            const li = document.createElement('li');
-            li.textContent = msg;
-            errList.appendChild(li);
-          });
-          errBox.classList.remove('hidden');
-          errBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } else {
-          errBox.classList.add('hidden');
-          // Show spinner and submit
-          document.getElementById('importText').textContent = 'Importing...';
-          document.getElementById('importSpinner').classList.remove('hidden');
-          document.getElementById('importBtn').disabled = true;
-          form.submit();
-        }
-      };
-      reader.readAsBinaryString(file);
-    });
-  };
-})();
 
 // ═══════════════════════════════════════════
 //  STUDENT SEARCH FILTER
@@ -953,6 +1022,7 @@ window.addEventListener("load", () => {
     if (countSpan) {
       countSpan.textContent = visibleCount;
     }
+    syncSelectAll();
   });
 });
 
@@ -990,6 +1060,25 @@ function toggleSelectAllScheme(checked) {
     }
   });
 }
+
+// ═══════════════════════════════════════════
+//  PROFILE SUMMARY STATS (Completed / Pending)
+// ═══════════════════════════════════════════
+function updateProfileStats() {
+  const rows = document.querySelectorAll("#studentList .student-card");
+  let completed = 0, pending = 0;
+  rows.forEach(row => {
+    if (row.dataset.profile === "Completed") completed++;
+    else pending++;
+  });
+  const c = document.getElementById("profileCompletedCount");
+  const p = document.getElementById("profilePendingCount");
+  if (c) c.textContent = completed;
+  if (p) p.textContent = pending;
+}
+updateProfileStats();
+// Re-run after PortalWS.softReloadMain() swaps <main>
+window.__reinitPage = function () { updateProfileStats(); };
 
 // ── Real-Time Live Updates via WebSocket ──
 document.addEventListener("DOMContentLoaded", function() {
