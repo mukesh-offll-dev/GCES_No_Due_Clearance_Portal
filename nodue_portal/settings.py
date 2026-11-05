@@ -75,6 +75,12 @@ if ENABLE_HTTPS and not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
+# ================= HOSTEL OFFICE SSO =================
+# Shared secret with the Hostel Admin App (authentication/sso.py). At least
+# 32 characters; leave unset to disable the /sso/hostel/ endpoint entirely.
+HOSTEL_SSO_SECRET  = os.environ.get("HOSTEL_SSO_SECRET", "").strip()
+HOSTEL_SSO_MAX_AGE = int(os.environ.get("HOSTEL_SSO_MAX_AGE", "60"))  # seconds a link stays valid
+
 # ================= SESSION SETTINGS =================
 # Sessions are stored in MongoDB (collection: django_sessions) — no SQL database.
 SESSION_ENGINE             = "authentication.mongo_sessions"

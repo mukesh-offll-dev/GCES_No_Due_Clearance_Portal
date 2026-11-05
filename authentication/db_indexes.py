@@ -88,6 +88,10 @@ def ensure_indexes():
         _safe(created, db["django_sessions"], [("expire_date", ASCENDING)],
               name="session_expiry_ttl", expireAfterSeconds=0)
 
+        # ── sso_nonces (one-time Hostel SSO tokens, see sso.py) ─────
+        _safe(created, db["sso_nonces"], [("expire_at", ASCENDING)],
+              name="sso_nonce_ttl", expireAfterSeconds=0)
+
         if created:
             logger.info("MongoDB indexes ensured: %s", ", ".join(created))
         else:

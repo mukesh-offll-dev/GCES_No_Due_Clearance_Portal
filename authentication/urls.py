@@ -10,6 +10,7 @@ from .views import (
     edit_department_view, toggle_department_view, delete_department_view,
     student_profile_setup, bulk_add_students
 )
+from .sso import hostel_sso_login
 
 from django.conf.urls.static import static
 
@@ -37,6 +38,7 @@ urlpatterns = [
     path("student/no-due/certificate/", no_due_certificate, name="no_due_certificate"),
 
     path("logout/", logout_view, name="logout"),
+    path("sso/hostel/", hostel_sso_login, name="hostel_sso_login"),  # Hostel Admin App SSO
     
     path("faculty/", faculty_dashboard, name="faculty_dashboard"),
     path("faculty/add-student/", add_student, name="add_student"),

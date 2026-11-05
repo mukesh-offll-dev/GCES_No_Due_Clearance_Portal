@@ -1308,3 +1308,128 @@ class MongoSessionStoreTests(TestCase):
         doc = self.col.find_one({"_id": key})
         self.assertIsNotNone(doc)
         self.assertEqual(self.SessionStore(session_key=key).get("role"), "LIBRARY")
+
+
+TEST_SSO_SECRET = "test-hostel-sso-secret-0123456789abcdef"
+
+
+class HostelSSOTests(TestCase):
+    """Hostel Admin App single sign-on endpoint (authentication/sso.py)."""
+
+    URL = "/sso/hostel/"
+
+    def setUp(self):
+        from authentication.sso import sso_nonces
+        self.nonces = sso_nonces
+        self.used = []
+        self._override = self.settings(HOSTEL_SSO_SECRET=TEST_SSO_SECRET, HOSTEL_SSO_MAX_AGE=60)
+        self._override.enable()
+
+    def tearDown(self):
+        self._override.disable()
+        self.nonces.delete_many({"_id": {"$in": self.used}})
+
+    def _params(self, ts=None, nonce=None, user="warden01", secret=TEST_SSO_SECRET):
+        import secrets as _s
+        import time as _t
+        from authentication.sso import sign
+        ts = str(int(_t.time()) if ts is None else ts)
+        nonce = nonce or _s.token_urlsafe(24)
+        self.used.append(nonce)
+        return {"ts": ts, "nonce": nonce, "user": user, "sig": sign(secret, ts, nonce, user)}
+
+    def _role(self, client):
+        return client.session.get("role")
+
+    def test_valid_get_logs_in_as_hostel(self):
+        c = Client()
+        r = c.get(self.URL, self._params())
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(r["Location"], "/hostel/")
+        self.assertEqual(self._role(c), "HOSTEL")
+        self.assertEqual(c.session.get("login_method"), "SSO")
+
+    def test_valid_post_logs_in_without_csrf_token(self):
+        c = Client(enforce_csrf_checks=True)
+        r = c.post(self.URL, self._params())
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self._role(c), "HOSTEL")
+
+    def test_user_is_optional(self):
+        c = Client()
+        r = c.get(self.URL, self._params(user=""))
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self._role(c), "HOSTEL")
+
+    def test_bad_signature_rejected(self):
+        c = Client()
+        p = self._params()
+        p["sig"] = "0" * 64
+        r = c.get(self.URL, p)
+        self.assertEqual(r.status_code, 403)
+        self.assertIsNone(self._role(c))
+
+    def test_wrong_secret_rejected(self):
+        c = Client()
+        r = c.get(self.URL, self._params(secret="some-other-secret-that-is-long-enough-xx"))
+        self.assertEqual(r.status_code, 403)
+
+    def test_tampered_user_rejected(self):
+        c = Client()
+        p = self._params(user="warden01")
+        p["user"] = "admin"
+        self.assertEqual(c.get(self.URL, p).status_code, 403)
+
+    def test_expired_token_rejected(self):
+        import time as _t
+        c = Client()
+        r = c.get(self.URL, self._params(ts=int(_t.time()) - 120))
+        self.assertEqual(r.status_code, 403)
+        self.assertIsNone(self._role(c))
+
+    def test_far_future_token_rejected(self):
+        import time as _t
+        r = Client().get(self.URL, self._params(ts=int(_t.time()) + 600))
+        self.assertEqual(r.status_code, 403)
+
+    def test_replay_rejected(self):
+        p = self._params()
+        self.assertEqual(Client().get(self.URL, p).status_code, 302)
+        c2 = Client()
+        self.assertEqual(c2.get(self.URL, p).status_code, 403)
+        self.assertIsNone(self._role(c2))
+
+    def test_missing_or_malformed_params_rejected(self):
+        c = Client()
+        self.assertEqual(c.get(self.URL).status_code, 403)
+        p = self._params()
+        p["nonce"] = "short"
+        self.assertEqual(c.get(self.URL, p).status_code, 403)
+
+    def test_disabled_when_secret_not_configured(self):
+        with self.settings(HOSTEL_SSO_SECRET=""):
+            self.assertEqual(Client().get(self.URL, self._params()).status_code, 404)
+        with self.settings(HOSTEL_SSO_SECRET="too-short"):
+            self.assertEqual(Client().get(self.URL, self._params(secret="too-short")).status_code, 404)
+
+    def test_replaces_existing_session(self):
+        c = Client()
+        s = c.session
+        s["role"] = "STUDENT"
+        s["student_id"] = "507f1f77bcf86cd799439011"
+        s.save()
+        old_key = s.session_key
+        c.cookies["sessionid"] = old_key
+        r = c.get(self.URL, self._params())
+        self.assertEqual(r.status_code, 302)
+        self.assertNotEqual(c.cookies["sessionid"].value, old_key)
+        self.assertEqual(self._role(c), "HOSTEL")
+        self.assertIsNone(c.session.get("student_id"))
+
+    def test_sso_session_can_open_hostel_dashboard_only(self):
+        c = Client()
+        c.get(self.URL, self._params())
+        self.assertEqual(c.get("/hostel/").status_code, 200)
+        # still just the Hostel role: other dashboards bounce back
+        self.assertEqual(c.get("/library/").status_code, 302)
+        self.assertEqual(c.get("/faculty/").status_code, 302)
