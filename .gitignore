@@ -18,3 +18,9 @@ media/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Generated login credentials (plain-text passwords) — never commit
+credentials/
+
+# Raw guide screenshots (guides use assets/img/*.jpg)
+user-guides/assets/*.png

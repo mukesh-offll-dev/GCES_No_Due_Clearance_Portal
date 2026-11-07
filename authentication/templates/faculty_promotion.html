@@ -24,6 +24,11 @@
       <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
       <span>Department Management</span>
     </button>
+    <button type="button" onclick="switchFacultyTab('passwords')" id="tab_btn_passwords"
+      class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition text-slate-600 hover:text-slate-900 cursor-pointer">
+      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"></path></svg>
+      <span>Password Management</span>
+    </button>
   </div>
 
   <!-- ================= PROMOTION PANEL ================= -->
@@ -151,7 +156,7 @@
       </div>
 
       <button type="button" onclick="openRemoveSem8Modal()"
-        class="btn btn-primary w-full">
+        class="btn btn-primary w-full whitespace-normal text-center">
         Remove Semester 8 Students
       </button>
     </div>
@@ -587,6 +592,62 @@
 
   </div>
 
+  <!-- ================= PASSWORD MANAGEMENT PANEL (institution_accounts, see accounts.py) ================= -->
+  <div id="panel_passwords" class="hidden space-y-6">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Password Management</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Login details for every office and department, and the Promotion &amp; Settings password. Press <b>Show</b> to see a password, <b>Change</b> to update it.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Login</th><th>Username</th><th>Password</th><th>Last changed</th><th class="text-right">Action</th></tr></thead>
+          <tbody>
+            {% for a in login_accounts %}
+            <tr>
+              <td class="font-medium text-slate-900 whitespace-nowrap">{{ a.label }}{% if not a.active %} <span class="badge badge-neutral ml-1">Inactive</span>{% endif %}</td>
+              <td class="font-mono text-sm">{% if a.kind == "promotion" %}<span class="text-slate-400">—</span>{% else %}{{ a.username }}{% endif %}</td>
+              <td class="whitespace-nowrap">
+                {% if a.password %}
+                <span class="font-mono text-sm pw-mask">••••••••</span>
+                <span class="font-mono text-sm pw-text hidden select-all">{{ a.password }}</span>
+                <button type="button" onclick="togglePw(this)" class="ml-2 text-xs font-semibold text-brand-700 hover:underline">Show</button>
+                {% elif a.exists %}<span class="text-xs text-slate-500">Hidden — set a new one</span>
+                {% else %}<span class="badge badge-warning">Not set</span>{% endif %}
+              </td>
+              <td class="text-slate-500 whitespace-nowrap text-sm">{% if a.updated_at %}{{ a.updated_at|date:"d M Y, h:i A" }}{% else %}—{% endif %}</td>
+              <td class="text-right"><button type="button" onclick="toggleEdit('{{ a.id }}')" class="btn btn-secondary btn-sm">Change</button></td>
+            </tr>
+            <tr id="edit_{{ a.id }}" class="hidden bg-slate-50">
+              <td colspan="5">
+                <form method="POST" action="{% url 'update_account_password' %}" class="flex flex-wrap items-end gap-3 py-1">
+                  {% csrf_token %}
+                  <input type="hidden" name="account_id" value="{{ a.id }}">
+                  {% if a.kind != "promotion" %}
+                  <div><label class="label">Username</label>
+                    <input name="username" value="{{ a.username }}" required pattern="[A-Za-z0-9._@\-]{3,40}" class="input w-48"></div>
+                  {% endif %}
+                  <div><label class="label">New password</label>
+                    <input name="password" type="text" required minlength="6" maxlength="128" autocomplete="off" class="input w-56" placeholder="At least 6 characters"></div>
+                  <button class="btn btn-primary">Save</button>
+                  <button type="button" onclick="toggleEdit('{{ a.id }}')" class="btn btn-ghost">Cancel</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-body border-t border-slate-200 text-xs text-slate-500 space-y-1">
+        <p>• A new password works immediately; the old one stops working. Tell that office the new password.</p>
+        <p>• 5 wrong passwords lock a login for 15 minutes. Saving a new password here removes the lock.</p>
+        <p>• A new department gets a login when you set its password here.</p>
+      </div>
+    </div>
+  </div>
+
 </main>
 
 <!-- ================= ENABLE ACCESS MODAL ================= -->
@@ -695,11 +756,11 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
       </svg>
     </div>
-    <h3 class="modal-title mb-1">Permanently Remove Students</h3>
+    <h3 class="modal-title mb-1">Remove Semester 8 Students</h3>
     <p class="text-sm text-slate-600 mb-6 leading-relaxed">
-      Are you sure you want to permanently remove all <span class="font-semibold text-red-700">{{ global_sem8_count }}</span> Semester 8 students from the system?
+      Remove all <span class="font-semibold text-red-700">{{ global_sem8_count }}</span> Semester 8 students from the active student list?
       <br><br>
-      This will completely delete their profile, no-due records, and promotion history from the database.
+      Their profile, no-due records and history are moved to <strong>Archived students</strong> on this page, where they can be restored if needed.
     </p>
     <div class="flex flex-row-reverse gap-3">
       <button type="submit" onclick="submitRemoveSem8(this, event)" class="btn btn-danger flex-1">
@@ -1323,33 +1384,33 @@
 
   // ================= DEPARTMENT MANAGEMENT SCRIPTS =================
   function switchFacultyTab(tabName) {
-    const promoBtn = document.getElementById("tab_btn_promotion");
-    const deptBtn = document.getElementById("tab_btn_departments");
-    const promoPanel = document.getElementById("panel_promotion");
-    const deptPanel = document.getElementById("panel_departments");
+    const tabs = ["promotion", "departments", "passwords"];
+    if (!tabs.includes(tabName)) tabName = "promotion";
+    const ON = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold transition bg-white text-brand-700 shadow-sm ring-1 ring-slate-200 cursor-pointer";
+    const OFF = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition text-slate-600 hover:text-slate-900 cursor-pointer";
+    tabs.forEach(t => {
+      const btn = document.getElementById("tab_btn_" + t);
+      const panel = document.getElementById("panel_" + t);
+      if (btn) btn.className = (t === tabName) ? ON : OFF;
+      if (panel) panel.classList.toggle("hidden", t !== tabName);
+    });
+    if (tabName === "departments") updateDeptSummaryCounts();
+    try { localStorage.setItem('faculty_active_tab', tabName); } catch(e){}
+    const url = new URL(window.location);
+    url.searchParams.set('tab', tabName);
+    window.history.replaceState({}, '', url);
+  }
 
-    if (tabName === "departments") {
-      deptBtn.className = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold transition bg-white text-brand-700 shadow-sm ring-1 ring-slate-200 cursor-pointer";
-      promoBtn.className = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition text-slate-600 hover:text-slate-900 cursor-pointer";
-      deptPanel.classList.remove("hidden");
-      promoPanel.classList.add("hidden");
-      updateDeptSummaryCounts();
+  function togglePw(btn) {
+    const cell = btn.parentElement;
+    const hidden = cell.querySelector(".pw-text").classList.toggle("hidden");
+    cell.querySelector(".pw-mask").classList.toggle("hidden", !hidden);
+    btn.textContent = hidden ? "Show" : "Hide";
+  }
 
-      try { localStorage.setItem('faculty_active_tab', 'departments'); } catch(e){}
-      const url = new URL(window.location);
-      url.searchParams.set('tab', 'departments');
-      window.history.replaceState({}, '', url);
-    } else {
-      promoBtn.className = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold transition bg-white text-brand-700 shadow-sm ring-1 ring-slate-200 cursor-pointer";
-      deptBtn.className = "flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-md px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition text-slate-600 hover:text-slate-900 cursor-pointer";
-      promoPanel.classList.remove("hidden");
-      deptPanel.classList.add("hidden");
-
-      try { localStorage.setItem('faculty_active_tab', 'promotion'); } catch(e){}
-      const url = new URL(window.location);
-      url.searchParams.set('tab', 'promotion');
-      window.history.replaceState({}, '', url);
-    }
+  function toggleEdit(id) {
+    const row = document.getElementById("edit_" + id);
+    if (row) row.classList.toggle("hidden");
   }
 
   function updateDeptSummaryCounts() {
@@ -1711,11 +1772,7 @@
   const SAVED_TAB = (function(){ try { return localStorage.getItem('faculty_active_tab'); }catch(e){ return null; } })();
   const INITIAL_TAB = (URL_TAB || "{{ active_tab }}" || SAVED_TAB || "promotion").toLowerCase();
 
-  if (INITIAL_TAB === "departments") {
-    switchFacultyTab("departments");
-  } else {
-    switchFacultyTab("promotion");
-  }
+  switchFacultyTab(INITIAL_TAB);
 
   // ── Real-Time Live Updates via WebSocket ──
   document.addEventListener("DOMContentLoaded", function() {

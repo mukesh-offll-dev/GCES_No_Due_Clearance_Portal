@@ -82,12 +82,19 @@
           class="input text-base sm:text-sm">
       </div>
 
-      <div class="sm:col-span-2">
+      <div>
         <label class="label" for="setupPhone">Phone Number</label>
         <input id="setupPhone" type="tel" name="phone" value="{{ form.phone }}" required maxlength="10"
           inputmode="numeric" pattern="\d{10}" title="10-digit phone number"
           autocomplete="tel" placeholder="10-digit mobile number" class="input text-base sm:text-sm">
       </div>
+
+      <div>
+        <label class="label" for="setupEmail">Email</label>
+        <input id="setupEmail" type="email" name="email" value="{{ form.email }}" required maxlength="254"
+          autocomplete="email" placeholder="you@example.com" class="input text-base sm:text-sm">
+      </div>
+      <p class="help-text sm:col-span-2 -mt-2">Use an email you can open — if you forget your password, a reset code is sent here.</p>
     </div>
 
     <hr class="my-6 border-slate-200">

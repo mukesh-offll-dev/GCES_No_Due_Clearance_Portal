@@ -13,6 +13,20 @@
   </div>
   {% endfor %}
 
+  {% if not student.email %}
+  <!-- Recovery email missing (students who set up before email was asked) -->
+  <section class="card border-amber-200 bg-amber-50 p-4 sm:p-5" aria-labelledby="addEmailTitle">
+    <h2 id="addEmailTitle" class="font-semibold text-amber-900">Add your email</h2>
+    <p class="text-sm text-amber-800 mt-0.5 mb-3">If you ever forget your password, a reset code is sent to this email. Enter your current password to confirm.</p>
+    <form method="POST" action="{% url 'student_update_email' %}" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+      {% csrf_token %}
+      <input type="email" name="email" required maxlength="254" autocomplete="email" placeholder="you@example.com" aria-label="Email" class="input">
+      <input type="password" name="current_password" required autocomplete="current-password" placeholder="Current password" aria-label="Current password" class="input">
+      <button type="submit" class="btn btn-primary">Save email</button>
+    </form>
+  </section>
+  {% endif %}
+
   <!-- Lock warning banner -->
   <div id="access-warning-banner"
     class="alert alert-warning items-center {% if no_due_access_enabled %}hidden{% else %}flex{% endif %}" role="status">
@@ -87,7 +101,22 @@
           <dt class="text-xs text-slate-500">Phone Number</dt>
           <dd class="font-medium text-slate-900">{{ student.phone|default:"—" }}</dd>
         </div>
+        <div class="sm:col-span-2">
+          <dt class="text-xs text-slate-500">Email (for password reset)</dt>
+          <dd class="font-medium text-slate-900 break-all">{{ student.email|default:"Not added" }}</dd>
+        </div>
       </dl>
+      {% if student.email %}
+      <details class="px-5 sm:px-6 pb-4">
+        <summary class="text-sm font-semibold text-brand-700 cursor-pointer w-fit list-none hover:underline">Change email</summary>
+        <form method="POST" action="{% url 'student_update_email' %}" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2 mt-3">
+          {% csrf_token %}
+          <input type="email" name="email" required maxlength="254" autocomplete="email" placeholder="New email" aria-label="New email" class="input">
+          <input type="password" name="current_password" required autocomplete="current-password" placeholder="Current password" aria-label="Current password" class="input">
+          <button type="submit" class="btn btn-secondary">Save</button>
+        </form>
+      </details>
+      {% endif %}
     </details>
   </section>
 

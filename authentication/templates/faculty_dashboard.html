@@ -280,6 +280,7 @@
               data-name="{{ s.name }}"
               data-dob="{{ s.dob }}"
               data-phone="{{ s.phone }}"
+              data-email="{{ s.email }}"
               data-sem="{{ s.semester }}"
               data-year="{{ s.year }}"
               data-type="{{ s.student_type }}"
@@ -570,6 +571,12 @@
   </div>
 
   <div class="sm:col-span-2">
+    <label class="label" for="edit_email">Email <span class="font-normal text-slate-400">(used for password reset)</span></label>
+    <input id="edit_email" name="email" type="email" maxlength="254" placeholder="Not added"
+           class="input">
+  </div>
+
+  <div class="sm:col-span-2">
     <span class="label">Student Type</span>
     <div class="flex flex-wrap gap-3">
       <label class="flex items-center gap-2 cursor-pointer rounded-lg border border-slate-300 px-3.5 py-2 hover:bg-slate-50">
@@ -614,7 +621,7 @@
   <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
 </div>
 <h2 class="modal-title mb-1">Confirm Delete</h2>
-<p class="text-sm text-slate-500 mb-6">Delete selected students?</p>
+<p class="text-sm text-slate-500 mb-6">Delete selected students? They are moved to <strong>Archived students</strong> on the Promotion &amp; Settings page and can be restored from there.</p>
 <div class="flex flex-row-reverse gap-3 justify-center">
 <button onclick="submitDelete(this)" class="btn btn-danger flex-1">
   <span>Yes</span>
@@ -814,16 +821,17 @@ function submitBulkForm(form) {
 // ── Edit Modal ───────────────────────────────
 function handleEditBtnClick(btn) {
   const d = btn.dataset;
-  openEditModal(d.id, d.roll, d.reg, d.name, d.dob, d.phone, d.sem, d.year, d.type, d.branch);
+  openEditModal(d.id, d.roll, d.reg, d.name, d.dob, d.phone, d.sem, d.year, d.type, d.branch, d.email);
 }
 
-function openEditModal(id, r, rg, n, d, p, sem, y, stype, br) {
+function openEditModal(id, r, rg, n, d, p, sem, y, stype, br, em) {
   edit_id.value    = id;
   edit_roll.value  = r;
   edit_reg.value   = rg;
   edit_name.value  = n;
   edit_dob.value   = d;
   edit_phone.value = p;
+  document.getElementById('edit_email').value = em || '';
 
   if (document.getElementById('edit_branch') && br) {
     document.getElementById('edit_branch').value = br;

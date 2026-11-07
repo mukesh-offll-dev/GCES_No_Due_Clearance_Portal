@@ -97,6 +97,19 @@ def ensure_indexes():
         _safe(created, db["sso_nonces"], [("expire_at", ASCENDING)],
               name="sso_nonce_ttl", expireAfterSeconds=0)
 
+        # ── password_resets (email reset codes, see password_reset.py) ─────
+        _safe(created, db["password_resets"], [("purge_at", ASCENDING)],
+              name="password_reset_ttl", expireAfterSeconds=0)
+
+        # ── login_attempts (wrong-password lockout, see login_guard.py) ─────
+        _safe(created, db["login_attempts"], [("purge_at", ASCENDING)],
+              name="login_attempts_ttl", expireAfterSeconds=0)
+
+        # ── receipt_cleanup (Cloudinary receipts waiting to be deleted, see receipts.py) ─────
+        _safe(created, db["receipt_cleanup"], [("next_try_at", ASCENDING)], name="receipt_next_try")
+        _safe(created, db["no_due_requests"], [("cloudinary_public_id", ASCENDING)],
+              name="cloudinary_public_id", sparse=True)
+
         if created:
             logger.info("MongoDB indexes ensured: %s", ", ".join(created))
         else:

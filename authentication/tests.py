@@ -8,7 +8,37 @@ from bson import ObjectId
 from django.contrib.auth.hashers import make_password, check_password
 
 
-class AuthenticationAndSecurityTests(TestCase):
+TEST_PW = "Test#Pass-2026"
+
+
+class TestAccountsMixin:
+    """Replace institution_accounts with known TEST logins for the test, restore afterwards."""
+
+    def _install_test_accounts(self):
+        from authentication.accounts import accounts_col, set_account, set_promotion_password
+        from authentication.login_guard import attempts_col
+        from authentication.departments import ensure_default_departments
+        ensure_default_departments()
+        self._saved_accounts = list(accounts_col.find({}))
+        accounts_col.delete_many({})
+        attempts_col.delete_many({})
+        for role, user in (("LIBRARY", "library_admin"), ("COLLEGE", "college_admin"),
+                           ("HOSTEL", "hostel_admin"), ("FACULTY", "faculty_admin")):
+            set_account(role, user, TEST_PW, actor="test")
+        set_account("DEPARTMENT", "cse_admin", TEST_PW, department="CSE", actor="test")
+        set_promotion_password(TEST_PW, actor="test")
+        self.addCleanup(self._restore_accounts)
+
+    def _restore_accounts(self):
+        from authentication.accounts import accounts_col
+        from authentication.login_guard import attempts_col
+        accounts_col.delete_many({})
+        attempts_col.delete_many({})
+        if self._saved_accounts:
+            accounts_col.insert_many(self._saved_accounts)
+
+
+class AuthenticationAndSecurityTests(TestAccountsMixin, TestCase):
     """
     Tests covering:
     - Production 500 error prevention (defensive field access, null checks)
@@ -19,6 +49,7 @@ class AuthenticationAndSecurityTests(TestCase):
 
     def setUp(self):
         self.client = Client()
+        self._install_test_accounts()
 
     # ─────────────────────────────────────────────────────────────
     #  1. Unauthenticated & Protected Routes
@@ -61,7 +92,7 @@ class AuthenticationAndSecurityTests(TestCase):
             response = self.client.post(reverse("index"), {
                 "office": "faculty",
                 "username": "faculty_admin",
-                "password": "fac@123",
+                "password": TEST_PW,
             })
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, reverse("faculty_dashboard"))
@@ -246,7 +277,7 @@ class AuthenticationAndSecurityTests(TestCase):
                 "office": "department",
                 "department": "CSE",
                 "username": "cse_admin",
-                "password": "cse@123",
+                "password": TEST_PW,
             })
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, reverse("department_dashboard"))
@@ -266,7 +297,7 @@ class AuthenticationAndSecurityTests(TestCase):
             h_resp = client_h.post(reverse("index"), {
                 "office": "hostel",
                 "username": "hostel_admin",
-                "password": "host@123",
+                "password": TEST_PW,
             })
             self.assertEqual(h_resp.status_code, 302)
             self.assertEqual(h_resp.url, reverse("hostel_dashboard"))
@@ -275,7 +306,7 @@ class AuthenticationAndSecurityTests(TestCase):
             c_resp = client_c.post(reverse("index"), {
                 "office": "college",
                 "username": "college_admin",
-                "password": "col@123",
+                "password": TEST_PW,
             })
             self.assertEqual(c_resp.status_code, 302)
             self.assertEqual(c_resp.url, reverse("college_dashboard"))
@@ -306,7 +337,7 @@ class AuthenticationAndSecurityTests(TestCase):
         with patch("authentication.views.portal_settings.find_one", return_value=None), \
              patch("authentication.views.students_col.count_documents", return_value=0):
             correct_resp = self.client.post(reverse("faculty_promotion"), {
-                "promotion_password": "gces8301",
+                "promotion_password": TEST_PW,
             })
             self.assertEqual(correct_resp.status_code, 302)
             self.assertEqual(correct_resp.url, reverse("faculty_promotion"))
@@ -345,7 +376,7 @@ class AuthenticationAndSecurityTests(TestCase):
             client_faculty.post(reverse("index"), {
                 "office": "faculty",
                 "username": "faculty_admin",
-                "password": "fac@123",
+                "password": TEST_PW,
             })
 
         # Login student
@@ -1008,6 +1039,7 @@ class StudentRegistrationAndLoginTests(TestCase):
             "roll_no": "99ts001",
             "dob": "2004-06-15",
             "phone": "9876543210",
+            "email": "Test.Student@Example.com",
             "password": self.NEW_PASSWORD,
             "confirm_password": self.NEW_PASSWORD,
         }
@@ -1253,10 +1285,433 @@ class StudentRegistrationAndLoginTests(TestCase):
         self.assertContains(res, "Forgot Password?")
 
 
-class MongoSessionStoreTests(TestCase):
+    def test_profile_setup_requires_valid_email_and_saves_it_lowercase(self):
+        from authentication.mongo import students_col
+        self._login_faculty()
+        reg = self._reg(70)
+        self._add_student(reg)
+        self.client = Client()
+        self._first_time_login(reg)
+        res = self.client.post(reverse("student_profile_setup"), self._valid_profile(email="not-an-email"))
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("Enter a valid email address (e.g. name@gmail.com).", res.context["errors"])
+        res = self.client.post(reverse("student_profile_setup"), self._valid_profile())
+        self.assertEqual(res.url, reverse("student_dashboard"))
+        self.assertEqual(students_col.find_one({"reg_no": reg})["email"], "test.student@example.com")
+
+
+@patch("django.conf.settings.APP_MAIL_ENABLED", True)
+class PasswordResetTests(TestCase):
+    """Forgot password: Register No -> emailed code (EmailJS mocked) -> new password."""
+
+    PREFIX = "99998830"
+    OLD = "Gces#Old2026"
+    NEW = "Gces#New2026"
+
+    def setUp(self):
+        from authentication.mongo import students_col
+        self._cleanup()
+        self.client = Client()
+        self.reg = f"{self.PREFIX}0001"
+        self.sid = students_col.insert_one({
+            "reg_no": self.reg, "roll_no": "99RS001", "name": "RESET STUDENT", "branch": "CSE", "year": 3,
+            "semester": 5, "student_type": "Hosteller", "profile_completed": True,
+            "password_hash": make_password(self.OLD), "email": "reset.student@example.com",
+        }).inserted_id
+        self.sent = []
+        patcher = patch("authentication.password_reset.send_email", side_effect=self._fake_send)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        self._cleanup()
+
+    def _cleanup(self):
+        from authentication.mongo import students_col, db
+        ids = [d["_id"] for d in students_col.find({"reg_no": {"$regex": f"^{self.PREFIX}"}}, {"_id": 1})]
+        db["password_resets"].delete_many({"_id": {"$in": ids}})
+        students_col.delete_many({"reg_no": {"$regex": f"^{self.PREFIX}"}})
+
+    def _fake_send(self, params):
+        self.sent.append(params)
+        return True, "OK"
+
+    def _request(self, reg=None):
+        return self.client.post(reverse("student_forgot_password"), {"reg_no": reg or self.reg})
+
+    def _reset(self, code, password=None, confirm=None):
+        password = password or self.NEW
+        return self.client.post(reverse("student_reset_password"),
+                                {"code": code, "password": password, "confirm_password": confirm or password})
+
+    def test_full_reset_flow_changes_password_and_logs_out_old_sessions(self):
+        from authentication.mongo import students_col
+        old_session = Client()
+        old_session.post(reverse("student_login"), {"reg_no": self.reg, "password": self.OLD})
+        self.assertEqual(old_session.get(reverse("student_dashboard")).status_code, 200)
+
+        res = self._request()
+        self.assertEqual(res.url, reverse("student_reset_password"))
+        self.assertEqual(len(self.sent), 1)
+        params = self.sent[0]
+        self.assertEqual(params["to_email"], "reset.student@example.com")
+        self.assertEqual(params["reg_no"], self.reg)
+        code = params["passcode"]
+        self.assertRegex(code, r"^\d{6}$")
+        page = self.client.get(reverse("student_reset_password"))
+        self.assertContains(page, "re***********@example.com")
+
+        res = self._reset(code)
+        self.assertEqual(res.url, reverse("index"))
+        self.assertContains(self.client.get(reverse("index")), "Your password has been changed")
+        doc = students_col.find_one({"_id": self.sid})
+        self.assertTrue(check_password(self.NEW, doc["password_hash"]))
+        self.assertEqual(doc["password_version"], 1)
+
+        # Old logged-in session is closed; old password fails; new password works.
+        self.assertEqual(old_session.get(reverse("student_dashboard")).url, reverse("index"))
+        res = self.client.post(reverse("student_login"), {"reg_no": self.reg, "password": self.OLD})
+        self.assertEqual(res.url, reverse("index"))
+        res = self.client.post(reverse("student_login"), {"reg_no": self.reg, "password": self.NEW})
+        self.assertEqual(res.url, reverse("student_dashboard"))
+        self.assertEqual(self.client.get(reverse("student_dashboard")).status_code, 200)
+
+    def test_wrong_codes_are_limited(self):
+        self._request()
+        code = self.sent[0]["passcode"]
+        wrong = "000000" if code != "000000" else "111111"
+        for left in (4, 3, 2, 1):
+            res = self._reset(wrong)
+            self.assertIn(f"That code is not correct. {left} attempt", res.context["errors"][0])
+        res = self._reset(wrong)
+        self.assertIn("Too many wrong codes", res.context["errors"][0])
+        res = self._reset(code)   # even the right code is now cancelled
+        self.assertIn("No active code", res.context["errors"][0])
+
+    def test_expired_code_is_refused(self):
+        from authentication.mongo import db
+        from datetime import datetime, timedelta, timezone
+        self._request()
+        db["password_resets"].update_one({"_id": self.sid},
+                                         {"$set": {"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)}})
+        res = self._reset(self.sent[0]["passcode"])
+        self.assertIn("This code has expired", res.context["errors"][0])
+
+    def test_weak_password_keeps_code_valid(self):
+        self._request()
+        code = self.sent[0]["passcode"]
+        res = self._reset(code, password=self.reg)
+        self.assertIn("Your new password cannot be your Register Number.", res.context["errors"])
+        res = self._reset(code)
+        self.assertEqual(res.url, reverse("index"))
+
+    def test_resend_is_rate_limited(self):
+        from authentication.mongo import db
+        from datetime import datetime, timedelta, timezone
+        self._request()
+        self.client.post(reverse("student_reset_password"), {"action": "resend"})
+        self.assertEqual(len(self.sent), 1)          # within 60 s -> no second email
+        db["password_resets"].update_one({"_id": self.sid}, {"$set": {
+            "last_sent_at": datetime.now(timezone.utc) - timedelta(seconds=61)}})
+        self.client.post(reverse("student_reset_password"), {"action": "resend"})
+        self.assertEqual(len(self.sent), 2)
+        if self.sent[0]["passcode"] != self.sent[1]["passcode"]:
+            res = self._reset(self.sent[0]["passcode"])  # the older code no longer works
+            self.assertIn("not correct", res.context["errors"][0])
+        res = self._reset(self.sent[1]["passcode"])
+        self.assertEqual(res.url, reverse("index"))
+
+    def test_hourly_limit(self):
+        from authentication.mongo import db
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        db["password_resets"].insert_one({"_id": self.sid, "sends": 5, "window_start": now,
+                                          "last_sent_at": now - timedelta(minutes=5),
+                                          "purge_at": now + timedelta(hours=1)})
+        res = self._request()
+        self.assertIn("Too many codes", res.context["error"])
+        self.assertEqual(self.sent, [])
+
+    def test_request_errors(self):
+        from authentication.mongo import students_col
+        res = self._request("123")
+        self.assertEqual(res.context["error"], "Register Number must be 12 digits.")
+        res = self._request(f"{self.PREFIX}9999")
+        self.assertIn("No student is registered", res.context["error"])
+        students_col.update_one({"_id": self.sid}, {"$unset": {"email": ""}})
+        res = self._request()
+        self.assertIn("No email address is saved", res.context["error"])
+        students_col.update_one({"_id": self.sid}, {"$set": {"email": "x@example.com"},
+                                                    "$unset": {"password_hash": ""}})
+        res = self._request()
+        self.assertIn("use your Register Number as the password", res.context["error"])
+        self.assertEqual(self.sent, [])
+
+    def test_email_send_failure_is_reported(self):
+        with patch("authentication.password_reset.send_email", return_value=(False, "boom")):
+            res = self._request()
+        self.assertIn("couldn't send the email", res.context["error"])
+        self.assertIsNone(self.client.session.get("pw_reset_sid"))
+
+    def test_reset_page_needs_a_request_first(self):
+        res = self.client.get(reverse("student_reset_password"))
+        self.assertEqual(res.url, reverse("student_forgot_password"))
+
+    def test_mail_disabled_shows_contact_message(self):
+        with patch("django.conf.settings.APP_MAIL_ENABLED", False):
+            res = self._request()
+        self.assertContains(res, "not available right now")
+        self.assertEqual(self.sent, [])
+
+    def test_student_can_add_or_change_email_with_current_password(self):
+        from authentication.mongo import students_col
+        self.client.post(reverse("student_login"), {"reg_no": self.reg, "password": self.OLD})
+        self.client.post(reverse("student_update_email"), {"email": "new@example.com", "current_password": "wrong"})
+        self.assertEqual(students_col.find_one({"_id": self.sid})["email"], "reset.student@example.com")
+        self.client.post(reverse("student_update_email"), {"email": "New@Example.com", "current_password": self.OLD})
+        self.assertEqual(students_col.find_one({"_id": self.sid})["email"], "new@example.com")
+
+    def test_dashboard_asks_for_missing_email(self):
+        from authentication.mongo import students_col
+        students_col.update_one({"_id": self.sid}, {"$unset": {"email": ""}})
+        self.client.post(reverse("student_login"), {"reg_no": self.reg, "password": self.OLD})
+        self.assertContains(self.client.get(reverse("student_dashboard")), "Add your email")
+
+    def test_faculty_can_fix_or_clear_email(self):
+        from authentication.mongo import students_col
+        s = self.client.session
+        s["role"] = "FACULTY"
+        s.save()
+        base = {"student_id": str(self.sid), "reg_no": self.reg, "roll_no": "99RS001", "name": "RESET STUDENT",
+                "dob": "", "phone": "", "branch": "CSE", "year": "3", "semester": "5", "student_type": "Hosteller"}
+        self.client.post(reverse("edit_student"), dict(base, email="bad"))
+        self.assertEqual(students_col.find_one({"_id": self.sid})["email"], "reset.student@example.com")
+        self.client.post(reverse("edit_student"), dict(base, email="Fixed@Example.com"))
+        self.assertEqual(students_col.find_one({"_id": self.sid})["email"], "fixed@example.com")
+        self.client.post(reverse("edit_student"), dict(base, email=""))
+        self.assertNotIn("email", students_col.find_one({"_id": self.sid}))
+
+    def test_masking(self):
+        from authentication.password_reset import mask_email
+        self.assertEqual(mask_email("ab@x.com"), "a***@x.com")
+        self.assertEqual(mask_email("arun.kumar@gmail.com"), "ar********@gmail.com")
+
+
+class InstitutionAccountsTests(TestAccountsMixin, TestCase):
+    """Hashed office/department logins in MongoDB, lockout, Promotion password, credential tools."""
+
+    def setUp(self):
+        self.client = Client()
+        self._install_test_accounts()
+
+    def _login(self, office, username, password, department=""):
+        with patch("authentication.views.institution_logs.insert_one"):
+            return self.client.post(reverse("index"), {"office": office, "username": username,
+                                                       "password": password, "department": department})
+
+    def test_passwords_are_stored_hashed(self):
+        from authentication.accounts import accounts_col
+        for doc in accounts_col.find({}):
+            self.assertTrue(doc["password_hash"].startswith("pbkdf2_"))
+            self.assertNotIn(TEST_PW, str(doc))
+
+    def test_old_guessable_department_pattern_is_rejected(self):
+        res = self._login("department", "eceadmin", "ece@123", "ECE")
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(self.client.session.get("role"))
+        res = self._login("department", "cseadmin", "cse@123", "CSE")
+        self.assertIsNone(self.client.session.get("role"))
+
+    def test_department_without_login_or_inactive_cannot_log_in(self):
+        from authentication.departments import departments_col
+        res = self._login("department", "cse_admin", TEST_PW, "ECE")       # CSE's password on ECE
+        self.assertIsNone(self.client.session.get("role"))
+        departments_col.update_one({"code": "CSE"}, {"$set": {"is_active": False}})
+        try:
+            self._login("department", "cse_admin", TEST_PW, "CSE")
+            self.assertIsNone(self.client.session.get("role"))
+        finally:
+            departments_col.update_one({"code": "CSE"}, {"$set": {"is_active": True}})
+        res = self._login("department", "CSE_ADMIN", TEST_PW, "CSE")      # username is case-insensitive
+        self.assertEqual(res.url, reverse("department_dashboard"))
+        self.assertEqual(self.client.session.get("department"), "CSE")
+
+    def test_institution_login_locks_after_five_wrong_passwords(self):
+        for _ in range(4):
+            res = self._login("library", "library_admin", "wrong")
+            self.assertContains(res, "Invalid credentials")
+        res = self._login("library", "library_admin", "wrong")
+        self.assertContains(res, "Too many wrong attempts")
+        res = self._login("library", "library_admin", TEST_PW)            # right password, still locked
+        self.assertContains(res, "Too many wrong attempts")
+        self.assertIsNone(self.client.session.get("role"))
+        res = self._login("college", "college_admin", TEST_PW)            # other accounts unaffected
+        self.assertEqual(res.url, reverse("college_dashboard"))
+
+    def test_successful_login_resets_the_counter(self):
+        for _ in range(4):
+            self._login("hostel", "hostel_admin", "wrong")
+        self.assertEqual(self._login("hostel", "hostel_admin", TEST_PW).url, reverse("hostel_dashboard"))
+        self.client = Client()
+        for _ in range(4):
+            res = self._login("hostel", "hostel_admin", "wrong")
+        self.assertContains(res, "Invalid credentials")
+
+    def test_student_login_locks_and_password_reset_unlocks(self):
+        from authentication.mongo import students_col
+        reg = "999988400001"
+        students_col.delete_many({"reg_no": reg})
+        students_col.insert_one({"reg_no": reg, "roll_no": "99LK001", "name": "LOCK TEST", "branch": "CSE",
+                                 "year": 3, "semester": 5, "profile_completed": True,
+                                 "password_hash": make_password("Right#Pass1")})
+        self.addCleanup(students_col.delete_many, {"reg_no": reg})
+        for _ in range(5):
+            self.client.post(reverse("student_login"), {"reg_no": reg, "password": "nope"})
+        self.client.post(reverse("student_login"), {"reg_no": reg, "password": "Right#Pass1"})
+        self.assertIn("Too many wrong attempts", self.client.get(reverse("index")).content.decode())
+        self.assertIsNone(self.client.session.get("role"))
+        from authentication.login_guard import clear
+        clear(f"student:{reg}")                                               # what a password reset does
+        res = self.client.post(reverse("student_login"), {"reg_no": reg, "password": "Right#Pass1"})
+        self.assertEqual(res.url, reverse("student_dashboard"))
+
+    def test_promotion_password_from_db_and_lockout(self):
+        s = self.client.session
+        s["role"] = "FACULTY"
+        s.save()
+        for _ in range(5):
+            res = self.client.post(reverse("faculty_promotion"), {"promotion_password": "bad"})
+        self.assertContains(res, "Too many wrong attempts")
+        from authentication.login_guard import clear
+        clear("promotion")
+        with patch("authentication.views.check_no_due_access_status"):
+            res = self.client.post(reverse("faculty_promotion"), {"promotion_password": TEST_PW})
+        self.assertEqual(res.url, reverse("faculty_promotion"))
+        self.assertTrue(self.client.session.get("promotion_unlocked"))
+
+    def _unlocked_faculty(self):
+        s = self.client.session
+        s["role"] = "FACULTY"
+        s["promotion_unlocked"] = True
+        s.save()
+
+    def test_no_accounts_gives_clear_message(self):
+        from authentication.accounts import accounts_col
+        accounts_col.delete_many({})
+        with patch("authentication.accounts.ensure_default_accounts"):
+            res = self._login("library", "library_admin", TEST_PW)
+        self.assertContains(res, "Office logins are not set up yet")
+
+    def _unlocked_faculty_client(self):
+        s = self.client.session
+        s["role"] = "FACULTY"
+        s["promotion_unlocked"] = True
+        s.save()
+
+    def test_password_management_tab_shows_and_updates_passwords(self):
+        from authentication.accounts import authenticate
+        self._unlocked_faculty_client()
+        with patch("authentication.views.check_no_due_access_status"):
+            page = self.client.get(reverse("faculty_promotion") + "?tab=passwords")
+        self.assertContains(page, "Password Management")
+        self.assertContains(page, TEST_PW)                         # viewable (behind Show)
+        self.assertContains(page, "Promotion &amp; Settings")
+        res = self.client.post(reverse("update_account_password"),
+                               {"account_id": "DEPARTMENT:CSE", "username": "cse_hod", "password": "cse#2027"})
+        self.assertEqual(res.url, "/faculty/promotion/?tab=passwords")
+        self.assertIsNone(authenticate("department", "cse_admin", TEST_PW, "CSE"))
+        self.assertEqual(authenticate("department", "cse_hod", "cse#2027", "CSE"), ("DEPARTMENT", "CSE"))
+        # creates a login for a department that had none
+        self.client.post(reverse("update_account_password"),
+                         {"account_id": "DEPARTMENT:ECE", "username": "ece_admin", "password": "ece#2027"})
+        self.assertEqual(authenticate("department", "ece_admin", "ece#2027", "ECE"), ("DEPARTMENT", "ECE"))
+
+    def test_update_validates_input(self):
+        from authentication.accounts import authenticate
+        self._unlocked_faculty_client()
+        for data in ({"username": "library_admin", "password": "12345"},          # too short
+                     {"username": "bad name", "password": "library#1"},           # space in username
+                     {"username": "library_admin", "password": " padded1 "}):     # spaces at the ends
+            self.client.post(reverse("update_account_password"), dict(data, account_id="LIBRARY"))
+            self.assertIsNotNone(authenticate("library", "library_admin", TEST_PW))
+
+    def test_update_promotion_password(self):
+        from authentication.accounts import check_promotion_password
+        self._unlocked_faculty_client()
+        self.client.post(reverse("update_account_password"), {"account_id": "PROMOTION", "password": "promo#2027"})
+        self.assertTrue(check_promotion_password("promo#2027"))
+        self.assertFalse(check_promotion_password(TEST_PW))
+
+    def test_update_needs_unlocked_faculty(self):
+        from authentication.accounts import authenticate
+        s = self.client.session
+        s["role"] = "FACULTY"
+        s.save()
+        res = self.client.post(reverse("update_account_password"),
+                               {"account_id": "LIBRARY", "username": "x_admin", "password": "hacked123"})
+        self.assertEqual(res.url, reverse("faculty_promotion"))
+        s = self.client.session
+        s["role"] = "LIBRARY"
+        s["promotion_unlocked"] = True
+        s.save()
+        res = self.client.post(reverse("update_account_password"),
+                               {"account_id": "LIBRARY", "username": "x_admin", "password": "hacked123"})
+        self.assertEqual(res.url, reverse("index"))
+        self.assertIsNotNone(authenticate("library", "library_admin", TEST_PW))
+
+    def test_saving_a_password_lifts_the_lock(self):
+        for _ in range(5):
+            self._login("college", "college_admin", "wrong")
+        self.assertContains(self._login("college", "college_admin", TEST_PW), "Too many wrong attempts")
+        admin = Client()
+        s = admin.session
+        s["role"] = "FACULTY"
+        s["promotion_unlocked"] = True
+        s.save()
+        admin.post(reverse("update_account_password"),
+                   {"account_id": "COLLEGE", "username": "college_admin", "password": "college#2027"})
+        self.assertEqual(self._login("college", "college_admin", "college#2027").url, reverse("college_dashboard"))
+
+    def test_default_logins_are_created_when_missing_and_never_overwrite(self):
+        from authentication import accounts
+        accounts.accounts_col.delete_many({})
+        accounts.set_account("LIBRARY", "library_admin", "changed#1", actor="test")
+        accounts.ensure_default_accounts(force=True)
+        self.assertIsNotNone(accounts.authenticate("library", "library_admin", "changed#1"))     # kept
+        user, pw = accounts.DEFAULT_LOGINS["COLLEGE"]
+        self.assertIsNotNone(accounts.authenticate("college", user, pw))                     # created
+        user, pw = accounts.DEFAULT_LOGINS["DEPARTMENT:CSE"]
+        self.assertEqual(accounts.authenticate("department", user, pw, "CSE"), ("DEPARTMENT", "CSE"))
+        self.assertTrue(accounts.check_promotion_password(accounts.DEFAULT_PROMOTION_PASSWORD))
+
+    def test_login_works_on_an_empty_database(self):
+        from authentication import accounts
+        accounts.accounts_col.delete_many({})
+        accounts._defaults_done = False
+        user, pw = accounts.DEFAULT_LOGINS["HOSTEL"]
+        self.assertEqual(self._login("hostel", user, pw).url, reverse("hostel_dashboard"))
+
+    def test_viewable_copy_is_encrypted(self):
+        from authentication.accounts import accounts_col, list_accounts
+        doc = accounts_col.find_one({"_id": "FACULTY"})
+        self.assertNotEqual(doc["password_enc"], TEST_PW)
+        row = next(r for r in list_accounts() if r["id"] == "FACULTY")
+        self.assertEqual(row["password"], TEST_PW)
+
+    def test_department_code_rename_and_delete_keep_accounts_in_sync(self):
+        from authentication.accounts import accounts_col, rename_department_account, delete_department_account
+        rename_department_account("CSE", "CSX")
+        self.assertIsNone(accounts_col.find_one({"_id": "DEPARTMENT:CSE"}))
+        self.assertEqual(accounts_col.find_one({"_id": "DEPARTMENT:CSX"})["department"], "CSX")
+        delete_department_account("CSX")
+        self.assertIsNone(accounts_col.find_one({"_id": "DEPARTMENT:CSX"}))
+
+
+class MongoSessionStoreTests(TestAccountsMixin, TestCase):
     """Login sessions are stored in MongoDB (authentication/mongo_sessions.py)."""
 
     def setUp(self):
+        self._install_test_accounts()
         from authentication.mongo_sessions import SessionStore, sessions_col
         self.SessionStore = SessionStore
         self.col = sessions_col
@@ -1312,7 +1767,7 @@ class MongoSessionStoreTests(TestCase):
     def test_login_creates_mongo_session(self):
         from django.conf import settings
         c = Client()
-        c.post("/", {"office": "library", "username": "library_admin", "password": "lib@123"})
+        c.post("/", {"office": "library", "username": "library_admin", "password": TEST_PW})
         key = c.cookies[settings.SESSION_COOKIE_NAME].value
         self.keys.append(key)
         doc = self.col.find_one({"_id": key})
@@ -1671,6 +2126,7 @@ class PromotionTests(TestCase):
             self.db.promotion_run_items.delete_many({"run_id": {"$in": stale}})
             self.db.promotion_runs.delete_many({"_id": {"$in": stale}})
         self.db.archived_students.delete_many({"student.reg_no": {"$regex": f"^{self.PREFIX}"}})
+        self.db.receipt_cleanup.delete_many({"_id": {"$regex": "^test_rcpt/"}})
 
     def _add(self, sem, year=None, stype="Day Scholar", approved=(), branch="CSE"):
         self.n += 1
@@ -2118,3 +2574,116 @@ class PromotionTests(TestCase):
         self.assertEqual(self._sem(cse), (5, 3))
         c.post("/faculty/promote/", {"promotion_mode": "semester", "from_sem": "5", "promote_branch": "CSE"})
         self.assertEqual((self._sem(cse), self._sem(ece)), ((6, 3), (5, 3)))
+
+    # ── Cloudinary receipt cleanup (authentication/receipts.py) ──────────────
+    def _receipt(self, sid, pid, status="APPROVED"):
+        return self.db.no_due_requests.insert_one({
+            "student_id": sid, "office": "HOSTEL", "status": status, "attempts_used": 0, "attempts_model": 2,
+            "receipt_url": f"https://res.cloudinary.com/x/{pid}", "cloudinary_public_id": pid,
+            "created_at": __import__("datetime").datetime.now()}).inserted_id
+
+    def _due_now(self, pid):
+        from datetime import datetime, timedelta
+        self.db.receipt_cleanup.update_one({"_id": pid}, {"$set": {"next_try_at": datetime.utcnow() - timedelta(seconds=1)}})
+
+    def _process(self):
+        from authentication.receipts import process_queue
+        self.db.portal_settings.update_one({"_id": "receipt_backfill"}, {"$set": {"done": True}}, upsert=True)
+        with patch("cloudinary.uploader.destroy", return_value={"result": "ok"}) as destroy:
+            stats = process_queue()
+        return destroy, stats
+
+    def test_approved_receipt_deleted_only_after_undo_is_impossible(self):
+        from datetime import datetime
+        from authentication.promotion import run_promotion
+        sid = self._add(3, stype="Hosteller", approved=("LIBRARY", "COLLEGE", "DEPARTMENT"))
+        self._receipt(sid, "test_rcpt/a1")
+        self.assertTrue(run_promotion(3)["ok"])
+        self.assertIsNotNone(self.db.receipt_cleanup.find_one({"_id": "test_rcpt/a1"}))
+        destroy, stats = self._process()                       # undo still possible → wait
+        destroy.assert_not_called()
+        self.assertEqual(stats["waiting"], 1)
+        # a promoted student sends a request for the new semester → undo no longer possible
+        self.db.no_due_requests.update_one({"student_id": sid, "office": "LIBRARY"},
+                                           {"$set": {"status": "PENDING", "created_at": datetime.now()}})
+        self._due_now("test_rcpt/a1")
+        destroy, stats = self._process()
+        self.assertEqual(stats["deleted"], 1)
+        self.assertIn("test_rcpt/a1", [c.args[0] for c in destroy.call_args_list])
+        self.assertIsNone(self.db.receipt_cleanup.find_one({"_id": "test_rcpt/a1"}))
+
+    def test_undone_promotion_keeps_the_receipt(self):
+        from authentication.promotion import run_promotion, rollback_last_run
+        sid = self._add(5, stype="Hosteller")
+        self._receipt(sid, "test_rcpt/b1")
+        result = run_promotion(5)
+        self.assertTrue(rollback_last_run(result["run_id"])["ok"])
+        self._due_now("test_rcpt/b1")
+        destroy, stats = self._process()
+        destroy.assert_not_called()
+        self.assertIsNone(self.db.receipt_cleanup.find_one({"_id": "test_rcpt/b1"}))
+        self.assertEqual(self.db.no_due_requests.find_one({"student_id": sid, "office": "HOSTEL"})["cloudinary_public_id"],
+                         "test_rcpt/b1")
+
+    def test_newer_promotion_makes_older_receipts_deletable(self):
+        from authentication.promotion import run_promotion
+        sid = self._add(3, stype="Hosteller")
+        self._receipt(sid, "test_rcpt/c1")
+        self.assertTrue(run_promotion(3)["ok"])                # 3 → 4
+        self.assertTrue(run_promotion(4)["ok"])                # 4 → 5 (a newer run)
+        self._due_now("test_rcpt/c1")
+        destroy, stats = self._process()
+        self.assertEqual(stats["deleted"], 1)
+
+    def test_file_still_in_use_is_never_deleted(self):
+        from authentication.receipts import queue
+        sid = self._add(3, stype="Hosteller")
+        self._receipt(sid, "test_rcpt/d1", status="PENDING")
+        queue("test_rcpt/d1", "rejected")
+        destroy, stats = self._process()
+        destroy.assert_not_called()
+        self.assertEqual(stats["kept"], 1)
+
+    def test_failed_reject_delete_is_retried(self):
+        sid = self._add(3, stype="Hosteller")
+        rid = self._receipt(sid, "test_rcpt/e1", status="PENDING")
+        c = Client()
+        s = c.session
+        s["role"] = "HOSTEL"
+        s.save()
+        with patch("cloudinary.uploader.destroy", side_effect=Exception("network down")):
+            c.post(reverse("reject_request"), {"req_id": str(rid), "reason": "Receipt is unclear / unreadable"})
+        self.assertEqual(self.db.no_due_requests.find_one({"_id": rid})["status"], "REJECTED")
+        self.assertIsNotNone(self.db.receipt_cleanup.find_one({"_id": "test_rcpt/e1"}))   # queued for retry
+        destroy, stats = self._process()
+        self.assertEqual(stats["deleted"], 1)
+        self.assertIsNone(self.db.receipt_cleanup.find_one({"_id": "test_rcpt/e1"}))
+
+    def test_reject_deletes_immediately_when_cloudinary_works(self):
+        sid = self._add(3, stype="Hosteller")
+        rid = self._receipt(sid, "test_rcpt/f1", status="PENDING")
+        c = Client()
+        s = c.session
+        s["role"] = "HOSTEL"
+        s.save()
+        with patch("cloudinary.uploader.destroy", return_value={"result": "ok"}) as destroy:
+            c.post(reverse("reject_request"), {"req_id": str(rid), "reason": "Wrong document uploaded"})
+        self.assertIn("test_rcpt/f1", [cl.args[0] for cl in destroy.call_args_list])
+        self.assertIsNone(self.db.receipt_cleanup.find_one({"_id": "test_rcpt/f1"}))
+
+    def test_backfill_queues_receipts_from_earlier_promotions(self):
+        from datetime import datetime
+        from bson import ObjectId
+        from authentication.receipts import process_queue
+        run_id = ObjectId()
+        self.db.promotion_runs.insert_one({"_id": run_id, "status": "completed", "mode": "full",
+                                           "started_at": datetime.now(), "finished_at": datetime.now()})
+        sid = self._add(4, stype="Hosteller")
+        self.db.promotion_run_items.insert_one({"run_id": run_id, "student_id": sid, "dues": [
+            {"office": "HOSTEL", "status": "APPROVED", "cloudinary_public_id": "test_rcpt/g1"}]})
+        self.db.portal_settings.delete_one({"_id": "receipt_backfill"})
+        with patch("cloudinary.uploader.destroy", return_value={"result": "ok"}):
+            process_queue()
+        doc = self.db.receipt_cleanup.find_one({"_id": "test_rcpt/g1"})
+        self.assertIsNotNone(doc)                               # queued (waiting: this run is still undoable)
+        self.assertEqual(doc["run_id"], run_id)

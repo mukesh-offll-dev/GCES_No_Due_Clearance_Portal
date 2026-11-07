@@ -81,6 +81,18 @@ if ENABLE_HTTPS and not DEBUG:
 HOSTEL_SSO_SECRET  = os.environ.get("HOSTEL_SSO_SECRET", "").strip()
 HOSTEL_SSO_MAX_AGE = int(os.environ.get("HOSTEL_SSO_MAX_AGE", "60"))  # seconds a link stays valid
 
+# ================= EMAIL (EmailJS) — student password reset =================
+# Codes are sent through the EmailJS REST API (authentication/password_reset.py).
+# Leave APP_MAIL_ENABLED unset/false or any key empty to turn email reset off.
+# EmailJS account → Security: "Allow EmailJS API for non-browser applications" must be ON.
+EMAILJS_SERVICE_ID  = os.environ.get("EMAILJS_SERVICE_ID", "").strip()
+EMAILJS_TEMPLATE_ID = os.environ.get("EMAILJS_TEMPLATE_ID", "").strip()
+EMAILJS_PUBLIC_KEY  = os.environ.get("EMAILJS_PUBLIC_KEY", "").strip()
+EMAILJS_PRIVATE_KEY = os.environ.get("EMAILJS_PRIVATE_KEY", "").strip()
+APP_MAIL_ENABLED = (os.environ.get("APP_MAIL_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+                    and all((EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY)))
+PASSWORD_RESET_CODE_MINUTES = int(os.environ.get("PASSWORD_RESET_CODE_MINUTES", "10"))
+
 # ================= SESSION SETTINGS =================
 # Sessions are stored in MongoDB (collection: django_sessions) — no SQL database.
 SESSION_ENGINE             = "authentication.mongo_sessions"

@@ -138,18 +138,9 @@ def _check_auto_disable_access():
 
 
 def _delete_cloudinary(public_id):
-    """Best-effort delete; resource type isn't tracked so try raw then image."""
-    if not public_id or public_id == "7.5_scheme":
-        return
-    try:
-        import cloudinary.uploader
-        for rtype in ("raw", "image"):
-            try:
-                cloudinary.uploader.destroy(public_id, resource_type=rtype)
-            except Exception:
-                continue
-    except Exception as exc:  # cloudinary import / network failure
-        logger.warning("Cloudinary delete failed for %s: %s", public_id, exc)
+    """Delete an expired request's receipt (queued for retry if Cloudinary fails)."""
+    from .receipts import delete_or_queue
+    delete_or_queue(public_id, "expired")
 
 
 def _expire_stale_pending():
@@ -173,9 +164,13 @@ def _expire_stale_pending():
     deletes = 0
     for req in cursor:
         try:
-            if req.get("office") == "HOSTEL" and deletes < MAX_CLOUDINARY_DELETES_PER_CYCLE:
-                _delete_cloudinary(req.get("cloudinary_public_id"))
-                deletes += 1
+            if req.get("office") == "HOSTEL" and req.get("cloudinary_public_id"):
+                if deletes < MAX_CLOUDINARY_DELETES_PER_CYCLE:
+                    _delete_cloudinary(req.get("cloudinary_public_id"))
+                    deletes += 1
+                else:                                   # over this cycle's budget → delete in a later cycle
+                    from .receipts import queue
+                    queue(req["cloudinary_public_id"], "expired")
 
             current = req.get("attempts_used", 0) or 0
             # Old-model documents counted the send itself → give that back once.
@@ -253,7 +248,15 @@ def run_maintenance_cycle(lock_ttl_seconds=50):
         reverted = _expire_stale_pending()
         if reverted:
             logger.info("Maintenance cycle: reverted %d stale PENDING requests", reverted)
-        return {"reverted_pending": reverted}
+        receipts = {}
+        try:
+            from .receipts import process_queue
+            receipts = process_queue()
+            if receipts.get("deleted") or receipts.get("failed"):
+                logger.info("Maintenance cycle: receipts %s", receipts)
+        except Exception as exc:
+            logger.error("Receipt cleanup failed: %s", exc)
+        return {"reverted_pending": reverted, "receipts": receipts}
     except Exception as exc:  # defensive: never let the scheduler thread die
         logger.exception("run_maintenance_cycle error: %s", exc)
         return {"error": str(exc)}

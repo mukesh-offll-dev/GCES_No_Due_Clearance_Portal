@@ -20,7 +20,9 @@
     </div>
 
     <!-- Error message -->
-    {% if error %}
+    {% if error_message %}
+    <div class="alert alert-error mb-5 font-medium">{{ error_message }}</div>
+    {% elif error %}
     <div class="alert alert-error mb-5 font-medium">
       Incorrect password. Please try again.
     </div>

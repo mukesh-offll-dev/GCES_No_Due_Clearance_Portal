@@ -564,6 +564,13 @@ def run_promotion(from_sem=None, expected_snapshot=None, actor="faculty", branch
                                  "promotion was undone automatically. Reload the page and try again.")
             return result
 
+        try:
+            # Approved receipts of promoted students: deleted from Cloudinary once undo is impossible.
+            from .receipts import queue_promoted
+            queue_promoted(items, run_id)
+        except Exception as exc:
+            logger.warning("Could not queue receipts of run %s for cleanup: %s", run_id, exc)
+
         detail = ", ".join(f"Sem {s}→{s + 1}: {n}" for s, n in sorted(by_semester.items()) if n)
         scope = (f"Semester {from_sem}" if from_sem is not None else "Semesters 1–7") + (f" ({branch})" if branch else "")
         result.update(ok=True, level="success", promoted=moved, by_semester=by_semester, run_id=run_id,

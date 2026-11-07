@@ -5,7 +5,6 @@ from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
 import logging
 from .decorators import institution_login_required, _add_no_cache_headers
-from .institution_users import INSTITUTION_USERS
 from .mongo import institution_logs , students_col , no_due_col, portal_settings, departments_col
 from bson.errors import InvalidId
 from bson import ObjectId
@@ -253,6 +252,7 @@ def index(request):
         return redirect("student_profile_setup")
 
     student_error = request.session.pop("student_error", None)
+    student_notice = request.session.pop("student_notice", None)
 
     if request.method == "POST":
         office = request.POST.get("office", "").strip()
@@ -260,62 +260,50 @@ def index(request):
         password = request.POST.get("password", "").strip()
         department = request.POST.get("department", "").strip()
 
-        # ================= DEPARTMENT LOGIN =================
-        if office == "department":
-            dept = INSTITUTION_USERS.get("department", {}).get(department)
-            dept_obj = get_department_by_code(department)
+        from .accounts import authenticate, logins_configured
+        from .login_guard import locked_seconds, record_failure, clear as clear_failures, lock_message
+        guard_key = f"inst:{office.lower()}:{department.upper() if office == 'department' else ''}:{username.lower()}"
 
-            is_valid_dept_user = False
-            if dept and dept.get("username") == username and dept.get("password") == password:
-                is_valid_dept_user = True
-            elif dept_obj and dept_obj.get("is_active"):
-                clean_dept_code = str(department).strip().lower().replace("-", "").replace("_", "")
-                if username.lower().replace("-", "").replace("_", "") == f"{clean_dept_code}admin" and password == f"{str(department).strip().lower()}@123":
-                    is_valid_dept_user = True
+        wait = locked_seconds(guard_key)
+        if wait:
+            messages.error(request, lock_message(wait))
+            return render(request, "index.html", {"student_error": student_error, "student_notice": student_notice})
 
-            if is_valid_dept_user:
-                request.session["role"] = "DEPARTMENT"
-                request.session["department"] = department
-
-                try:
-                    institution_logs.insert_one({
-                        "office": "DEPARTMENT",
-                        "department": department,
-                        "username": username,
-                        "login_time": datetime.now()
-                    })
-                except Exception as exc:
-                    logger.warning("Failed to record department login log: %s", exc)
-
-                return redirect("department_dashboard")
-
-        # ================= OTHER OFFICES =================
-        else:
-            office_data = INSTITUTION_USERS.get(office)
-
-            if office_data and office_data.get("username") == username and office_data.get("password") == password:
-                role = office_data["role"]
-                request.session["role"] = role
-
-                try:
-                    institution_logs.insert_one({
-                        "office": role,
-                        "username": username,
-                        "login_time": datetime.now()
-                    })
-                except Exception as exc:
-                    logger.warning("Failed to record office login log: %s", exc)
-
-                # 🔀 REDIRECT BASED ON ROLE
-                dest = _ROLE_REDIRECT.get(role, "index")
-                return redirect(dest)
+        from .accounts import ensure_default_accounts
+        try:
+            ensure_default_accounts()             # creates any missing default login once per process
+        except Exception as exc:
+            logger.warning("Default login check failed: %s", exc)
+        result = authenticate(office, username, password, department=department)
+        if result:
+            role, dept_code = result
+            clear_failures(guard_key)
+            _cycle_session(request)                     # new session id on login (no session fixation)
+            for key in ("student_id", "pending_student_id", "department", "promotion_unlocked", "pw_version"):
+                request.session.pop(key, None)
+            request.session["role"] = role
+            log = {"office": role, "username": username, "login_time": datetime.now()}
+            if role == "DEPARTMENT":
+                request.session["department"] = dept_code
+                log["department"] = dept_code
+            try:
+                institution_logs.insert_one(log)
+            except Exception as exc:
+                logger.warning("Failed to record institution login log: %s", exc)
+            return redirect(_ROLE_REDIRECT.get(role, "index"))
 
         # ❌ INVALID LOGIN
-        audit_logger.warning("LOGIN failed office=%s username=%s ip=%s",
-                             office, username, request.META.get("REMOTE_ADDR"))
-        messages.error(request, "Invalid credentials")
+        audit_logger.warning("LOGIN failed office=%s department=%s username=%s ip=%s",
+                             office, department, username, request.META.get("REMOTE_ADDR"))
+        if not logins_configured():
+            logger.error("No institution logins in MongoDB — run: python manage.py load_credentials <file>")
+            messages.error(request, "Office logins are not set up yet. Please contact the portal administrator.")
+        elif record_failure(guard_key):
+            messages.error(request, lock_message(locked_seconds(guard_key)))
+        else:
+            messages.error(request, "Invalid credentials")
 
-    return render(request, "index.html", {"student_error": student_error})
+    return render(request, "index.html", {"student_error": student_error, "student_notice": student_notice})
 
 
 def _cycle_session(request):
@@ -326,11 +314,30 @@ def _cycle_session(request):
         request.session.flush()
 
 
-def _start_student_session(request, student_id):
+def _start_student_session(request, student_id, pw_version=0):
     _cycle_session(request)
     request.session.pop("pending_student_id", None)
+    request.session.pop("pw_reset_sid", None)
     request.session["role"] = "STUDENT"
     request.session["student_id"] = str(student_id)
+    # A password reset bumps students.password_version; older sessions then fail
+    # the check in institution_login_required and are logged out.
+    request.session["pw_version"] = int(pw_version or 0)
+
+
+def _password_errors(password, confirm_password, reg_no):
+    """Rules for a student's own password (profile setup and email reset)."""
+    if password != confirm_password:
+        return ["Passwords do not match."]
+    if password == reg_no:
+        return ["Your new password cannot be your Register Number."]
+    if len(password) > 128:
+        return ["Password is too long (max 128 characters)."]
+    try:
+        validate_password(password)
+    except ValidationError as exc:
+        return list(exc.messages)
+    return []
 
 
 def _start_pending_session(request, student_id):
@@ -367,11 +374,17 @@ def student_login(request):
     if not password:
         return _student_login_error(request, "Please enter your password")
 
+    from .login_guard import locked_seconds, record_failure, clear as clear_failures, lock_message
+    guard_key = f"student:{reg_no}"
+    wait = locked_seconds(guard_key)
+    if wait:
+        return _student_login_error(request, lock_message(wait) + " Forgot your password? Use Forgot Password.")
+
     # 🔎 CHECK STUDENT IN DB
     try:
         student = students_col.find_one(
             {"reg_no": reg_no},
-            {"_id": 1, "password_hash": 1, "profile_completed": 1},
+            {"_id": 1, "password_hash": 1, "profile_completed": 1, "password_version": 1},
         )
     except Exception as exc:
         logger.error("Database query failed on student_login: %s", exc)
@@ -393,7 +406,11 @@ def student_login(request):
     if not authenticated:
         audit_logger.warning("STUDENT LOGIN failed reg_no=%s ip=%s",
                              reg_no, request.META.get("REMOTE_ADDR"))
+        if student and record_failure(guard_key):
+            return _student_login_error(request, lock_message(locked_seconds(guard_key))
+                                        + " Forgot your password? Use Forgot Password.")
         return _student_login_error(request, "Invalid Register Number or Password")
+    clear_failures(guard_key)
 
     if first_time or not _is_profile_complete(student):
         _start_pending_session(request, student["_id"])
@@ -401,7 +418,7 @@ def student_login(request):
         return redirect("student_profile_setup")
 
     # ================= LOGIN SUCCESS =================
-    _start_student_session(request, student["_id"])
+    _start_student_session(request, student["_id"], student.get("password_version", 0))
     return redirect("student_dashboard")
 
 
@@ -446,6 +463,7 @@ def student_profile_setup(request):
         "roll_no": student.get("roll_no", "") or "",
         "dob": student.get("dob", "") or "",
         "phone": student.get("phone", "") or "",
+        "email": student.get("email", "") or "",
     }
 
     if request.method == "POST":
@@ -454,6 +472,7 @@ def student_profile_setup(request):
             "roll_no": request.POST.get("roll_no", "").strip().upper(),
             "dob": request.POST.get("dob", "").strip(),
             "phone": request.POST.get("phone", "").strip(),
+            "email": request.POST.get("email", "").strip().lower(),
         }
         password = request.POST.get("password", "")
         confirm_password = request.POST.get("confirm_password", "")
@@ -475,17 +494,12 @@ def student_profile_setup(request):
         if not (form["phone"].isdigit() and len(form["phone"]) == 10):
             errors.append("Phone Number must be exactly 10 digits.")
 
-        if password != confirm_password:
-            errors.append("Passwords do not match.")
-        elif password == reg_no:
-            errors.append("Your new password cannot be your Register Number.")
-        elif len(password) > 128:
-            errors.append("Password is too long (max 128 characters).")
-        else:
-            try:
-                validate_password(password)
-            except ValidationError as exc:
-                errors.extend(exc.messages)
+        from .password_reset import clean_email
+        form["email"], email_error = clean_email(form["email"])
+        if email_error:
+            errors.append(email_error)
+
+        errors.extend(_password_errors(password, confirm_password, reg_no))
 
         # Roll No must be unique (friendly check; the unique index is the real guard)
         if not errors:
@@ -508,6 +522,7 @@ def student_profile_setup(request):
                         "roll_no": form["roll_no"],
                         "dob": form["dob"],
                         "phone": form["phone"],
+                        "email": form["email"],
                         "password_hash": make_password(password),
                         "profile_completed": True,
                         "profile_completed_at": datetime.now(timezone.utc),
@@ -532,7 +547,7 @@ def student_profile_setup(request):
                 except Exception:
                     pass
 
-                _start_student_session(request, student_oid)
+                _start_student_session(request, student_oid, student.get("password_version", 0))
                 messages.success(request, "Profile completed successfully. Welcome!")
                 return redirect("student_dashboard")
 
@@ -543,6 +558,144 @@ def student_profile_setup(request):
         "max_dob": date.today().isoformat(),
     })
     return _add_no_cache_headers(response)
+
+
+# ================= FORGOT PASSWORD (email code via EmailJS) =================
+_RESET_SID = "pw_reset_sid"   # session key: student being reset (not logged in)
+
+
+def student_forgot_password(request):
+    """Step 1 — Register Number → 6-digit code to the email on the profile."""
+    from .password_reset import mail_enabled, request_code
+    if request.session.get("role") == "STUDENT":
+        return redirect("student_dashboard")
+
+    ctx = {"mail_enabled": mail_enabled(), "reg_no": "", "error": None}
+    if request.method == "POST" and ctx["mail_enabled"]:
+        reg_no = request.POST.get("reg_no", "").strip()
+        ctx["reg_no"] = reg_no
+        student = None
+        if not _is_valid_reg_no(reg_no):
+            ctx["error"] = "Register Number must be 12 digits."
+        else:
+            try:
+                student = students_col.find_one(
+                    {"reg_no": reg_no},
+                    {"_id": 1, "reg_no": 1, "name": 1, "email": 1, "password_hash": 1, "profile_completed": 1})
+            except PyMongoError as exc:
+                logger.error("Forgot password lookup failed: %s", exc)
+                ctx["error"] = "Service temporarily unavailable. Please try again."
+            else:
+                if not student:
+                    ctx["error"] = "No student is registered with this Register Number."
+                elif not _is_profile_complete(student):
+                    ctx["error"] = ("You haven't created a password yet. For your first login, "
+                                    "use your Register Number as the password.")
+                elif not student.get("email"):
+                    ctx["error"] = ("No email address is saved for this Register Number, so a code can't be sent. "
+                                    "Please contact your Faculty Advisor.")
+        if student and not ctx["error"]:
+            result = request_code(student)
+            if result["ok"] or result.get("wait_seconds"):
+                request.session[_RESET_SID] = str(student["_id"])
+                (messages.success if result["ok"] else messages.warning)(request, result["message"])
+                return redirect("student_reset_password")
+            ctx["error"] = result["message"]
+        audit_logger.info("PASSWORD RESET request reg_no=%s ok=%s ip=%s", reg_no,
+                          not ctx["error"], request.META.get("REMOTE_ADDR"))
+
+    return _add_no_cache_headers(render(request, "student_forgot_password.html", ctx))
+
+
+def student_reset_password(request):
+    """Step 2 — code + new password. Also handles 'Resend code'."""
+    from .password_reset import check_code, consume, mask_email, request_code, mail_enabled
+    sid_raw = request.session.get(_RESET_SID)
+    if not sid_raw or not mail_enabled():
+        return redirect("student_forgot_password")
+    try:
+        sid = ObjectId(sid_raw)
+        student = students_col.find_one({"_id": sid}, {"_id": 1, "reg_no": 1, "name": 1, "email": 1,
+                                                       "password_hash": 1, "profile_completed": 1})
+    except (InvalidId, PyMongoError) as exc:
+        logger.error("Reset password lookup failed: %s", exc)
+        request.session.pop(_RESET_SID, None)
+        return redirect("student_forgot_password")
+    if not student or not student.get("email"):
+        request.session.pop(_RESET_SID, None)
+        return redirect("student_forgot_password")
+
+    errors = []
+    if request.method == "POST":
+        if request.POST.get("action") == "resend":
+            result = request_code(student)
+            (messages.success if result["ok"] else messages.warning)(request, result["message"])
+            return redirect("student_reset_password")
+
+        password = request.POST.get("password", "")
+        ok, err = check_code(sid, request.POST.get("code", ""))
+        if not ok:
+            errors.append(err)
+        else:
+            errors = _password_errors(password, request.POST.get("confirm_password", ""), student.get("reg_no", ""))
+        if not errors:
+            try:
+                students_col.update_one({"_id": sid}, {
+                    "$set": {"password_hash": make_password(password), "password_changed_at": datetime.now(timezone.utc)},
+                    "$inc": {"password_version": 1},
+                })
+                consume(sid)
+            except PyMongoError as exc:
+                logger.error("Password reset save failed for %s: %s", student.get("reg_no"), exc)
+                errors.append("Service temporarily unavailable. Please try again.")
+            else:
+                audit_logger.info("PASSWORD RESET completed reg_no=%s ip=%s", student.get("reg_no"),
+                                  request.META.get("REMOTE_ADDR"))
+                from .login_guard import clear as clear_failures
+                clear_failures(f"student:{student.get('reg_no', '')}")   # a reset also lifts a login lock
+                _cycle_session(request)
+                request.session.pop(_RESET_SID, None)
+                request.session["student_notice"] = "Your password has been changed. Log in with your new password."
+                return redirect("index")
+
+    return _add_no_cache_headers(render(request, "student_reset_password.html", {
+        "errors": errors,
+        "masked_email": mask_email(student.get("email", "")),
+        "reg_no": student.get("reg_no", ""),
+    }))
+
+
+@institution_login_required
+def student_update_email(request):
+    """Add or change the recovery email (needs the current password)."""
+    from .password_reset import clean_email
+    if request.session.get("role") != "STUDENT":
+        return redirect("index")
+    if request.method != "POST":
+        return redirect("student_dashboard")
+    try:
+        sid = ObjectId(request.session.get("student_id"))
+        student = students_col.find_one({"_id": sid}, {"password_hash": 1, "email": 1, "reg_no": 1})
+    except (InvalidId, TypeError, PyMongoError):
+        return redirect("index")
+    if not student:
+        return redirect("index")
+
+    email, error = clean_email(request.POST.get("email", ""))
+    if not error and not check_password(request.POST.get("current_password", ""), student.get("password_hash") or ""):
+        error = "Your current password is not correct, so the email was not changed."
+    if error:
+        messages.error(request, error)
+        return redirect("student_dashboard")
+    try:
+        students_col.update_one({"_id": sid}, {"$set": {"email": email}})
+    except PyMongoError as exc:
+        logger.error("Email update failed: %s", exc)
+        messages.error(request, "Service temporarily unavailable. Please try again.")
+        return redirect("student_dashboard")
+    audit_logger.info("STUDENT EMAIL updated reg_no=%s", student.get("reg_no"))
+    messages.success(request, "Email saved. Password reset codes will be sent to this address.")
+    return redirect("student_dashboard")
 
 
  
@@ -867,11 +1020,8 @@ def send_hostel_request(request):
         if conflict:
             # Lost a race with a concurrent submit: drop the receipt we just uploaded.
             if cloudinary_public_id:
-                for rtype in ("raw", "image"):
-                    try:
-                        cloudinary.uploader.destroy(cloudinary_public_id, resource_type=rtype)
-                    except Exception:
-                        pass
+                from .receipts import delete_or_queue
+                delete_or_queue(cloudinary_public_id, "duplicate")
             return _resolve_concurrent_send(request, student_id, "HOSTEL")
         audit_logger.info("NO_DUE_REQUEST office=HOSTEL student=%s attempt=%d",
                           student_id, new_attempts)
@@ -1113,23 +1263,10 @@ def reject_request(request):
 
         student_statuses = {}
         for req in requests_to_reject:
-            if req.get("office") == "HOSTEL":
-                public_id = req.get("cloudinary_public_id")
-                if public_id:
-                    try:
-                        cloudinary.uploader.destroy(
-                            public_id,
-                            resource_type="raw"
-                        )
-                    except Exception:
-                        pass
-                    try:
-                        cloudinary.uploader.destroy(
-                            public_id,
-                            resource_type="image"
-                        )
-                    except Exception:
-                        pass
+            if req.get("office") == "HOSTEL" and req.get("cloudinary_public_id"):
+                # Rejected receipt: delete now (a failed delete is queued and retried).
+                from .receipts import delete_or_queue
+                delete_or_queue(req["cloudinary_public_id"], "rejected")
 
             # This rejection uses one attempt. Requests saved before the
             # rejection-based model already counted their send, so don't add again.
@@ -1663,6 +1800,7 @@ def faculty_dashboard(request):
                 "semester": s.get("semester", ""),
                 "dob": s.get("dob", ""),
                 "phone": s.get("phone", ""),
+                "email": s.get("email", ""),
                 "branch": s.get("branch", ""),
                 "year": s.get("year", ""),
                 "student_type": s_type,
@@ -2004,6 +2142,13 @@ def edit_student(request):
             if not _is_valid_reg_no(reg_no_val):
                 reg_no_val = current.get("reg_no", "")
 
+            from .password_reset import clean_email
+            email_raw = request.POST.get("email", "").strip()
+            email_val, email_error = clean_email(email_raw) if email_raw else ("", None)
+            if email_error:
+                request.session["add_error"] = f"Email: {email_error}"
+                return redirect(f"/faculty/?branch={current.get('branch', branch)}&year={current.get('year', year)}")
+
             roll_no_val = request.POST.get("roll_no", "").strip().upper()
             update = {"$set": {
                 "reg_no": reg_no_val,
@@ -2015,12 +2160,16 @@ def edit_student(request):
                 "semester": sem_val,
                 "student_type": student_type
             }}
+            if email_val:
+                update["$set"]["email"] = email_val
             if roll_no_val:
                 update["$set"]["roll_no"] = roll_no_val
             else:
                 # Pending students have no roll no yet — keep the field
                 # absent (not "") so the partial unique index ignores it.
                 update["$unset"] = {"roll_no": ""}
+            if not email_val:
+                update.setdefault("$unset", {})["email"] = ""
 
             students_col.update_one({"_id": sid}, update)
             if (new_branch, year_int, sem_int) != (current.get("branch"), _int_or_none(current.get("year")),
@@ -2064,14 +2213,33 @@ def faculty_promotion_page(request):
         password = request.POST.get("promotion_password", "").strip()
         tab_post = request.POST.get("tab", "").strip().lower()
         target_tab = tab_post or tab or "promotion"
-        if password == "gces8301":
+        from .accounts import check_promotion_password, promotion_password_set, ensure_default_accounts
+        try:
+            ensure_default_accounts()
+        except Exception as exc:
+            logger.warning("Default login check failed: %s", exc)
+        from .login_guard import locked_seconds, record_failure, clear as clear_failures, lock_message
+        guard_key = "promotion"          # one shared lock: the password is shared by all faculty
+        wait = locked_seconds(guard_key)
+        if wait:
+            return render(request, "faculty_promotion_login.html",
+                          {"error_message": lock_message(wait), "tab": target_tab})
+        if check_promotion_password(password):
+            clear_failures(guard_key)
             request.session["promotion_unlocked"] = True
             redirect_url = reverse("faculty_promotion")
             if target_tab and target_tab != "promotion":
                 redirect_url += f"?tab={target_tab}"
             return redirect(redirect_url)
+        audit_logger.warning("PROMOTION unlock failed ip=%s", request.META.get("REMOTE_ADDR"))
+        if not promotion_password_set():
+            message = "The Promotion & Settings password is not set up yet. Please contact the portal administrator."
+        elif record_failure(guard_key):
+            message = lock_message(locked_seconds(guard_key))
         else:
-            return render(request, "faculty_promotion_login.html", {"error": True, "tab": target_tab})
+            message = None
+        return render(request, "faculty_promotion_login.html",
+                      {"error": True, "error_message": message, "tab": target_tab})
 
     # Render login page if session is locked
     if not request.session.get("promotion_unlocked"):
@@ -2082,6 +2250,7 @@ def faculty_promotion_page(request):
 
     from .promotion import (branch_semester_counts, semester_counts, counts_snapshot,
                             promotion_checks, cohort_issues, last_run, promotion_run_items)
+    from .accounts import list_accounts
     promo_groups = branch_semester_counts()          # same data the promotion engine checks
     sem_counts = semester_counts(promo_groups)
     sem8_count = sem_counts.get(8, 0)
@@ -2149,6 +2318,7 @@ def faculty_promotion_page(request):
         "last_promotion": last_promotion,
         "archived_list": archived_list,
         "promo_branches": promo_branches,
+        "login_accounts": list_accounts(),
         "no_due_access_enabled": no_due_access_enabled,
         "enabled_at_str": enabled_at_str,
         "auto_disable_at_str": auto_disable_at_str,
@@ -2461,6 +2631,27 @@ def remove_sem8_students(request):
 # ==============================================================================
 
 @institution_login_required
+def update_account_password_view(request):
+    """Password Management tab: save a new username / password for one login (or the Promotion password)."""
+    gate = _promotion_gate(request)
+    if gate:
+        return gate
+    from .accounts import update_account, PROMOTION_ID
+    acc_id = request.POST.get("account_id", "").strip()
+    error = update_account(acc_id, request.POST.get("username", "").strip(), request.POST.get("password", ""),
+                           actor="faculty")
+    if error:
+        messages.error(request, error)
+    else:
+        from .login_guard import attempts_col
+        user = re.escape(request.POST.get("username", "").strip().lower())
+        attempts_col.delete_many({"_id": {"$regex": f"^inst:[^:]*:[^:]*:{user}$"}})   # lift a lock on that login
+        what = "Promotion & Settings password" if acc_id == PROMOTION_ID else "Login"
+        messages.success(request, f"{what} updated.")
+    return redirect("/faculty/promotion/?tab=passwords")
+
+
+@institution_login_required
 def faculty_departments_api(request):
     """Returns JSON list of all departments with live student enrollment counts."""
     if request.session.get("role") != "FACULTY":
@@ -2532,7 +2723,11 @@ def edit_department_view(request):
         is_active_raw = request.POST.get("is_active")
         is_active = is_active_raw in ("true", "1", "True", True) if is_active_raw is not None else None
 
+        old_dept = get_department_by_id(dept_id) or {}
         success, result = update_department(dept_id, name, code, is_active=is_active)
+        if success and old_dept.get("code") and old_dept.get("code") != result.get("code"):
+            from .accounts import rename_department_account
+            rename_department_account(old_dept["code"], result.get("code"))
 
         wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
 
@@ -2601,7 +2796,11 @@ def delete_department_view(request):
     if request.method == "POST":
         dept_id = request.POST.get("department_id", "").strip()
 
+        old_dept = get_department_by_id(dept_id) or {}
         success, message = delete_department(dept_id)
+        if success and old_dept.get("code"):
+            from .accounts import delete_department_account
+            delete_department_account(old_dept["code"])
 
         wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or "application/json" in request.headers.get("Accept", "")
 

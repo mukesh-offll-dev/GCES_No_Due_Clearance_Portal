@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Faculty / Admin User Guide — GCES No Due Clearance Portal</title>
+<link rel="stylesheet" href="guide.css">
+<style>
+@page { @top-right { content: "Faculty / Admin User Guide"; } }
+figure.shot img { border: 1px solid var(--line); border-radius: 2mm; box-shadow: 0 1.2mm 3mm rgba(15,23,42,.08); }
+.shots figure.shot img { width: auto; }
+.m48 img { width: 48mm !important; } .m56 img { width: 56mm !important; } .m62 img { width: 62mm !important; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ COVER ═══════════ -->
+<section class="cover">
+  <div class="cover-inner">
+    <div class="cover-logo">
+      <img src="../assets/img/logo.png" alt="GCES logo">
+      <div class="col">Government College of Engineering<br>Srirangam, Tiruchirappalli</div>
+    </div>
+    <div class="cover-kicker">No Due Clearance Portal</div>
+    <h1>Faculty / Admin<br>User Guide</h1>
+    <p class="lede">For Faculty Advisors and administrators: manage students, open the request window, promote semesters and manage departments.</p>
+    <span class="cover-badge">Faculty Advisor login · Promotion &amp; Settings</span>
+    <div class="cover-meta">
+      <div><b>Portal</b>nodue.gces.net.in</div>
+      <div><b>Version</b>November 2026</div>
+      <div><b>Audience</b>Faculty / Admin</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ AT A GLANCE ═══════════ -->
+<section>
+  <div class="eyebrow">At a glance</div>
+  <h2 class="chapter">Your role</h2>
+  <p class="chapter-lede">You keep the student list correct and decide <i>when</i> students can ask for clearance. The offices decide <i>who</i> is cleared.</p>
+
+  <table>
+    <thead><tr><th style="width:24%">Who</th><th>Does what</th></tr></thead>
+    <tbody>
+      <tr><td>Faculty / Admin</td><td>Add, edit and remove students · open / close the request window · promote semesters · manage departments · class reports</td></tr>
+      <tr><td>Offices</td><td>Library, College, Hostel and Department approve or reject requests (see the <b>Staff User Guide</b>). The Faculty login cannot approve or reject.</td></tr>
+      <tr><td>Students</td><td>Fill their profile, send requests, track status, reset their own password by email (see the <b>Student User Guide</b>)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="diagram">
+    <div class="diagram-title">One semester</div>
+    <div class="flow">
+      <div class="node info"><b>1 · Prepare</b>Add students, set Hosteller / Day Scholar, 7.5 list</div>
+      <div class="arrow">→</div>
+      <div class="node ok"><b>2 · Open</b>Enable No Due Access</div>
+      <div class="arrow">→</div>
+      <div class="node warn"><b>3 · Follow up</b>Class reports, remind students</div>
+      <div class="arrow">→</div>
+      <div class="node bad"><b>4 · Close</b>Disable (or it closes by itself)</div>
+      <div class="arrow">→</div>
+      <div class="node ink"><b>5 · Next semester</b>Remove Sem 8 → Promote</div>
+    </div>
+  </div>
+
+  <div class="cards four">
+    <div class="card"><div class="num">1</div><h4>semester</h4><p>per Department + Year. The portal enforces this everywhere.</p></div>
+    <div class="card"><div class="num">500</div><h4>students</h4><p>at most in one Bulk Add.</p></div>
+    <div class="card"><div class="num">75</div><h4>days</h4><p>recommended request window.</p></div>
+    <div class="card"><div class="num">UNDO</div><h4>promotion</h4><p>until students send new requests.</p></div>
+  </div>
+
+  <h3>In this guide</h3>
+  <table class="compact">
+    <tbody>
+      <tr><td style="width:12mm">1</td><td>Student Directory and adding students</td><td style="width:12mm">4</td><td>Promote students</td></tr>
+      <tr><td>2</td><td>Edit, 7.5 scheme, delete, reports</td><td>5</td><td>Undo, fixing classes, Semester 8 and archive</td></tr>
+      <tr><td>3</td><td>Settings and the request window</td><td>6</td><td>Departments, problems, quick reference</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════ 1 ═══════════ -->
+<section class="pg">
+  <div class="eyebrow">Step 1</div>
+  <h2 class="chapter">Student Directory and adding students</h2>
+  <p class="chapter-lede">Log in with <b>Institution Login</b> → Office <span class="ui">Faculty Advisor</span> (details from the administrator). Choose a <b>Branch</b> and <b>Year</b> to open a class.</p>
+  <figure class="shot" style="width:62%;margin:0 auto 2mm"><img src="../assets/img/c_f_dir.jpg" alt="Student Directory"><figcaption><b>Student Directory</b> — counters, search, Profile Status, No Due and Edit buttons</figcaption></figure>
+  <div class="cols2">
+    <div class="box">
+      <h4>Add one student</h4>
+      <ol class="steps tight">
+        <li>Open the class → <span class="ui">Add Student</span>.</li>
+        <li>Enter the <b>12-digit Register Number</b>, pick the <b>Semester</b>.</li>
+        <li>Press <span class="ui">Add Student</span>.</li>
+      </ol>
+    </div>
+    <div class="box">
+      <h4>Add many (Bulk Add)</h4>
+      <ol class="steps tight">
+        <li><span class="ui">Bulk Add Students</span>.</li>
+        <li>Enter <b>Start</b> and <b>End Register No</b> (up to 500).</li>
+        <li>Pick the <b>Semester</b> → <span class="ui">Create Students</span>. Existing numbers are skipped.</li>
+      </ol>
+    </div>
+  </div>
+  <div class="shots">
+    <figure class="shot m48"><img src="../assets/img/f03_add_m.jpg" alt="Add"><figcaption><b>Add Student</b></figcaption></figure>
+    <figure class="shot m56"><img src="../assets/img/f04_bulk_m.jpg" alt="Bulk"><figcaption><b>Bulk Add</b></figcaption></figure>
+  </div>
+  <div class="callout rule"><div class="ico">Rules</div><div><ul>
+    <li>The semester must match the class (e.g. CSE Year 4 is in Semester 7 → choose 7).</li>
+    <li>New students start as <b>Hosteller</b> — change Day Scholars with <span class="ui">Edit</span>.</li>
+    <li>Student's first password = Register Number. <b>Profile Status</b> turns <span class="pill ok">Completed</span> after their first login.</li>
+  </ul></div></div>
+</section>
+
+<!-- ═══════════ 2 ═══════════ -->
+<section class="pg">
+  <div class="eyebrow">Step 2</div>
+  <h2 class="chapter">Edit, 7.5 scheme, delete, reports</h2>
+  <div class="cols3">
+    <div class="box">
+      <h4>Edit</h4>
+      <p>Press <span class="ui">Edit</span> → change details, <b>Email</b> or <b>Student Type</b> → <span class="ui">Update</span>.</p>
+      <p class="small muted">Student lost access to their email? Put the right email here, then they use <i>Forgot Password</i>.</p>
+    </div>
+    <div class="box">
+      <h4>7.5 Students</h4>
+      <p>Tick <b>every</b> 7.5% scheme student of the class → <span class="ui">Submit</span>.</p>
+      <p class="small muted">Unticked = not 7.5. They don't upload a hostel receipt.</p>
+    </div>
+    <div class="box">
+      <h4>No Due status</h4>
+      <p>Press <span class="ui">No Due</span> on a row to see each office: Completed, Pending, Rejected or Incomplete.</p>
+    </div>
+  </div>
+  <div class="shots">
+    <figure class="shot m48"><img src="../assets/img/f05_edit_m.jpg" alt="Edit"><figcaption><b>Edit Student</b></figcaption></figure>
+    <figure class="shot m56"><img src="../assets/img/f07_scheme_m.jpg" alt="7.5"><figcaption><b>7.5 Students</b></figcaption></figure>
+    <figure class="shot m56"><img src="../assets/img/f06_nodue_m.jpg" alt="No Due"><figcaption><b>No Due Status</b></figcaption></figure>
+  </div>
+  <div class="cols2">
+    <div class="box">
+      <h4>Delete</h4>
+      <p>Tick students (or <span class="ui">Select All</span>) → <span class="ui">Delete</span> → <span class="ui">Yes</span>.</p>
+      <p class="small muted">Safe: deleted students go to <b>Archived students</b> and can be restored (Step 5).</p>
+    </div>
+    <div class="box">
+      <h4>Class report (PDF)</h4>
+      <p>Open a class → <span class="ui">Generate Report</span>. Shows every student's status for each office and an overall status: Completed, Rejected, Pending or Incomplete.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 3 ═══════════ -->
+<section class="pg">
+  <div class="eyebrow">Step 3</div>
+  <h2 class="chapter">Settings and the request window</h2>
+  <div class="cols2">
+    <div class="box">
+      <h4>Unlock Promotion &amp; Settings</h4>
+      <ol class="steps tight">
+        <li>Sidebar → <span class="ui">Promotion &amp; Settings</span>.</li>
+        <li>Enter the <b>Access Password</b> (from the administrator) → <span class="ui">Verify &amp; Unlock</span>.</li>
+      </ol>
+      <p class="small muted">It stays unlocked until you log out.</p>
+    </div>
+    <div class="box">
+      <h4>Open / close requests (No Due Access)</h4>
+      <ol class="steps tight">
+        <li><span class="ui">Enable Access</span> → choose <b>75 days</b> or a <b>custom end date and time</b> → <span class="ui">Enable Access</span>.</li>
+        <li>To close early: <span class="ui">Disable Access</span>.</li>
+      </ol>
+      <p class="small muted">It closes by itself at the end time. Students see <i>Locked</i> while it is closed.</p>
+    </div>
+  </div>
+  <figure class="shot"><img src="../assets/img/f10_cards.jpg" alt="Settings"><figcaption><b>Promotion &amp; Settings</b> — students per semester, No Due Access, Semester 8</figcaption></figure>
+  <div class="shots">
+    <figure class="shot m56"><img src="../assets/img/f09_promo_password_m.jpg" alt="Unlock"><figcaption><b>Unlock</b></figcaption></figure>
+    <figure class="shot m56"><img src="../assets/img/f16_enable_access_m.jpg" alt="Enable"><figcaption><b>Enable No Due Access</b></figcaption></figure>
+  </div>
+</section>
+
+<!-- ═══════════ 4 ═══════════ -->
+<section class="pg">
+  <div class="eyebrow">Step 4</div>
+  <h2 class="chapter">Promote students</h2>
+  <p class="chapter-lede">Moves students to the next semester and gives them fresh No Due requests. Past clearance stays in History.</p>
+  <table class="compact">
+    <thead><tr><th>From → To</th><th>Year</th><th>Needs</th></tr></thead>
+    <tbody>
+      <tr><td>Sem 1 → 2 · 3 → 4 · 5 → 6 · 7 → 8</td><td>Same year</td><td>—</td></tr>
+      <tr><td>Sem 2 → 3 · 4 → 5 · 6 → 7</td><td><span class="pill warn">Year +1</span></td><td>Semester 8 must be empty</td></tr>
+    </tbody>
+  </table>
+  <div class="cols2">
+    <div class="box">
+      <h4>Everyone (Semesters 1–7)</h4>
+      <ol class="steps tight">
+        <li>Remove Semester 8 students first (Step 5).</li>
+        <li>Check the green <b>Ready for Promotion</b> message.</li>
+        <li><span class="ui">Promote Students</span> → confirm.</li>
+      </ol>
+    </div>
+    <div class="box">
+      <h4>One semester only</h4>
+      <ol class="steps tight">
+        <li>Open <span class="ui">Need Semester-Wise Promotion?</span>.</li>
+        <li>Pick the semester and the department (or all).</li>
+        <li>Check the preview → <span class="ui">Promote Selected Semester</span> → <span class="ui">Confirm &amp; Promote</span>.</li>
+      </ol>
+    </div>
+  </div>
+  <div class="cols2" style="grid-template-columns: 1.4fr 1fr">
+    <figure class="shot"><img src="../assets/img/f12_semwise.jpg" alt="Semester-wise"><figcaption><b>Semester-wise</b>: Sem 3 → 4, CSE only</figcaption></figure>
+    <figure class="shot"><img src="../assets/img/f13_promo_confirm_m.jpg" alt="Confirm"><figcaption><b>Confirm</b></figcaption></figure>
+  </div>
+  <div class="callout ok"><div class="ico">Safe</div><div><p>The portal blocks any promotion that would mix semesters in a class or merge two batches, and refuses if the numbers changed since you opened the page. If something fails, nothing is changed.</p></div></div>
+</section>
+
+<!-- ═══════════ 5 ═══════════ -->
+<section class="pg">
+  <div class="eyebrow">Step 5</div>
+  <h2 class="chapter">Undo, fixing classes, Semester 8 and archive</h2>
+  <figure class="shot"><img src="../assets/img/f11_promo_undo.jpg" alt="Undo"><figcaption><b>Mixed-class warning</b> and <b>Last promotion</b> with Undo</figcaption></figure>
+  <div class="cols2">
+    <div class="box">
+      <h4>Undo the last promotion</h4>
+      <p>Type <code>UNDO</code> → <span class="ui">Undo this promotion</span>. Students go back to their old semester.</p>
+      <p class="small muted">Only the latest promotion, and only until a student sends a request for the new semester.</p>
+    </div>
+    <div class="box">
+      <h4>Fix a mixed class</h4>
+      <p>If a class shows two semesters, press <span class="ui">Set all to Semester X</span> for the right one. It can be undone the same way.</p>
+    </div>
+  </div>
+  <div class="cols2">
+    <div class="box">
+      <h4>Remove Semester 8 (final year)</h4>
+      <p><span class="ui">Remove Semester 8 Students</span> → <span class="ui">Yes, Remove All</span>. They move to <b>Archived students</b>.</p>
+    </div>
+    <div class="box">
+      <h4>Restore</h4>
+      <p>At the bottom of the page tick archived students → <span class="ui">Restore selected</span>. Skipped if their Register / Roll No is now used or their class moved to another semester.</p>
+    </div>
+  </div>
+  <figure class="shot"><img src="../assets/img/f14_archive.jpg" alt="Archive"><figcaption><b>Archived students</b></figcaption></figure>
+</section>
+
+<!-- ═══════════ 6 ═══════════ -->
+<section class="pg">
+  <div class="eyebrow">Step 6</div>
+  <h2 class="chapter">Departments, problems, quick reference</h2>
+  <div class="cols2">
+    <div class="box">
+      <h4>Departments</h4>
+      <ul>
+        <li><b>Add:</b> name (2–100) + code (2–20: A–Z, 0–9, - _ &amp;), both unique.</li>
+        <li><b>Deactivate:</b> hides it from lists; students stay.</li>
+        <li><b>Delete:</b> only when it has no students.</li>
+        <li><b>Don't change the code</b> of a department that has students.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h4>Password Management (3rd tab)</h4>
+      <ul>
+        <li>See every office, department and Promotion password — press <b>Show</b>.</li>
+        <li><b>Change</b> → new username / password → <b>Save</b>. Works immediately.</li>
+        <li>New department? Set its password here to create its login.</li>
+        <li>5 wrong passwords lock a login for 15 minutes; saving a new password unlocks it.</li>
+      </ul>
+    </div>
+  </div>
+  <table class="compact">
+    <thead><tr><th style="width:42%">Message / problem</th><th>Quick fix</th></tr></thead>
+    <tbody>
+      <tr><td>“…must all be in the same semester, so use Semester X.”</td><td>Choose the semester shown.</td></tr>
+      <tr><td>“…has more than one semester”</td><td>Use <b>Set all to Semester X</b>.</td></tr>
+      <tr><td>“Remove … Semester 8 student(s) before promoting”</td><td>Remove Semester 8 first.</td></tr>
+      <tr><td>“Student numbers changed since this page was opened”</td><td>Reload the page and try again.</td></tr>
+      <tr><td>“A semester promotion is running right now”</td><td>Wait a minute and try again.</td></tr>
+      <tr><td>“Undo is no longer available”</td><td>Correct students one by one with Edit.</td></tr>
+      <tr><td>Student forgot password</td><td>They use Forgot Password. No / wrong email → fix it in Edit.</td></tr>
+      <tr><td>Deleted the wrong student</td><td>Restore from Archived students.</td></tr>
+      <tr><td>An office forgot its password / “Too many wrong attempts”</td><td>Password Management tab → <b>Show</b> or <b>Change</b> (or wait 15 minutes).</td></tr>
+    </tbody>
+  </table>
+  <div class="qref">
+    <h3>Quick reference</h3>
+    <div class="body">
+      <div><b>New students:</b> Add / Bulk Add</div>
+      <div><b>Default type:</b> Hosteller — edit Day Scholars</div>
+      <div><b>Open requests:</b> Enable Access (75 days)</div>
+      <div><b>Promote:</b> remove Sem 8 → Promote</div>
+      <div><b>Mistake?</b> Type UNDO before new requests</div>
+      <div><b>Deleted / Sem 8:</b> Archive → Restore</div>
+    </div>
+  </div>
+</section>
+</body>
+</html>

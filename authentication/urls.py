@@ -8,7 +8,9 @@ from .views import (
     office_report_pdf_view, faculty_report_pdf_view, faculty_promotion_page, promote_students, remove_sem8_students,
     toggle_no_due_access, update_75_scheme, faculty_departments_api, add_department_view,
     edit_department_view, toggle_department_view, delete_department_view,
-    student_profile_setup, bulk_add_students, rollback_promotion, fix_cohort_view, restore_archived_view
+    student_profile_setup, update_account_password_view,
+    student_forgot_password, student_reset_password, student_update_email,
+    bulk_add_students, rollback_promotion, fix_cohort_view, restore_archived_view
 )
 from .sso import hostel_sso_login
 
@@ -29,6 +31,9 @@ urlpatterns = [
     # Student
     path("student/login/",student_login, name="student_login"),
     path("student/profile/setup/", student_profile_setup, name="student_profile_setup"),
+    path("student/forgot-password/", student_forgot_password, name="student_forgot_password"),
+    path("student/reset-password/", student_reset_password, name="student_reset_password"),
+    path("student/email/", student_update_email, name="student_update_email"),
     path("student/dashboard/",student_dashboard, name="student_dashboard"),
     path("student/hostel/send/",send_hostel_request, name="send_hostel"),
     path("library/", library_dashboard, name="library_dashboard"),
@@ -54,6 +59,7 @@ urlpatterns = [
     path("faculty/promotion/restore/", restore_archived_view, name="restore_archived"),
     path("faculty/toggle-no-due-access/", toggle_no_due_access, name="toggle_no_due_access"),
     path("faculty/update-75-scheme/", update_75_scheme, name="update_75_scheme"),
+    path("faculty/accounts/update/", update_account_password_view, name="update_account_password"),
     path("faculty/departments/api/", faculty_departments_api, name="faculty_departments_api"),
     path("faculty/departments/add/", add_department_view, name="add_department"),
     path("faculty/departments/edit/", edit_department_view, name="edit_department"),

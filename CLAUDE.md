@@ -54,12 +54,17 @@ Because there's no ORM schema, `.find_one().get("field", default)` defensive acc
 
 There is **no Django `User` model auth**. Two custom mechanisms, both session-based:
 
-1. **Office/Faculty/Department logins** (`index` view): credentials are **hardcoded in `authentication/institution_users.py`**. On success, `request.session["role"]` is set to one of `LIBRARY`, `HOSTEL`, `COLLEGE`, `FACULTY`, `DEPARTMENT`. Department logins also set `request.session["department"]`.
-2. **Student login** (`student_login`): matches `reg_no` + `dob` against MongoDB; sets `role="STUDENT"` and `student_id`.
+1. **Office/Faculty/Department logins** (`index` view → `accounts.authenticate`): usernames + passwords live in MongoDB `institution_accounts` (`_id` = `LIBRARY`/`COLLEGE`/`HOSTEL`/`FACULTY`/`DEPARTMENT:<CODE>`/`PROMOTION`; see `authentication/accounts.py`). Each doc has `password_hash` (checked at login) and `password_enc` (Fernet, key derived from `SECRET_KEY`, only so faculty can view it). Missing logins are created from `DEFAULT_LOGINS` / `DEFAULT_PROMOTION_PASSWORD` at start-up and lazily on first login (`ensure_default_accounts`, never overwrites). Faculty view and change every password on Promotion & Settings → **Password Management** tab (`update_account_password`). The old guessable `<code>admin` / `<code>@123` department fallback is gone; inactive departments cannot log in. Department code rename/delete keeps `institution_accounts` in sync. On success the session is cycled and `role` (+ `department`) set.
+2. **Student login** (`student_login`): `reg_no` + password (`password_hash`, Django hashers). First login uses the Register Number as a temporary password and goes to `student_profile_setup` (name, roll no, DOB, phone, **email**, new password). Sets `role="STUDENT"`, `student_id` and `pw_version`.
+   - **Forgot password** (`password_reset.py`, views `student_forgot_password` → `student_reset_password`): Register No → 6-digit code emailed via the **EmailJS REST API** to `students.email`; only an HMAC of the code is stored in `password_resets` (TTL on `purge_at`). Code valid `PASSWORD_RESET_CODE_MINUTES` (10), 5 wrong tries, resend after 60 s, max 5 codes/hour. A reset bumps `students.password_version`; `institution_login_required` logs out sessions whose `pw_version` differs. Students add/change their email from the dashboard (`student_update_email`, needs current password); faculty can fix it in Edit Student. Tests mock `password_reset.send_email` — never send real mail from tests.
 
 `@institution_login_required` (`authentication/decorators.py`) guards protected views: it re-validates a STUDENT's `student_id` against MongoDB on every request (not just trusting the cookie). **Individual views additionally check `request.session.get("role")` matches the expected role** — this per-view role check is the authorization layer; keep it when adding views.
 
-Faculty promotion/toggle actions require a second gate: `request.session["promotion_unlocked"]`, set by a separate password prompt (`faculty_promotion_page`).
+Faculty promotion/toggle actions require a second gate: `request.session["promotion_unlocked"]`, set by a separate password prompt (`faculty_promotion_page`). That password is the `PROMOTION` doc in `institution_accounts`, changeable on the Password Management tab.
+
+**Wrong-password lockout** (`login_guard.py`, collection `login_attempts`, TTL): 5 wrong passwords within 15 min locks that account for 15 min — keys `student:<reg_no>`, `inst:<office>:<dept>:<username>`, and one shared `promotion` key. Counted per account, not per IP (campus NAT). A student's password reset clears their lock.
+
+App startup (`apps.ready`) pre-imports pymongo and app modules on the main thread before starting the index/scheduler threads (concurrent imports tripped Python's import-lock deadlock detection), and one-off `manage.py` commands other than `runserver` never start those threads.
 
 The `_ROLE_REDIRECT` dict in `views.py` maps roles to their dashboard URL names.
 
@@ -75,7 +80,10 @@ The `_ROLE_REDIRECT` dict in `views.py` maps roles to their dashboard URL names.
 
 ## File Uploads
 
-Hostel fee receipts upload to **Cloudinary** (`cloudinary.uploader.upload`), not local disk, storing `secure_url` + `public_id`. On reject/expiry the code attempts `destroy()` as both `raw` (PDF) and `image` (jpg/png) resource types since the type isn't tracked. The `media/` directory and `save_receipt()` in `utils.py` are a legacy local-storage path still referenced by `send_no_due_request` for non-hostel — prefer the Cloudinary flow.
+Hostel fee receipts upload to **Cloudinary** (folder `no_dues/hostel`), storing `receipt_url` + `cloudinary_public_id` on the HOSTEL no-due doc. All deletes go through `authentication/receipts.py` (`destroy()` tries `image` and `raw` since the type isn't tracked; "not found" counts as gone):
+- Rejected → deleted at once (`delete_or_queue`); expired (2 days) → deleted by the maintenance cycle; duplicate upload from a submit race → deleted at once.
+- **Approved** → kept while the student is in that semester. `run_promotion` queues the promoted students' receipts (`queue_promoted`) and `process_queue()` (every maintenance cycle) deletes them only when that run can no longer be undone (not the latest undoable run, or `undo_blockers > 0`); an undone/failed run drops the entry and keeps the file.
+- Queue = `receipt_cleanup` collection (one doc per public_id). Failed deletes are retried with back-off. A file is never deleted while a current no-due doc or an `archived_students.no_dues` entry still references it. Receipts from journalled promotions made before this existed are back-filled once (`portal_settings._id="receipt_backfill"`). The `media/` directory and `save_receipt()` in `utils.py` are a legacy local-storage path still referenced by `send_no_due_request` for non-hostel — prefer the Cloudinary flow.
 
 ## Reports
 
@@ -87,6 +95,7 @@ Environment variables (loaded from `.env` via python-dotenv in `settings.py`):
 - `MONGO_URI` — MongoDB connection string (required; app data is unavailable without it)
 - `SECRET_KEY`, `DEBUG` (`"True"`/`"False"`)
 - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+- `APP_MAIL_ENABLED`, `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY` — student password-reset email (off unless all are set). The EmailJS account must allow API calls from non-browser apps; the template's To Email is `{{to_email}}` and the code is `{{passcode}}`.
 
 `DEBUG` controls cookie security flags (`SESSION_COOKIE_SECURE`/`CSRF_COOKIE_SECURE` off in dev). Deployed on Render (`CSRF_TRUSTED_ORIGINS`, Procfile). Sessions last 2h with sliding expiry.
 
